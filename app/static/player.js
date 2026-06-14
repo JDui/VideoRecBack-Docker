@@ -160,7 +160,7 @@ async function initPanorama() {
   };
   const applyViewDelta = (dx, dy, factor = 0.004) => {
     yaw += dx * factor;
-    pitch = clamp(pitch + dy * factor, -1.35, 1.35);
+    pitch = clamp(pitch - dy * factor, -1.35, 1.35);
   };
   const distanceBetweenPointers = () => {
     const points = [...pointers.values()];

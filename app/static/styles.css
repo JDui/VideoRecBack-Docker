@@ -502,18 +502,18 @@ select:focus {
 }
 
 .timeline-current-marker {
-  background: linear-gradient(90deg, transparent, rgba(22, 163, 148, 0.22), var(--accent-deep), rgba(22, 163, 148, 0.22), transparent);
+  background: linear-gradient(90deg, var(--accent), var(--accent-deep));
   border-radius: 999px;
-  box-shadow: 0 0 18px rgba(22, 163, 148, 0.48);
-  height: 8px;
-  left: 31px;
+  box-shadow: 0 0 10px rgba(22, 163, 148, 0.42);
+  height: 6px;
+  left: 34px;
   opacity: 0;
   pointer-events: none;
   position: absolute;
   top: var(--timeline-current-top, 0px);
   transform: translateY(-50%);
   transition: opacity 140ms ease, top 140ms ease;
-  width: 64px;
+  width: 28px;
   z-index: 4;
 }
 
@@ -603,22 +603,13 @@ select:focus {
 }
 
 .asset-card--panorama {
-  align-items: center;
-  background:
-    radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.14), transparent 38%),
-    #111311;
+  background: #111311;
   border-radius: 9px;
-  display: flex;
-  justify-content: center;
-  padding: 8px;
+  padding: 0;
 }
 
 .asset-backdrop {
-  filter: blur(12px) saturate(1.2);
-  inset: -14px;
-  opacity: 0.86;
-  position: absolute;
-  transform: scale(1.08);
+  display: none;
 }
 
 .asset-backdrop img {
@@ -629,17 +620,16 @@ select:focus {
 }
 
 .asset-card--panorama .asset-thumb {
-  aspect-ratio: 1 / 1;
-  border-radius: 999px;
-  flex: 0 0 min(72%, calc(100% - 10px));
-  height: auto;
+  border-radius: 0;
+  height: 100%;
   overflow: hidden;
   position: relative;
+  width: 100%;
   z-index: 1;
 }
 
 .asset-card--panorama .asset-thumb img {
-  border-radius: inherit;
+  border-radius: 0;
 }
 
 .asset-card--compact {
@@ -739,15 +729,7 @@ select:focus {
 
 .asset-card--panorama .asset-thumb::after,
 .detail-poster.asset-card--panorama::after {
-  border-radius: 999px;
-  box-shadow:
-    inset 14px 18px 26px rgba(255, 255, 255, 0.2),
-    inset -24px -30px 48px rgba(0, 0, 0, 0.42),
-    0 18px 36px rgba(0, 0, 0, 0.18);
-  content: "";
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
+  display: none;
 }
 
 .asset-caption {
@@ -797,6 +779,17 @@ select:focus {
 
 .timeline-label-popover button {
   justify-content: center;
+}
+
+.timeline-label-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+}
+
+.danger-button {
+  background: var(--danger);
+  color: #ffffff;
 }
 
 .pane-resizer {
@@ -1242,13 +1235,13 @@ select:focus {
 }
 
 .player-page .player-shell {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(120px, 1fr) max-content;
   height: 100%;
   min-height: 0;
 }
 
 .player-shell--embed {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(120px, 1fr) max-content;
   min-height: 0;
 }
 
@@ -1277,6 +1270,15 @@ select:focus {
   min-height: 0;
   overflow: hidden;
   position: relative;
+}
+
+.player-stage.is-panorama {
+  align-self: center;
+  aspect-ratio: 1 / 1;
+  height: 100%;
+  justify-self: center;
+  max-width: 100%;
+  width: auto;
 }
 
 .player,
@@ -1337,18 +1339,20 @@ select:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 12px;
-  justify-content: flex-end;
+  justify-content: space-between;
+  min-height: 46px;
+  overflow: hidden;
   padding: 8px 10px;
 }
 
 .speed-strip {
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   gap: 5px;
 }
 
-.speed-strip span,
 .volume-strip span,
 .exposure-strip span {
   color: var(--muted);
@@ -1373,14 +1377,32 @@ select:focus {
   display: flex;
   gap: 7px;
   grid-template-columns: none;
+  min-width: 0;
+}
+
+.player-slider-stack {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 340px;
+  min-width: 120px;
 }
 
 .volume-strip input,
 .exposure-strip input {
   accent-color: var(--accent);
+  flex: 1 1 auto;
   min-height: auto;
+  min-width: 90px;
   padding: 0;
-  width: min(180px, 24vw);
+  width: 100%;
+}
+
+.volume-strip span {
+  flex: 0 0 38px;
+  font-size: 12px;
+  text-align: right;
 }
 
 .exposure-strip input {
@@ -1495,5 +1517,15 @@ select:focus {
     align-items: start;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .player-controls {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .player-slider-stack {
+    flex-basis: 100%;
+    max-width: none;
   }
 }

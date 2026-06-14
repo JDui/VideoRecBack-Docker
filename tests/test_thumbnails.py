@@ -24,7 +24,13 @@ def test_panorama_thumbnail_uses_front_fisheye(monkeypatch, tmp_path):
 
     thumbnails.generate_panorama_thumbnail(Path("/videos/demo.mp4"), tmp_path / "thumb.webp", 10)
 
-    vf_index = commands[0].index("-vf") + 1
-    assert commands[0][vf_index] == (
-        "v360=input=equirect:output=fisheye:w=720:h=720:yaw=0:pitch=0:roll=0:h_fov=180:v_fov=180,scale=720:720"
-    )
+    filter_index = commands[0].index("-filter_complex") + 1
+    filter_complex = commands[0][filter_index]
+    assert "-vf" not in commands[0]
+    assert "scale=960:720:force_original_aspect_ratio=increase,crop=960:720" in filter_complex
+    assert "gblur=sigma=28" in filter_complex
+    assert "v360=input=equirect:output=fisheye:w=660:h=660:yaw=0:pitch=0:roll=0:h_fov=180:v_fov=180" in filter_complex
+    assert "306*306" in filter_complex
+    assert "326*326" in filter_complex
+    assert "alphamerge[ball]" in filter_complex
+    assert "overlay=(W-w)/2:(H-h)/2" in filter_complex

@@ -164,7 +164,7 @@
                         <span class="timeline-mark-label">{{ mark.label }}</span>
                         <span class="timeline-mark-bar"></span>
                         {% for label in mark.labels %}
-                          <span class="timeline-tag" style="--tag-color: {{ label.color }}" data-label="{{ label.label }}" aria-label="{{ label.label }}"></span>
+                          <span class="timeline-tag" style="--tag-color: {{ label.color }}" data-label-id="{{ label.id }}" data-label-year="{{ mark.year }}" data-label-quarter="{{ mark.quarter }}" data-label-text="{{ label.label }}" data-label-color="{{ label.color }}" data-label="{{ label.label }}" aria-label="{{ label.label }}" tabindex="0"></span>
                         {% endfor %}
                       </a>
                     {% endfor %}
@@ -205,14 +205,17 @@
     <input type="hidden" name="year" data-label-year>
     <input type="hidden" name="quarter" data-label-quarter>
     <label>
-      时间标签
+      <span data-label-form-title>时间标签</span>
       <input name="label" type="text" maxlength="80" required data-label-text>
     </label>
     <label>
       颜色
-      <input name="color" type="color" value="#16a394">
+      <input name="color" type="color" value="#16a394" data-label-color>
     </label>
-    <button type="submit">添加</button>
+    <div class="timeline-label-actions">
+      <button type="submit" data-label-save>添加</button>
+      <button class="danger-button" type="button" data-label-delete hidden>删除</button>
+    </div>
   </form>
 {% endblock %}
 {% block scripts %}

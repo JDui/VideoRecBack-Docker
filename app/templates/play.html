@@ -24,22 +24,21 @@
     </div>
     <div class="player-controls">
       <div class="speed-strip" aria-label="S&Q 倍速">
-        <span>S&amp;Q</span>
-        {% for speed in ["0.5", "0.75", "1", "1.25", "1.5", "2", "4"] %}
+        {% for speed in ["0.5", "1", "1.5", "2", "4"] %}
           <button type="button" data-speed="{{ speed }}" {% if speed == "1" %}class="active"{% endif %}>{{ speed }}×</button>
         {% endfor %}
       </div>
-      <label class="exposure-strip">
-        <span>曝光</span>
-        <input type="range" min="50" max="150" value="100" data-exposure-control>
-      </label>
-      {% if video.type == "panorama" %}
-        <label class="volume-strip">
-          <span>音量</span>
-          <input type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" data-volume-control>
-          <span data-volume-value>{{ settings.default_volume_percent }}%</span>
+      <div class="player-slider-stack">
+        <label class="exposure-strip" aria-label="曝光">
+          <input type="range" min="50" max="150" value="100" data-exposure-control>
         </label>
-      {% endif %}
+        {% if video.type == "panorama" %}
+          <label class="volume-strip" aria-label="音量">
+            <input type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" data-volume-control>
+            <span data-volume-value>{{ settings.default_volume_percent }}%</span>
+          </label>
+        {% endif %}
+      </div>
     </div>
   </section>
 {% endblock %}

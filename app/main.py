@@ -157,6 +157,52 @@ def create_app() -> FastAPI:
             )
         return RedirectResponse(f"/#timeline-{year}-q{quarter}", status_code=303)
 
+    @app.post("/timeline-labels/{label_id}")
+    async def update_timeline_label(
+        label_id: int,
+        year: int = Form(...),
+        quarter: int = Form(...),
+        label: str = Form(...),
+        color: str = Form("#16a394"),
+    ):
+        clean_label = label.strip()[:80]
+        if not clean_label or quarter not in {1, 2, 3, 4} or year < 1970 or year > 9999:
+            raise HTTPException(status_code=400, detail="Invalid timeline label")
+        clean_color = color.strip().lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", clean_color):
+            clean_color = "#16a394"
+        with db.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE timeline_labels
+                SET label = ?, color = ?
+                WHERE id = ? AND year = ? AND quarter = ?
+                """,
+                (clean_label, clean_color, label_id, year, quarter),
+            )
+            updated = cursor.rowcount
+        if updated == 0:
+            raise HTTPException(status_code=404, detail="Timeline label not found")
+        return RedirectResponse(f"/#timeline-{year}-q{quarter}", status_code=303)
+
+    @app.post("/timeline-labels/{label_id}/delete")
+    async def delete_timeline_label(
+        label_id: int,
+        year: int = Form(...),
+        quarter: int = Form(...),
+    ):
+        if quarter not in {1, 2, 3, 4} or year < 1970 or year > 9999:
+            raise HTTPException(status_code=400, detail="Invalid timeline label")
+        with db.connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM timeline_labels WHERE id = ? AND year = ? AND quarter = ?",
+                (label_id, year, quarter),
+            )
+            deleted = cursor.rowcount
+        if deleted == 0:
+            raise HTTPException(status_code=404, detail="Timeline label not found")
+        return RedirectResponse(f"/#timeline-{year}-q{quarter}", status_code=303)
+
     @app.get("/video/{video_id}", response_class=HTMLResponse)
     async def video_detail(request: Request, video_id: int):
         video = get_video(db, video_id)
@@ -370,11 +416,12 @@ def get_timeline_labels(db: Database) -> dict[tuple[int, int], list[dict[str, ob
     grouped: dict[tuple[int, int], list[dict[str, object]]] = defaultdict(list)
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT year, quarter, label, color FROM timeline_labels ORDER BY created_at ASC, id ASC"
+            "SELECT id, year, quarter, label, color FROM timeline_labels ORDER BY created_at ASC, id ASC"
         ).fetchall()
     for row in rows:
         grouped[(row["year"], row["quarter"])].append(
             {
+                "id": row["id"],
                 "label": row["label"],
                 "color": row["color"],
             }

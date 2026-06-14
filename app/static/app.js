@@ -172,19 +172,52 @@ if (timelineLabelForm) {
   const yearInput = timelineLabelForm.querySelector("[data-label-year]");
   const quarterInput = timelineLabelForm.querySelector("[data-label-quarter]");
   const textInput = timelineLabelForm.querySelector("[data-label-text]");
+  const colorInput = timelineLabelForm.querySelector("[data-label-color]");
+  const titleText = timelineLabelForm.querySelector("[data-label-form-title]");
+  const saveButton = timelineLabelForm.querySelector("[data-label-save]");
+  const deleteButton = timelineLabelForm.querySelector("[data-label-delete]");
+  let editingLabelId = "";
   const hideLabelForm = () => {
     timelineLabelForm.hidden = true;
   };
-  const showLabelForm = (mark, clientX, clientY) => {
+  const placeLabelForm = (clientX, clientY) => {
     const left = Math.min(clientX, window.innerWidth - 260);
     const top = Math.min(clientY, window.innerHeight - 190);
+    timelineLabelForm.style.left = `${left}px`;
+    timelineLabelForm.style.top = `${top}px`;
+  };
+  const showCreateLabelForm = (mark, clientX, clientY) => {
+    editingLabelId = "";
+    timelineLabelForm.action = "/timeline-labels";
+    if (titleText) titleText.textContent = "时间标签";
+    if (saveButton) saveButton.textContent = "添加";
+    if (deleteButton) deleteButton.hidden = true;
+    placeLabelForm(clientX, clientY);
     window.setTimeout(() => {
       yearInput.value = mark.dataset.year || "";
       quarterInput.value = mark.dataset.quarter || "";
-      timelineLabelForm.style.left = `${left}px`;
-      timelineLabelForm.style.top = `${top}px`;
+      textInput.value = "";
+      if (colorInput) colorInput.value = "#16a394";
       timelineLabelForm.hidden = false;
       textInput.focus();
+    }, 0);
+  };
+  const showEditLabelForm = (tag, clientX, clientY) => {
+    editingLabelId = tag.dataset.labelId || "";
+    if (!editingLabelId) return;
+    timelineLabelForm.action = `/timeline-labels/${editingLabelId}`;
+    if (titleText) titleText.textContent = "编辑标签";
+    if (saveButton) saveButton.textContent = "保存";
+    if (deleteButton) deleteButton.hidden = false;
+    placeLabelForm(clientX, clientY);
+    window.setTimeout(() => {
+      yearInput.value = tag.dataset.labelYear || "";
+      quarterInput.value = tag.dataset.labelQuarter || "";
+      textInput.value = tag.dataset.labelText || tag.dataset.label || "";
+      if (colorInput) colorInput.value = tag.dataset.labelColor || "#16a394";
+      timelineLabelForm.hidden = false;
+      textInput.focus();
+      textInput.select();
     }, 0);
   };
 
@@ -193,14 +226,34 @@ if (timelineLabelForm) {
       if (event.button !== 2) return;
       event.preventDefault();
       event.stopPropagation();
-      showLabelForm(mark, event.clientX, event.clientY);
+      showCreateLabelForm(mark, event.clientX, event.clientY);
     });
     mark.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      showLabelForm(mark, event.clientX, event.clientY);
+      showCreateLabelForm(mark, event.clientX, event.clientY);
     });
   }
+
+  for (const tag of document.querySelectorAll(".timeline-tag")) {
+    tag.addEventListener("pointerdown", (event) => {
+      if (event.button !== 2) return;
+      event.preventDefault();
+      event.stopPropagation();
+      showEditLabelForm(tag, event.clientX, event.clientY);
+    });
+    tag.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showEditLabelForm(tag, event.clientX, event.clientY);
+    });
+  }
+
+  deleteButton?.addEventListener("click", () => {
+    if (!editingLabelId) return;
+    timelineLabelForm.action = `/timeline-labels/${editingLabelId}/delete`;
+    timelineLabelForm.submit();
+  });
 
   document.addEventListener("click", (event) => {
     if (timelineLabelForm.hidden || timelineLabelForm.contains(event.target)) return;

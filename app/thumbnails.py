@@ -118,6 +118,19 @@ def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float
 def generate_panorama_thumbnail(video_path: Path, output_path: Path, duration: float | None) -> None:
     ffmpeg = require_tool("ffmpeg")
     timestamp = midpoint(duration)
+    filter_complex = (
+        "[0:v]split=2[bgsrc][fgsrc];"
+        "[bgsrc]scale=960:720:force_original_aspect_ratio=increase,crop=960:720,"
+        "gblur=sigma=28,eq=saturation=1.08:brightness=-0.02[bg];"
+        "[fgsrc]v360=input=equirect:output=fisheye:w=660:h=660:yaw=0:pitch=0:roll=0:"
+        "h_fov=180:v_fov=180,format=rgba[fg];"
+        "color=color=white@0:size=660x660,format=gray,"
+        "geq=lum='if(lte((X-330)*(X-330)+(Y-330)*(Y-330),306*306),255,"
+        "if(lte((X-330)*(X-330)+(Y-330)*(Y-330),326*326),"
+        "255*(326-sqrt((X-330)*(X-330)+(Y-330)*(Y-330)))/20,0))'[mask];"
+        "[fg][mask]alphamerge[ball];"
+        "[bg][ball]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p"
+    )
     run_ffmpeg(
         [
             ffmpeg,
@@ -130,8 +143,8 @@ def generate_panorama_thumbnail(video_path: Path, output_path: Path, duration: f
             str(video_path),
             "-frames:v",
             "1",
-            "-vf",
-            "v360=input=equirect:output=fisheye:w=720:h=720:yaw=0:pitch=0:roll=0:h_fov=180:v_fov=180,scale=720:720",
+            "-filter_complex",
+            filter_complex,
             "-compression_level",
             "4",
             "-quality",
