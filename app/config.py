@@ -13,7 +13,7 @@ DEFAULT_VIDEO_EXTENSIONS = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"]
 class Settings:
     site_title: str = "视频归档"
     video_root: str = "/media"
-    scan_interval_hours: int = 6
+    scan_interval_hours: int = 150
     default_volume_percent: int = 20
     show_date: bool = True
     show_size: bool = True
@@ -40,7 +40,7 @@ def load_settings(config_dir: Path) -> Settings:
     return Settings(
         site_title=str(raw.get("site_title") or "视频归档"),
         video_root=str(raw.get("video_root") or "/media"),
-        scan_interval_hours=max(1, int(interval_hours or 6)),
+        scan_interval_hours=max(1, int(interval_hours or 150)),
         default_volume_percent=clamp_percent(raw.get("default_volume_percent", 20)),
         show_date=bool(raw.get("show_date", True)),
         show_size=bool(raw.get("show_size", True)),

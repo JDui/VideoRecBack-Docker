@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS timeline_labels (
     color TEXT NOT NULL DEFAULT '#16a394',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS scan_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    action TEXT NOT NULL DEFAULT 'upsert',
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 INDEXES = """
@@ -51,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_videos_missing ON videos(missing);
 CREATE INDEX IF NOT EXISTS idx_videos_type ON videos(type);
 CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder);
 CREATE INDEX IF NOT EXISTS idx_timeline_labels_period ON timeline_labels(year DESC, quarter DESC);
+CREATE INDEX IF NOT EXISTS idx_scan_queue_status ON scan_queue(status, created_at);
 """
 
 MIGRATIONS = {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -35,7 +36,7 @@ def create_app() -> FastAPI:
     app.state.data_dir = data_dir
     app.state.db = db
     app.state.scanner = scanner
-    app.state.scan_task = None
+    app.state.maintenance_task = None
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.filters["duration"] = format_duration
@@ -45,11 +46,11 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup() -> None:
         sync_settings_to_db(db, load_settings(config_dir))
-        app.state.scan_task = asyncio.create_task(periodic_scan(app))
+        app.state.maintenance_task = asyncio.create_task(background_maintenance(app))
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
-        task = app.state.scan_task
+        task = app.state.maintenance_task
         if task:
             task.cancel()
 
@@ -115,6 +116,27 @@ def create_app() -> FastAPI:
         summary = await scanner.scan(settings)
         return RedirectResponse(f"/?scan={summary.seen}", status_code=303)
 
+    @app.post("/scan-queue")
+    async def queue_incremental_scan(
+        path: str = Form(...),
+        action: str = Form("upsert"),
+    ):
+        clean_path = path.strip()
+        if not clean_path:
+            raise HTTPException(status_code=400, detail="Path is required")
+        if action not in {"upsert", "delete"}:
+            raise HTTPException(status_code=400, detail="Invalid scan action")
+        await scanner.enqueue(clean_path, action)
+        summary = await scanner.process_queue(load_settings(config_dir), limit=25)
+        return {
+            "queued": clean_path,
+            "action": action,
+            "seen": summary.seen,
+            "indexed": summary.indexed,
+            "deleted": summary.deleted,
+            "errors": summary.errors,
+        }
+
     @app.post("/timeline-labels")
     async def create_timeline_label(
         year: int = Form(...),
@@ -153,10 +175,14 @@ def create_app() -> FastAPI:
             if video is None:
                 raise HTTPException(status_code=404, detail="Video not found")
             conn.execute(
-                "UPDATE videos SET type = ?, thumb_status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                """
+                UPDATE videos
+                SET type = ?, thumb_status = 'pending', thumb_version = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
                 (video_type, video_id),
             )
-        await scanner.scan(load_settings(config_dir))
+        await asyncio.to_thread(scanner.rebuild_video_thumbnail, video_id, video_type)
         return RedirectResponse(f"/video/{video_id}", status_code=303)
 
     @app.get("/video/{video_id}/play", response_class=HTMLResponse)
@@ -188,11 +214,15 @@ def create_app() -> FastAPI:
     return app
 
 
-async def periodic_scan(app: FastAPI) -> None:
+async def background_maintenance(app: FastAPI) -> None:
+    last_full_scan = time.monotonic()
     while True:
         settings = load_settings(app.state.config_dir)
-        await asyncio.sleep(settings.scan_interval_hours * 3600)
-        await app.state.scanner.scan(load_settings(app.state.config_dir))
+        await app.state.scanner.process_queue(settings)
+        if time.monotonic() - last_full_scan >= settings.scan_interval_hours * 3600:
+            await app.state.scanner.scan(settings)
+            last_full_scan = time.monotonic()
+        await asyncio.sleep(60)
 
 
 def sync_settings_to_db(db: Database, settings: Settings) -> None:

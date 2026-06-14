@@ -26,5 +26,5 @@ def test_panorama_thumbnail_uses_front_fisheye(monkeypatch, tmp_path):
 
     vf_index = commands[0].index("-vf") + 1
     assert commands[0][vf_index] == (
-        "v360=input=equirect:output=fisheye:w=720:h=720:h_fov=180:v_fov=180,hflip,scale=720:720"
+        "v360=input=equirect:output=fisheye:w=720:h=720:yaw=0:pitch=0:roll=0:h_fov=180:v_fov=180,scale=720:720"
     )

@@ -4,7 +4,6 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 let volumeControl = null;
 let volumeValue = null;
 let exposureControl = null;
-let exposureValue = null;
 let exposure = 1;
 
 const syncVolumeUi = () => {
@@ -39,7 +38,6 @@ const seekBy = (seconds) => {
 const syncExposureUi = () => {
   const percent = String(Math.round(exposure * 100));
   if (exposureControl) exposureControl.value = percent;
-  if (exposureValue) exposureValue.textContent = `${percent}%`;
   if (video && shell?.dataset.videoType !== "panorama") {
     video.style.filter = `brightness(${exposure})`;
   }
@@ -63,7 +61,6 @@ if (video) {
     });
   }
   exposureControl = document.querySelector("[data-exposure-control]");
-  exposureValue = document.querySelector("[data-exposure-value]");
   if (exposureControl) {
     setExposure(Number(exposureControl.value) / 100);
     exposureControl.addEventListener("input", () => {
@@ -133,6 +130,7 @@ async function initPanorama() {
 
   const texture = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);

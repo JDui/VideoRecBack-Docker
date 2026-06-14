@@ -39,3 +39,9 @@ def test_default_volume_is_clamped(tmp_path: Path):
     loaded = load_settings(tmp_path)
 
     assert loaded.default_volume_percent == 100
+
+
+def test_default_scan_interval_is_low_frequency(tmp_path: Path):
+    settings = load_settings(tmp_path)
+
+    assert settings.scan_interval_hours == 150

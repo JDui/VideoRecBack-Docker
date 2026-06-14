@@ -9,7 +9,7 @@
   <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-default-volume="{{ settings.default_volume_percent / 100 }}">
     {% if not embed %}
       <div class="player-heading">
-        <h1>{{ video.name }}</h1>
+        <h1>播放：{{ video.name }}</h1>
         <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
       </div>
     {% endif %}
@@ -32,7 +32,6 @@
       <label class="exposure-strip">
         <span>曝光</span>
         <input type="range" min="50" max="150" value="100" data-exposure-control>
-        <span data-exposure-value>100%</span>
       </label>
       {% if video.type == "panorama" %}
         <label class="volume-strip">

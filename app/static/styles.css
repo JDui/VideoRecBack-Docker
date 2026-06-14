@@ -502,19 +502,18 @@ select:focus {
 }
 
 .timeline-current-marker {
-  background: var(--accent-deep);
-  border: 2px solid var(--panel);
+  background: linear-gradient(90deg, transparent, rgba(22, 163, 148, 0.22), var(--accent-deep), rgba(22, 163, 148, 0.22), transparent);
   border-radius: 999px;
-  box-shadow: 0 0 0 2px rgba(22, 163, 148, 0.22);
-  height: 11px;
-  left: 62px;
+  box-shadow: 0 0 18px rgba(22, 163, 148, 0.48);
+  height: 8px;
+  left: 31px;
   opacity: 0;
   pointer-events: none;
   position: absolute;
   top: var(--timeline-current-top, 0px);
-  transform: translate(-50%, -50%);
+  transform: translateY(-50%);
   transition: opacity 140ms ease, top 140ms ease;
-  width: 11px;
+  width: 64px;
   z-index: 4;
 }
 
@@ -719,6 +718,7 @@ select:focus {
   position: absolute;
   right: 0;
   transition: opacity 160ms ease;
+  z-index: 4;
 }
 
 .asset-card:hover .asset-overlay {
@@ -846,7 +846,6 @@ select:focus {
 }
 
 .inline-player-head strong span {
-  color: var(--muted);
   font-weight: 850;
 }
 
@@ -1265,6 +1264,7 @@ select:focus {
   align-items: end;
   display: flex;
   justify-content: space-between;
+  min-height: 0;
 }
 
 .player-stage {
@@ -1273,6 +1273,7 @@ select:focus {
   border-radius: 8px;
   box-shadow: var(--shadow);
   display: grid;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   position: relative;
@@ -1337,12 +1338,14 @@ select:focus {
   border-radius: 8px;
   box-shadow: var(--shadow);
   flex-wrap: wrap;
+  gap: 8px 12px;
   justify-content: flex-end;
-  padding: 12px;
+  padding: 8px 10px;
 }
 
 .speed-strip {
   flex-wrap: wrap;
+  gap: 5px;
 }
 
 .speed-strip span,
@@ -1355,6 +1358,8 @@ select:focus {
 .speed-strip button {
   background: #eef0ed;
   color: var(--text);
+  font-size: 12px;
+  padding: 7px 9px;
 }
 
 .speed-strip button.active {
@@ -1366,7 +1371,8 @@ select:focus {
 .exposure-strip {
   align-items: center;
   display: flex;
-  gap: 9px;
+  gap: 7px;
+  grid-template-columns: none;
 }
 
 .volume-strip input,
@@ -1375,6 +1381,40 @@ select:focus {
   min-height: auto;
   padding: 0;
   width: min(180px, 24vw);
+}
+
+.exposure-strip input {
+  appearance: none;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(21, 24, 21, 0.18) 0 1px,
+      transparent 1px calc(10% - 1px),
+      rgba(21, 24, 21, 0.18) calc(10% - 1px) 10%
+    ),
+    linear-gradient(90deg, #323832, #899089, #ffffff);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  height: 18px;
+  overflow: hidden;
+}
+
+.exposure-strip input::-webkit-slider-thumb {
+  appearance: none;
+  background: var(--accent);
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  height: 16px;
+  width: 16px;
+}
+
+.exposure-strip input::-moz-range-thumb {
+  background: var(--accent);
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  height: 14px;
+  width: 14px;
 }
 
 @media (max-width: 979px) {

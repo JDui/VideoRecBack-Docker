@@ -36,3 +36,13 @@ def test_database_has_timeline_labels_table(tmp_path):
         tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
 
     assert "timeline_labels" in tables
+
+
+def test_database_has_scan_queue_table(tmp_path):
+    db = Database(tmp_path)
+    db.init()
+
+    with db.connect() as conn:
+        tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+
+    assert "scan_queue" in tables

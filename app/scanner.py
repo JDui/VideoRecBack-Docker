@@ -9,7 +9,7 @@ from app.db import Database
 from app.thumbnails import VideoToolError, generate_thumbnail, probe_video
 from app.video_types import detect_video_type
 
-THUMBNAIL_VERSION = 4
+THUMBNAIL_VERSION = 5
 
 
 @dataclass(slots=True)
@@ -18,6 +18,7 @@ class ScanSummary:
     indexed: int = 0
     thumbnails: int = 0
     errors: int = 0
+    deleted: int = 0
 
 
 class Scanner:
@@ -29,6 +30,25 @@ class Scanner:
     async def scan(self, settings: Settings) -> ScanSummary:
         async with self._lock:
             return await asyncio.to_thread(self._scan_sync, settings)
+
+    async def scan_path(self, settings: Settings, target: str | Path, action: str = "upsert") -> ScanSummary:
+        async with self._lock:
+            return await asyncio.to_thread(self._scan_path_sync, settings, Path(target), action)
+
+    async def enqueue(self, target: str | Path, action: str = "upsert") -> None:
+        clean_action = action if action in {"upsert", "delete"} else "upsert"
+        with self.db.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO scan_queue(path, action, status, updated_at)
+                VALUES (?, ?, 'pending', CURRENT_TIMESTAMP)
+                """,
+                (str(target), clean_action),
+            )
+
+    async def process_queue(self, settings: Settings, limit: int = 50) -> ScanSummary:
+        async with self._lock:
+            return await asyncio.to_thread(self._process_queue_sync, settings, limit)
 
     def _scan_sync(self, settings: Settings) -> ScanSummary:
         summary = ScanSummary()
@@ -47,6 +67,75 @@ class Scanner:
 
         self._mark_missing(seen_paths)
         return summary
+
+    def _scan_path_sync(self, settings: Settings, target: Path, action: str = "upsert") -> ScanSummary:
+        summary = ScanSummary()
+        root = Path(settings.video_root)
+        target = normalize_target(root, target)
+        if action == "delete" or not target.exists():
+            summary.deleted = self._mark_target_missing(target)
+            return summary
+
+        extensions = {ext.lower() for ext in settings.video_extensions}
+        if target.is_file():
+            if target.suffix.lower() not in extensions:
+                return summary
+            summary.seen = 1
+            summary.indexed = self._upsert_video(target, root)
+            return summary
+
+        if target.is_dir():
+            for path in target.rglob("*"):
+                if not path.is_file() or path.suffix.lower() not in extensions:
+                    continue
+                summary.seen += 1
+                summary.indexed += self._upsert_video(path, root)
+        return summary
+
+    def _process_queue_sync(self, settings: Settings, limit: int) -> ScanSummary:
+        total = ScanSummary()
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path, action
+                FROM scan_queue
+                WHERE status = 'pending'
+                ORDER BY created_at ASC, id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        for row in rows:
+            with self.db.connect() as conn:
+                conn.execute(
+                    "UPDATE scan_queue SET status = 'running', error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (row["id"],),
+                )
+            try:
+                summary = self._scan_path_sync(settings, row["path"], row["action"])
+                total.seen += summary.seen
+                total.indexed += summary.indexed
+                total.thumbnails += summary.thumbnails
+                total.errors += summary.errors
+                total.deleted += summary.deleted
+                with self.db.connect() as conn:
+                    conn.execute(
+                        "UPDATE scan_queue SET status = 'done', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (row["id"],),
+                    )
+            except Exception as exc:
+                total.errors += 1
+                with self.db.connect() as conn:
+                    conn.execute(
+                        """
+                        UPDATE scan_queue
+                        SET status = 'error', error = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (str(exc), row["id"]),
+                    )
+        return total
 
     def _upsert_video(self, path: Path, root: Path) -> int:
         stat = path.stat()
@@ -157,6 +246,13 @@ class Scanner:
             self._generate_and_record_thumbnail(path, video_id, video_type, duration)
         return 1
 
+    def rebuild_video_thumbnail(self, video_id: int, video_type: str) -> None:
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT path, duration_seconds FROM videos WHERE id = ?", (video_id,)).fetchone()
+            if row is None:
+                return
+        self._generate_and_record_thumbnail(Path(row["path"]), video_id, video_type, row["duration_seconds"])
+
     def _refresh_metadata(self, path: Path, video_id: int) -> None:
         try:
             probe = probe_video(path)
@@ -208,6 +304,25 @@ class Scanner:
                     (str(exc), video_id),
                 )
 
+    def _mark_target_missing(self, target: Path) -> int:
+        target_text = str(target)
+        prefix = f"{target_text.rstrip('/')}/"
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id
+                FROM videos
+                WHERE missing = 0 AND (path = ? OR path LIKE ?)
+                """,
+                (target_text, f"{prefix}%"),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "UPDATE videos SET missing = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (row["id"],),
+                )
+        return len(rows)
+
     def _mark_missing(self, seen_paths: set[str]) -> None:
         with self.db.connect() as conn:
             rows = conn.execute("SELECT id, path FROM videos WHERE missing = 0").fetchall()
@@ -236,3 +351,9 @@ def safe_relative_path(path: Path, root: Path) -> str:
         return str(path.relative_to(root))
     except ValueError:
         return path.name
+
+
+def normalize_target(root: Path, target: Path) -> Path:
+    if target.is_absolute():
+        return target
+    return root / target

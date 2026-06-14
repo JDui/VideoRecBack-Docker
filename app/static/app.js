@@ -84,6 +84,13 @@ closePlayer?.addEventListener("click", () => {
   if (inlineSettings) inlineSettings.hidden = true;
 });
 
+inlineSettings?.addEventListener("click", (event) => {
+  const href = inlineSettings.getAttribute("href");
+  if (!href || href === "#") return;
+  event.preventDefault();
+  window.location.href = href;
+});
+
 if (resizer && shell) {
   let resizing = false;
   resizer.addEventListener("pointerdown", (event) => {
