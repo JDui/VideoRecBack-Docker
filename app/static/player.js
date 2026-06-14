@@ -6,6 +6,18 @@ let volumeValue = null;
 let exposureControl = null;
 let exposureValue = null;
 let exposure = 1;
+let mediaTimeOffset = 0;
+let applyQualityAt = null;
+let hlsPlayer = null;
+const qualityLabels = {
+  original: "原画",
+  low: "低压缩",
+  high: "高压缩",
+};
+const totalDuration = Number(shell?.dataset.duration || 0);
+const transcodeOverlay = document.querySelector("[data-transcode-overlay]");
+const panoProgress = document.querySelector("[data-pano-progress]");
+const panoProgressFill = document.querySelector("[data-pano-progress-fill]");
 
 const syncVolumeUi = () => {
   if (!video || !volumeControl) return;
@@ -32,8 +44,49 @@ const togglePlayback = () => {
 
 const seekBy = (seconds) => {
   if (!video) return;
-  const duration = Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY;
-  video.currentTime = clamp(video.currentTime + seconds, 0, duration);
+  setLogicalCurrentTime(getLogicalCurrentTime() + seconds);
+};
+
+const getLogicalDuration = () => {
+  if (Number.isFinite(totalDuration) && totalDuration > 0) return totalDuration;
+  if (Number.isFinite(video?.duration)) return mediaTimeOffset + video.duration;
+  return Number.POSITIVE_INFINITY;
+};
+
+const getLogicalCurrentTime = () => {
+  if (!video || !Number.isFinite(video.currentTime)) return mediaTimeOffset;
+  return mediaTimeOffset + video.currentTime;
+};
+
+const setLogicalCurrentTime = (time) => {
+  if (!video) return;
+  const duration = getLogicalDuration();
+  const nextTime = clamp(time, 0, Number.isFinite(duration) ? duration : time);
+  const currentQuality = video.dataset.currentQuality || "original";
+  const relativeTime = nextTime - mediaTimeOffset;
+  if (currentQuality !== "original" && (relativeTime < 0 || relativeTime > Math.max(0, video.duration || 0))) {
+    applyQualityAt?.(currentQuality, nextTime, !video.paused);
+    return;
+  }
+  video.currentTime = clamp(relativeTime, 0, Math.max(0, video.duration || 0));
+};
+
+const showTranscodeOverlay = (message = "正在切换转码中...") => {
+  if (!transcodeOverlay) return;
+  transcodeOverlay.textContent = message;
+  transcodeOverlay.hidden = false;
+};
+
+const hideTranscodeOverlay = () => {
+  if (transcodeOverlay) transcodeOverlay.hidden = true;
+};
+
+const syncPanoProgress = () => {
+  if (!panoProgress || !panoProgressFill) return;
+  const duration = getLogicalDuration();
+  const progress = Number.isFinite(duration) && duration > 0 ? clamp(getLogicalCurrentTime() / duration, 0, 1) : 0;
+  panoProgressFill.style.strokeDashoffset = String(100 - progress * 100);
+  panoProgress.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
 };
 
 const syncExposureUi = () => {
@@ -73,6 +126,117 @@ if (video) {
 
   const speedSlider = document.querySelector("[data-speed-slider]");
   const speedValue = document.querySelector("[data-speed-value]");
+  const qualitySlider = document.querySelector("[data-quality-slider]");
+  const qualityValue = document.querySelector("[data-quality-value]");
+  if (qualitySlider) {
+    const qualityValues = (qualitySlider.dataset.qualityValues || "original,low,high")
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item in qualityLabels);
+    video.dataset.currentQuality = qualityValues[0] || "original";
+    let qualitySwitchId = 0;
+    const qualityUrl = (quality, startAt = 0) => {
+      const base = video.dataset.mediaBase || video.getAttribute("src") || "";
+      const cleanBase = base.split("#")[0];
+      const time = Math.max(0, startAt).toFixed(3);
+      if (quality === "original") return `${cleanBase}#t=${time}`;
+      return `${cleanBase}/hls/${encodeURIComponent(quality)}/${Math.round(Math.max(0, startAt) * 1000)}/index.m3u8`;
+    };
+    const destroyHls = () => {
+      if (!hlsPlayer) return;
+      hlsPlayer.destroy();
+      hlsPlayer = null;
+    };
+    const canUseNativeHls = () => {
+      return Boolean(
+        video.canPlayType("application/vnd.apple.mpegurl") ||
+        video.canPlayType("application/x-mpegURL")
+      );
+    };
+    const syncQualityUi = () => {
+      const index = clamp(Math.round(Number(qualitySlider.value)), 0, qualityValues.length - 1);
+      const quality = qualityValues[index] || "original";
+      qualitySlider.value = String(index);
+      qualitySlider.style.setProperty("--quality-index", String(index));
+      if (qualityValue) qualityValue.textContent = qualityLabels[quality] || quality;
+      return quality;
+    };
+    const applyQuality = () => {
+      const quality = syncQualityUi();
+      if (video.dataset.currentQuality === quality) return;
+      applyQualityAt(quality, getLogicalCurrentTime(), false);
+    };
+
+    applyQualityAt = (quality, resumeAt, forcePlay = false) => {
+      const wasPaused = video.paused;
+      const playbackRate = video.playbackRate;
+      const volume = video.volume;
+      const switchId = ++qualitySwitchId;
+      const shouldPlay = forcePlay || !wasPaused;
+      const resume = () => {
+        if (switchId !== qualitySwitchId) return;
+        video.playbackRate = playbackRate;
+        video.defaultPlaybackRate = playbackRate;
+        video.volume = volume;
+        syncVolumeUi();
+        syncPanoProgress();
+        hideTranscodeOverlay();
+        if (shouldPlay) video.play().catch(() => {});
+      };
+      video.dataset.currentQuality = quality;
+      video.addEventListener("canplay", resume, { once: true });
+      video.addEventListener("playing", resume, { once: true });
+      video.addEventListener("seeked", resume, { once: true });
+
+      if (quality === "original") {
+        destroyHls();
+        mediaTimeOffset = 0;
+        video.addEventListener("loadedmetadata", () => {
+          if (switchId !== qualitySwitchId) return;
+          if (Number.isFinite(video.duration)) {
+            video.currentTime = clamp(resumeAt, 0, Math.max(0, video.duration - 0.25));
+          }
+        }, { once: true });
+        video.src = qualityUrl(quality, resumeAt);
+        video.load();
+        return;
+      }
+
+      showTranscodeOverlay();
+      mediaTimeOffset = Math.max(0, resumeAt);
+      const url = qualityUrl(quality, resumeAt);
+      if (canUseNativeHls()) {
+        destroyHls();
+        video.src = url;
+        video.load();
+        return;
+      }
+      if (window.Hls?.isSupported()) {
+        destroyHls();
+        hlsPlayer = new window.Hls({
+          backBufferLength: 30,
+          lowLatencyMode: false,
+          maxBufferLength: 20,
+        });
+        hlsPlayer.on(window.Hls.Events.ERROR, (_event, data) => {
+          if (data?.fatal && switchId === qualitySwitchId) {
+            showTranscodeOverlay("转码暂不可播放，正在重试...");
+            hlsPlayer?.startLoad();
+          }
+        });
+        hlsPlayer.loadSource(url);
+        hlsPlayer.attachMedia(video);
+        return;
+      }
+      hideTranscodeOverlay();
+      video.dataset.currentQuality = "original";
+      video.src = qualityUrl("original", resumeAt);
+      video.load();
+    };
+    syncQualityUi();
+    qualitySlider.addEventListener("input", applyQuality);
+    qualitySlider.addEventListener("change", applyQuality);
+  }
   if (speedSlider) {
     const speedValues = (speedSlider.dataset.speedValues || "0.5,1,1.5,2,4")
       .split(",")
@@ -93,6 +257,51 @@ if (video) {
     speedSlider.addEventListener("input", applySpeed);
     speedSlider.addEventListener("change", applySpeed);
   }
+  video.addEventListener("timeupdate", syncPanoProgress);
+  video.addEventListener("durationchange", syncPanoProgress);
+  video.addEventListener("loadedmetadata", syncPanoProgress);
+}
+
+if (panoProgress && video) {
+  const seekFromProgressEvent = (event) => {
+    const rect = panoProgress.getBoundingClientRect();
+    const x = clamp(event.clientX - rect.left, 0, rect.width);
+    const y = clamp(event.clientY - rect.top, 0, rect.height);
+    const distances = [
+      { edge: "top", value: y },
+      { edge: "right", value: rect.width - x },
+      { edge: "bottom", value: rect.height - y },
+      { edge: "left", value: x },
+    ].sort((a, b) => a.value - b.value);
+    const edge = distances[0].edge;
+    const perimeter = Math.max(1, 2 * (rect.width + rect.height));
+    let distance = x;
+    if (edge === "right") distance = rect.width + y;
+    if (edge === "bottom") distance = rect.width + rect.height + (rect.width - x);
+    if (edge === "left") distance = rect.width * 2 + rect.height + (rect.height - y);
+    const duration = getLogicalDuration();
+    if (Number.isFinite(duration) && duration > 0) {
+      setLogicalCurrentTime(duration * clamp(distance / perimeter, 0, 1));
+    }
+    syncPanoProgress();
+  };
+
+  const startPanoProgressDrag = (event) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekFromProgressEvent(event);
+  };
+  const movePanoProgressDrag = (event) => {
+    if (!(event.buttons & 1)) return;
+    event.preventDefault();
+    seekFromProgressEvent(event);
+  };
+
+  for (const hit of document.querySelectorAll("[data-pano-progress-hit]")) {
+    hit.addEventListener("pointerdown", startPanoProgressDrag);
+    hit.addEventListener("pointermove", movePanoProgressDrag);
+  }
+  syncPanoProgress();
 }
 
 if (shell?.dataset.videoType === "panorama" && video) {

@@ -11,6 +11,14 @@ const timelineRail = document.querySelector(".timeline-rail");
 const timelineCurrent = document.querySelector("[data-timeline-current]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
+const scanForm = document.querySelector("[data-scan-form]");
+const scanButton = document.querySelector("[data-scan-button]");
+const scanLabel = document.querySelector("[data-scan-label]");
+
+scanForm?.addEventListener("submit", () => {
+  scanButton?.classList.add("is-scanning");
+  if (scanLabel) scanLabel.textContent = "扫描中";
+});
 
 if (previewSize) {
   const savedSize = localStorage.getItem("videorecback-card-size") || previewSize.value;
@@ -116,12 +124,30 @@ if (timelineRail && timelineCurrent && libraryPane) {
       .filter(Boolean)
   );
   const sections = [...document.querySelectorAll(".asset-section[id^='timeline-']")];
+  const sectionById = new Map(sections.map((section) => [section.id, section]));
+  const scrollToTimelineSection = (section) => {
+    const paneRect = libraryPane.getBoundingClientRect();
+    const sectionRect = section.getBoundingClientRect();
+    libraryPane.scrollTo({
+      top: libraryPane.scrollTop + sectionRect.top - paneRect.top - 12,
+      behavior: "auto",
+    });
+    window.requestAnimationFrame(updateTimelineCurrent);
+  };
 
   for (const mark of marks) {
     mark.addEventListener("click", (event) => {
       if (mark.classList.contains("timeline-mark--empty")) {
         event.preventDefault();
+        return;
       }
+      const href = mark.getAttribute("href") || "";
+      if (!href.startsWith("#timeline-")) return;
+      const section = sectionById.get(href.slice(1));
+      if (!section) return;
+      event.preventDefault();
+      scrollToTimelineSection(section);
+      window.history.pushState(null, "", href);
     });
   }
 
@@ -152,6 +178,10 @@ if (timelineRail && timelineCurrent && libraryPane) {
 
   libraryPane.addEventListener("scroll", updateTimelineCurrent, { passive: true });
   window.addEventListener("resize", updateTimelineCurrent);
+  const initialSection = sectionById.get(window.location.hash.slice(1));
+  if (initialSection) {
+    window.requestAnimationFrame(() => scrollToTimelineSection(initialSection));
+  }
   updateTimelineCurrent();
 }
 

@@ -1,6 +1,8 @@
 from datetime import datetime
 from importlib import import_module
 
+from fastapi.testclient import TestClient
+
 
 def load_main(monkeypatch, tmp_path):
     monkeypatch.setenv("APP_CONFIG_DIR", str(tmp_path / "config"))
@@ -18,6 +20,48 @@ def test_calendar_defaults_to_year(monkeypatch, tmp_path):
 
     assert filters["view"] == "calendar"
     assert filters["calendar_zoom"] == "year"
+
+
+def test_settings_page_includes_panorama_thumbnail_refresh(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+
+    with TestClient(app) as client:
+        response = client.get("/settings?panorama_refresh=2")
+
+    assert response.status_code == 200
+    assert 'action="/settings/refresh-panorama-thumbnails"' in response.text
+    assert "确认要刷新全部全景视频封面吗" in response.text
+    assert "已提交刷新 2 个全景视频封面" in response.text
+
+
+def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    video_path = tmp_path / "media" / "pano.mp4"
+    video_path.parent.mkdir()
+    video_path.write_bytes(b"video")
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, relative_path, folder, type, size_bytes,
+                duration_seconds, width, height, aspect_ratio, mtime,
+                missing, thumb_status, thumb_version
+            )
+            VALUES (1, ?, 'pano.mp4', 'pano.mp4', '/', 'panorama', 5, 12, 640, 320, 2.0, 1, 0, 'error', 0)
+            """,
+            (str(video_path),),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/video/1/play")
+
+    assert response.status_code == 200
+    assert "/static/vendor/hls.min.js" in response.text
+    assert 'data-transcode-overlay hidden' in response.text
+    assert 'data-pano-progress' in response.text
+    assert response.text.count('data-pano-progress-hit') == 4
 
 
 def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):

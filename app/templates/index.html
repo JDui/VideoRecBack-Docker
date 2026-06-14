@@ -99,7 +99,11 @@
           <button type="submit">应用</button>
         </form>
       </details>
-      <form class="topbar-scan" action="/scan" method="post"><button type="submit">扫描</button></form>
+      <form class="topbar-scan" action="/scan" method="post" data-scan-form data-scan-running="{{ '1' if scan_running else '0' }}">
+        <button type="submit" data-scan-button class="{% if scan_running %}is-scanning{% endif %}">
+          <span data-scan-label>{% if scan_running %}扫描中{% else %}扫描{% endif %}</span>
+        </button>
+      </form>
       <a class="topbar-link" href="/settings">设置</a>
     </header>
 

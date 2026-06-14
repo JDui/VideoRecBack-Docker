@@ -15,10 +15,24 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import Settings, clamp_percent, load_settings, normalize_extensions, save_settings
+from app.config import (
+    Settings,
+    clamp_days,
+    clamp_percent,
+    load_settings,
+    normalize_extensions,
+    normalize_ignore_patterns,
+    save_settings,
+)
 from app.db import Database
 from app.formatting import format_date, format_duration, format_size
-from app.media import build_range_response
+from app.media import (
+    build_range_response,
+    cleanup_stream_cache,
+    resolve_hls_playlist,
+    resolve_hls_segment,
+    resolve_stream_path,
+)
 from app.scanner import Scanner
 
 
@@ -39,6 +53,7 @@ def create_app() -> FastAPI:
     app.state.db = db
     app.state.scanner = scanner
     app.state.maintenance_task = None
+    app.state.manual_scan_pending = False
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.filters["duration"] = format_duration
@@ -76,6 +91,7 @@ def create_app() -> FastAPI:
                 "timeline_rail": build_timeline_rail(rows, timeline_labels),
                 "folder_browser": build_folder_browser(rows, filters),
                 "calendar_model": build_calendar_model(rows, filters),
+                "scan_running": is_scan_running(app),
             },
         )
 
@@ -84,7 +100,10 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             "settings.html",
-            {"settings": load_settings(config_dir)},
+            {
+                "settings": load_settings(config_dir),
+                "panorama_refresh": request.query_params.get("panorama_refresh"),
+            },
         )
 
     @app.post("/settings")
@@ -93,30 +112,54 @@ def create_app() -> FastAPI:
         video_root: str = Form(...),
         scan_interval_hours: int = Form(...),
         default_volume_percent: int = Form(...),
+        stream_cache_retention_days: int = Form(...),
         show_date: str | None = Form(None),
         show_size: str | None = Form(None),
         show_duration: str | None = Form(None),
         video_extensions: str = Form(...),
+        ignore_dotfiles: str | None = Form(None),
+        ignore_name_patterns: str = Form(""),
     ):
         settings = Settings(
             site_title=site_title.strip() or "视频归档",
             video_root=video_root.strip() or "/media",
             scan_interval_hours=int(scan_interval_hours),
             default_volume_percent=clamp_percent(default_volume_percent),
+            stream_cache_retention_days=clamp_days(stream_cache_retention_days),
             show_date=show_date == "on",
             show_size=show_size == "on",
             show_duration=show_duration == "on",
             video_extensions=normalize_extensions(video_extensions),
+            ignore_dotfiles=ignore_dotfiles == "on",
+            ignore_name_patterns=normalize_ignore_patterns(ignore_name_patterns),
         )
         save_settings(config_dir, settings)
         sync_settings_to_db(db, settings)
         return RedirectResponse("/", status_code=303)
 
+    @app.post("/settings/refresh-panorama-thumbnails")
+    async def refresh_panorama_thumbnails():
+        with db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id
+                FROM videos
+                WHERE type = 'panorama' AND missing = 0
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        for row in rows:
+            await asyncio.to_thread(scanner.rebuild_video_thumbnail, int(row["id"]), "panorama")
+        return RedirectResponse(f"/settings?panorama_refresh={len(rows)}", status_code=303)
+
     @app.post("/scan")
     async def trigger_scan():
+        if is_scan_running(app):
+            return RedirectResponse("/?scan=running", status_code=303)
         settings = load_settings(config_dir)
-        summary = await scanner.scan(settings)
-        return RedirectResponse(f"/?scan={summary.seen}", status_code=303)
+        app.state.manual_scan_pending = True
+        asyncio.create_task(run_manual_scan(app, settings))
+        return RedirectResponse("/?scan=running", status_code=303)
 
     @app.post("/scan-queue")
     async def queue_incremental_scan(
@@ -249,9 +292,27 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/media/{video_id}")
-    async def media(request: Request, video_id: int):
+    async def media(request: Request, video_id: int, quality: str = "original"):
         video = get_video(db, video_id)
-        return build_range_response(request, Path(video["path"]))
+        stream_path = await asyncio.to_thread(resolve_stream_path, video, data_dir, quality)
+        media_type = "video/mp4" if quality != "original" else None
+        return build_range_response(request, stream_path, media_type=media_type)
+
+    @app.get("/media/{video_id}/hls/{quality}/{start_ms}/index.m3u8")
+    async def hls_playlist(video_id: int, quality: str, start_ms: int):
+        video = get_video(db, video_id)
+        playlist = await asyncio.to_thread(resolve_hls_playlist, video, data_dir, quality, start_ms)
+        return FileResponse(
+            playlist,
+            media_type="application/vnd.apple.mpegurl",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.get("/media/{video_id}/hls/{quality}/{start_ms}/{segment}")
+    async def hls_segment(video_id: int, quality: str, start_ms: int, segment: str):
+        video = get_video(db, video_id)
+        path = await asyncio.to_thread(resolve_hls_segment, video, data_dir, quality, start_ms, segment)
+        return FileResponse(path, media_type="video/mp2t", headers={"Cache-Control": "public, max-age=86400"})
 
     @app.get("/thumb/{video_id}.webp")
     async def thumb(video_id: int):
@@ -269,6 +330,11 @@ async def background_maintenance(app: FastAPI) -> None:
     while True:
         settings = load_settings(app.state.config_dir)
         await app.state.scanner.process_queue(settings)
+        await asyncio.to_thread(
+            cleanup_stream_cache,
+            stream_cache_dir(app),
+            settings.stream_cache_retention_days,
+        )
         if settings.scan_interval_hours <= 0:
             if not auto_scan_disabled_logged:
                 LOGGER.info("Automatic full scan is disabled; interval=%s, no root scan will run.", settings.scan_interval_hours)
@@ -277,13 +343,45 @@ async def background_maintenance(app: FastAPI) -> None:
             continue
 
         auto_scan_disabled_logged = False
-        await asyncio.sleep(settings.scan_interval_hours * 3600)
-        settings = load_settings(app.state.config_dir)
+        remaining_sleep = settings.scan_interval_hours * 3600
+        cache_check_seconds = settings.stream_cache_retention_days * 86400
+        while remaining_sleep > 0:
+            sleep_seconds = min(remaining_sleep, cache_check_seconds)
+            await asyncio.sleep(sleep_seconds)
+            remaining_sleep -= sleep_seconds
+            settings = load_settings(app.state.config_dir)
+            await asyncio.to_thread(
+                cleanup_stream_cache,
+                stream_cache_dir(app),
+                settings.stream_cache_retention_days,
+            )
+            if settings.scan_interval_hours <= 0:
+                LOGGER.info("Automatic full scan was disabled before scheduled run; skipping root scan.")
+                break
+            if remaining_sleep > 0:
+                await app.state.scanner.process_queue(settings)
         if settings.scan_interval_hours <= 0:
-            LOGGER.info("Automatic full scan was disabled before scheduled run; skipping root scan.")
             continue
         LOGGER.info("Running scheduled full scan for root %s.", settings.video_root)
         await app.state.scanner.scan(settings)
+
+
+def stream_cache_dir(app: FastAPI) -> Path:
+    return Path(getattr(app.state, "data_dir", Path(app.state.config_dir).parent / "data")) / "cache"
+
+
+def is_scan_running(app: FastAPI) -> bool:
+    scanner = app.state.scanner
+    return bool(getattr(app.state, "manual_scan_pending", False) or getattr(scanner, "is_running", False))
+
+
+async def run_manual_scan(app: FastAPI, settings: Settings) -> None:
+    try:
+        await app.state.scanner.scan(settings)
+    except Exception:
+        LOGGER.exception("Manual scan failed.")
+    finally:
+        app.state.manual_scan_pending = False
 
 
 def sync_settings_to_db(db: Database, settings: Settings) -> None:
@@ -293,10 +391,13 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "video_root": settings.video_root,
             "scan_interval_hours": settings.scan_interval_hours,
             "default_volume_percent": settings.default_volume_percent,
+            "stream_cache_retention_days": settings.stream_cache_retention_days,
             "show_date": int(settings.show_date),
             "show_size": int(settings.show_size),
             "show_duration": int(settings.show_duration),
             "video_extensions": ",".join(settings.video_extensions),
+            "ignore_dotfiles": int(settings.ignore_dotfiles),
+            "ignore_name_patterns": ",".join(settings.ignore_name_patterns),
         }
     )
 

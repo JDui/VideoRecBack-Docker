@@ -40,7 +40,8 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -237,6 +238,30 @@ button {
   background: var(--accent);
   border-color: transparent;
   color: #ffffff;
+  overflow: hidden;
+  position: relative;
+}
+
+.topbar-scan button.is-scanning {
+  animation: scan-rainbow 1.25s linear infinite;
+  background: linear-gradient(90deg, #b76f72, #c4a46c, #80a987, #73a9ad, #8b8bb7, #b681a0, #b76f72);
+  background-size: 320% 100%;
+  min-width: 74px;
+}
+
+.topbar-scan button.is-scanning:hover {
+  border-color: transparent;
+  color: #ffffff;
+}
+
+@keyframes scan-rainbow {
+  from {
+    background-position: 0% 50%;
+  }
+
+  to {
+    background-position: 320% 50%;
+  }
 }
 
 .filter-menu[open] summary {
@@ -296,7 +321,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -306,9 +332,15 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--accent);
   outline: 3px solid rgba(22, 163, 148, 0.16);
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .filterbar button {
@@ -1068,7 +1100,8 @@ select:focus {
 }
 
 .detail-panel,
-.settings-form {
+.settings-form,
+.settings-action-panel {
   background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1130,6 +1163,30 @@ select:focus {
 .settings-form {
   display: grid;
   gap: 14px;
+}
+
+.settings-action-panel {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.settings-action-panel strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.settings-action-panel p {
+  margin: 0;
+}
+
+.settings-notice {
+  color: var(--accent-deep);
+  font-size: 13px;
+  font-weight: 850;
+  margin-top: 8px !important;
 }
 
 .checks {
@@ -1234,6 +1291,25 @@ select:focus {
   width: auto;
 }
 
+.transcode-overlay {
+  align-items: center;
+  background: rgba(7, 8, 7, 0.58);
+  color: #ffffff;
+  display: flex;
+  font-size: 15px;
+  font-weight: 900;
+  inset: 0;
+  justify-content: center;
+  letter-spacing: 0;
+  position: absolute;
+  text-align: center;
+  z-index: 8;
+}
+
+.transcode-overlay[hidden] {
+  display: none;
+}
+
 .player,
 .pano-canvas {
   background: #070807;
@@ -1251,6 +1327,77 @@ select:focus {
 .pano-canvas {
   cursor: grab;
   touch-action: none;
+}
+
+.pano-progress {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 7;
+}
+
+.pano-progress svg {
+  display: block;
+  height: 100%;
+  overflow: visible;
+  width: 100%;
+}
+
+.pano-progress-track,
+.pano-progress-fill {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.pano-progress-track {
+  stroke: rgba(255, 255, 255, 0.22);
+}
+
+.pano-progress-fill {
+  stroke: var(--accent);
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  stroke-linecap: round;
+}
+
+.pano-progress-hit {
+  pointer-events: auto;
+  position: absolute;
+  touch-action: none;
+}
+
+.pano-progress-hit--top,
+.pano-progress-hit--bottom {
+  cursor: ew-resize;
+  height: 16px;
+  left: 0;
+  right: 0;
+}
+
+.pano-progress-hit--top {
+  top: 0;
+}
+
+.pano-progress-hit--bottom {
+  bottom: 0;
+}
+
+.pano-progress-hit--left,
+.pano-progress-hit--right {
+  bottom: 0;
+  cursor: ns-resize;
+  top: 0;
+  width: 16px;
+}
+
+.pano-progress-hit--left {
+  left: 0;
+}
+
+.pano-progress-hit--right {
+  right: 0;
 }
 
 .player-stage:fullscreen {
@@ -1328,6 +1475,7 @@ select:focus {
 }
 
 .speed-strip input,
+.quality-strip input,
 .exposure-strip input,
 .volume-strip input {
   appearance: none;
@@ -1338,6 +1486,20 @@ select:focus {
   overflow: hidden;
   padding: 0;
   width: 100%;
+}
+
+.quality-strip input {
+  background:
+    radial-gradient(circle at 15% 50%, rgba(255, 255, 255, 0.96) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 23% 50%, rgba(255, 255, 255, 0.72) 0 1px, transparent 1.5px),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 70%,
+      rgba(21, 24, 21, 0.24) 70% 78%,
+      transparent 78% 86%,
+      rgba(255, 255, 255, 0.34) 86% 100%
+    ),
+    linear-gradient(90deg, #74d0e6 0%, #58b8d0 42%, #63717a 67%, #2d3338 100%);
 }
 
 .speed-strip input {
@@ -1351,7 +1513,8 @@ select:focus {
     linear-gradient(90deg, #1f7db6, #30c9b8 36%, #d8c45f 66%, #e36d43);
 }
 
-.speed-ghost {
+.speed-ghost,
+.quality-ghost {
   align-items: center;
   color: rgba(255, 255, 255, 0.42);
   display: grid;
@@ -1367,7 +1530,12 @@ select:focus {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
 }
 
-.speed-strip input::-webkit-slider-thumb {
+.quality-ghost {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.speed-strip input::-webkit-slider-thumb,
+.quality-strip input::-webkit-slider-thumb {
   appearance: none;
   background: rgba(255, 255, 255, 0.94);
   border: 2px solid rgba(21, 24, 21, 0.24);
@@ -1377,7 +1545,8 @@ select:focus {
   width: 16px;
 }
 
-.speed-strip input::-moz-range-thumb {
+.speed-strip input::-moz-range-thumb,
+.quality-strip input::-moz-range-thumb {
   background: rgba(255, 255, 255, 0.94);
   border: 2px solid rgba(21, 24, 21, 0.24);
   border-radius: 999px;

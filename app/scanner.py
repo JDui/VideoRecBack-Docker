@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,22 +30,43 @@ class Scanner:
         self.db = db
         self.cache_dir = data_dir / "cache"
         self._lock = asyncio.Lock()
+        self._running_count = 0
+
+    @property
+    def is_running(self) -> bool:
+        return self._running_count > 0
 
     async def scan(self, settings: Settings) -> ScanSummary:
-        async with self._lock:
-            return await asyncio.to_thread(self._scan_sync, settings)
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._scan_sync, settings)
+        finally:
+            self._running_count -= 1
 
     async def scan_path(self, settings: Settings, target: str | Path, action: str = "upsert") -> ScanSummary:
-        async with self._lock:
-            return await asyncio.to_thread(self._scan_path_sync, settings, Path(target), action)
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._scan_path_sync, settings, Path(target), action)
+        finally:
+            self._running_count -= 1
 
     async def scan_file(self, settings: Settings, target: str | Path, action: str = "upsert") -> ScanSummary:
-        async with self._lock:
-            return await asyncio.to_thread(self._scan_file_sync, settings, Path(target), action)
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._scan_file_sync, settings, Path(target), action)
+        finally:
+            self._running_count -= 1
 
     async def scan_folder(self, settings: Settings, target: str | Path, action: str = "upsert") -> ScanSummary:
-        async with self._lock:
-            return await asyncio.to_thread(self._scan_folder_sync, settings, Path(target), action)
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._scan_folder_sync, settings, Path(target), action)
+        finally:
+            self._running_count -= 1
 
     async def enqueue(self, target: str | Path, action: str = "upsert") -> None:
         clean_action = action if action in {"upsert", "delete"} else "upsert"
@@ -58,8 +80,12 @@ class Scanner:
             )
 
     async def process_queue(self, settings: Settings, limit: int = 50) -> ScanSummary:
-        async with self._lock:
-            return await asyncio.to_thread(self._process_queue_sync, settings, limit)
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._process_queue_sync, settings, limit)
+        finally:
+            self._running_count -= 1
 
     def _scan_sync(self, settings: Settings) -> ScanSummary:
         summary = ScanSummary()
@@ -72,11 +98,14 @@ class Scanner:
         for path in root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in extensions:
                 continue
+            if should_ignore_path(path, root, settings):
+                summary.skipped += 1
+                continue
             summary.seen += 1
             seen_paths.add(str(path))
             summary.indexed += self._upsert_video(path, root)
 
-        self._mark_missing(seen_paths)
+        summary.deleted = self._delete_missing(seen_paths)
         return summary
 
     def _scan_path_sync(self, settings: Settings, target: Path, action: str = "upsert") -> ScanSummary:
@@ -94,10 +123,14 @@ class Scanner:
         target = validate_target_in_root(root, target)
         LOGGER.info("Scanning single file only: %s; no full scan will run.", target)
         if action == "delete" or not target.exists():
-            summary.deleted = self._mark_target_missing(target)
+            summary.deleted = self._delete_target_records(target)
             return summary
 
         extensions = {ext.lower() for ext in settings.video_extensions}
+        if should_ignore_path(target, root, settings):
+            summary.skipped = 1
+            LOGGER.info("Skipped single-file scan for %s; ignored by settings.", target)
+            return summary
         if not target.is_file() or target.suffix.lower() not in extensions:
             summary.skipped = 1
             LOGGER.info("Skipped single-file scan for %s; unsupported extension or not a file.", target)
@@ -121,8 +154,8 @@ class Scanner:
         target = validate_target_in_root(root, target)
         LOGGER.info("Scanning folder only: %s; siblings and root will not be scanned.", target)
         if action == "delete" or not target.exists():
-            summary.deleted = self._mark_target_missing(target)
-            LOGGER.info("Folder scan marked missing: target=%s deleted=%s.", target, summary.deleted)
+            summary.deleted = self._delete_target_records(target)
+            LOGGER.info("Folder scan deleted cached records: target=%s deleted=%s.", target, summary.deleted)
             return summary
 
         if not target.is_dir():
@@ -135,10 +168,13 @@ class Scanner:
             if not path.is_file() or path.suffix.lower() not in extensions:
                 summary.skipped += 1
                 continue
+            if should_ignore_path(path, root, settings):
+                summary.skipped += 1
+                continue
             summary.seen += 1
             seen_paths.add(str(path))
             summary.indexed += self._upsert_video(path, root)
-        summary.deleted = self._mark_missing_under_target(target, seen_paths)
+        summary.deleted = self._delete_missing_under_target(target, seen_paths)
         LOGGER.info(
             "Folder scan complete: target=%s seen=%s indexed=%s skipped=%s missing=%s errors=%s.",
             target,
@@ -363,57 +399,80 @@ class Scanner:
                     (str(exc), video_id),
                 )
 
-    def _mark_target_missing(self, target: Path) -> int:
+    def _delete_target_records(self, target: Path) -> int:
         target_text = str(target)
         prefix = f"{target_text.rstrip('/')}/"
         with self.db.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id
+                SELECT id, path, thumb_path
                 FROM videos
-                WHERE missing = 0 AND (path = ? OR path LIKE ?)
+                WHERE path = ? OR path LIKE ?
                 """,
                 (target_text, f"{prefix}%"),
             ).fetchall()
-            for row in rows:
-                conn.execute(
-                    "UPDATE videos SET missing = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (row["id"],),
-                )
+        return self._delete_video_records(rows)
+
+    def _delete_missing_under_target(self, target: Path, seen_paths: set[str]) -> int:
+        target_text = str(target)
+        prefix = f"{target_text.rstrip('/')}/"
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path, thumb_path
+                FROM videos
+                WHERE path = ? OR path LIKE ?
+                """,
+                (target_text, f"{prefix}%"),
+            ).fetchall()
+        rows_to_delete = [row for row in rows if row["path"] not in seen_paths]
+        return self._delete_video_records(rows_to_delete)
+
+    def _delete_missing(self, seen_paths: set[str]) -> int:
+        with self.db.connect() as conn:
+            rows = conn.execute("SELECT id, path, thumb_path FROM videos").fetchall()
+        rows_to_delete = [row for row in rows if row["path"] not in seen_paths]
+        return self._delete_video_records(rows_to_delete)
+
+    def _delete_video_records(self, rows) -> int:
+        if not rows:
+            return 0
+        for row in rows:
+            self._delete_thumbnail_files(row)
+        with self.db.connect() as conn:
+            conn.executemany("DELETE FROM videos WHERE id = ?", [(row["id"],) for row in rows])
         return len(rows)
 
-    def _mark_missing_under_target(self, target: Path, seen_paths: set[str]) -> int:
-        target_text = str(target)
-        prefix = f"{target_text.rstrip('/')}/"
-        changed = 0
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, path
-                FROM videos
-                WHERE missing = 0 AND (path = ? OR path LIKE ?)
-                """,
-                (target_text, f"{prefix}%"),
-            ).fetchall()
-            for row in rows:
-                if row["path"] in seen_paths:
-                    continue
-                conn.execute(
-                    "UPDATE videos SET missing = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (row["id"],),
-                )
-                changed += 1
-        return changed
-
-    def _mark_missing(self, seen_paths: set[str]) -> None:
-        with self.db.connect() as conn:
-            rows = conn.execute("SELECT id, path FROM videos WHERE missing = 0").fetchall()
-            for row in rows:
-                if row["path"] not in seen_paths:
-                    conn.execute(
-                        "UPDATE videos SET missing = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                        (row["id"],),
-                    )
+    def _delete_thumbnail_files(self, row) -> None:
+        cache_root = self.cache_dir.resolve(strict=False)
+        candidates = [
+            Path(row["thumb_path"]) if row["thumb_path"] else None,
+            self.cache_dir / f"{row['id']}.webp",
+            self.cache_dir / f"{stable_id(row['path'])}.webp",
+        ]
+        stream_dir = self.cache_dir / "streams"
+        if stream_dir.exists():
+            candidates.extend(stream_dir.glob(f"stream-{int(row['id'])}-*.mp4"))
+            candidates.extend(stream_dir.glob(f"hls-{int(row['id'])}-*"))
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            resolved = candidate.resolve(strict=False)
+            try:
+                resolved.relative_to(cache_root)
+            except ValueError:
+                LOGGER.warning("Skipped cache cleanup outside cache dir: %s", resolved)
+                continue
+            try:
+                if resolved.is_dir():
+                    for child in resolved.glob("*"):
+                        if child.is_file():
+                            child.unlink(missing_ok=True)
+                    resolved.rmdir()
+                else:
+                    resolved.unlink(missing_ok=True)
+            except OSError as exc:
+                LOGGER.warning("Failed to delete cached thumbnail %s: %s", resolved, exc)
 
 
 def stable_id(value: str) -> str:
@@ -433,6 +492,28 @@ def safe_relative_path(path: Path, root: Path) -> str:
         return str(path.relative_to(root))
     except ValueError:
         return path.name
+
+
+def should_ignore_path(path: Path, root: Path, settings: Settings) -> bool:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        try:
+            relative = path.relative_to(root.resolve())
+        except ValueError:
+            relative = Path(path.name)
+
+    parts = relative.parts or (path.name,)
+    if settings.ignore_dotfiles and any(part.startswith(".") for part in parts):
+        return True
+
+    relative_text = relative.as_posix()
+    for pattern in settings.ignore_name_patterns:
+        if any(fnmatch.fnmatchcase(part, pattern) for part in parts):
+            return True
+        if fnmatch.fnmatchcase(relative_text, pattern):
+            return True
+    return False
 
 
 def normalize_target(root: Path, target: Path) -> Path:

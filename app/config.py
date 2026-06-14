@@ -7,6 +7,7 @@ from typing import Any
 
 
 DEFAULT_VIDEO_EXTENSIONS = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"]
+DEFAULT_IGNORE_NAME_PATTERNS = ["Thumbs.db", "desktop.ini", "._*"]
 
 
 @dataclass(slots=True)
@@ -15,10 +16,13 @@ class Settings:
     video_root: str = "/media"
     scan_interval_hours: int = 150
     default_volume_percent: int = 20
+    stream_cache_retention_days: int = 7
     show_date: bool = True
     show_size: bool = True
     show_duration: bool = True
     video_extensions: list[str] = field(default_factory=lambda: DEFAULT_VIDEO_EXTENSIONS.copy())
+    ignore_dotfiles: bool = True
+    ignore_name_patterns: list[str] = field(default_factory=lambda: DEFAULT_IGNORE_NAME_PATTERNS.copy())
 
 
 def config_path(config_dir: Path) -> Path:
@@ -44,10 +48,13 @@ def load_settings(config_dir: Path) -> Settings:
         video_root=str(raw.get("video_root") or "/media"),
         scan_interval_hours=int(interval_hours),
         default_volume_percent=clamp_percent(raw.get("default_volume_percent", 20)),
+        stream_cache_retention_days=clamp_days(raw.get("stream_cache_retention_days", 7)),
         show_date=bool(raw.get("show_date", True)),
         show_size=bool(raw.get("show_size", True)),
         show_duration=bool(raw.get("show_duration", True)),
         video_extensions=normalize_extensions(raw.get("video_extensions")),
+        ignore_dotfiles=bool(raw.get("ignore_dotfiles", True)),
+        ignore_name_patterns=normalize_ignore_patterns(raw.get("ignore_name_patterns")),
     )
 
 
@@ -55,7 +62,9 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = asdict(settings)
     payload["video_extensions"] = normalize_extensions(payload["video_extensions"])
+    payload["ignore_name_patterns"] = normalize_ignore_patterns(payload.get("ignore_name_patterns"))
     payload["default_volume_percent"] = clamp_percent(payload.get("default_volume_percent", 20))
+    payload["stream_cache_retention_days"] = clamp_days(payload.get("stream_cache_retention_days", 7))
     payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))
     config_path(config_dir).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -69,6 +78,14 @@ def clamp_percent(value: Any) -> int:
     except (TypeError, ValueError):
         number = 20
     return max(0, min(100, number))
+
+
+def clamp_days(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = 7
+    return max(1, min(365, number))
 
 
 def normalize_extensions(value: Any) -> list[str]:
@@ -89,3 +106,18 @@ def normalize_extensions(value: Any) -> list[str]:
         if ext not in normalized:
             normalized.append(ext)
     return normalized or DEFAULT_VIDEO_EXTENSIONS.copy()
+
+
+def normalize_ignore_patterns(value: Any) -> list[str]:
+    if isinstance(value, str):
+        candidates = [item.strip() for item in value.replace("\n", ",").split(",")]
+    elif isinstance(value, list):
+        candidates = [str(item).strip() for item in value]
+    else:
+        candidates = DEFAULT_IGNORE_NAME_PATTERNS
+
+    normalized: list[str] = []
+    for item in candidates:
+        if item and item not in normalized:
+            normalized.append(item)
+    return normalized

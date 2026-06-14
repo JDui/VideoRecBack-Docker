@@ -26,15 +26,39 @@
         <input name="default_volume_percent" type="number" min="0" max="100" value="{{ settings.default_volume_percent }}" required>
       </label>
       <label>
+        串流缓存保留和检查间隔，天
+        <input name="stream_cache_retention_days" type="number" min="1" max="365" value="{{ settings.stream_cache_retention_days }}" required>
+      </label>
+      <label>
         视频扩展名
         <input name="video_extensions" type="text" value="{{ settings.video_extensions|join(', ') }}" required>
+      </label>
+      <label>
+        忽略文件名规则（每行或逗号分隔）
+        <textarea name="ignore_name_patterns" rows="4" placeholder="Thumbs.db&#10;desktop.ini&#10;._*">{{ settings.ignore_name_patterns|join('\n') }}</textarea>
       </label>
       <div class="checks">
         <label class="check"><input type="checkbox" name="show_date" {% if settings.show_date %}checked{% endif %}>显示日期</label>
         <label class="check"><input type="checkbox" name="show_size" {% if settings.show_size %}checked{% endif %}>显示大小</label>
         <label class="check"><input type="checkbox" name="show_duration" {% if settings.show_duration %}checked{% endif %}>显示时长</label>
+        <label class="check"><input type="checkbox" name="ignore_dotfiles" {% if settings.ignore_dotfiles %}checked{% endif %}>忽略点开头文件和目录</label>
       </div>
       <button type="submit">保存设置</button>
+    </form>
+    <form
+      class="settings-action-panel"
+      action="/settings/refresh-panorama-thumbnails"
+      method="post"
+      onsubmit="return window.confirm('确认要刷新全部全景视频封面吗？这会重新读取全景视频并覆盖现有封面。');"
+    >
+      <div>
+        <strong>刷新全景视频封面</strong>
+        <p class="muted">重新生成所有全景视频的球形封面，不会触发全盘扫描。</p>
+        {% if panorama_refresh is not none %}
+          <p class="settings-notice">已提交刷新 {{ panorama_refresh }} 个全景视频封面。</p>
+        {% endif %}
+      </div>
+      <button class="danger-button" type="submit">刷新全景视频封面</button>
     </form>
   </section>
 {% endblock %}
