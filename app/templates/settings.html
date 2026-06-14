@@ -60,5 +60,20 @@
       </div>
       <button class="danger-button" type="submit">刷新全景视频封面</button>
     </form>
+    <form
+      class="settings-action-panel"
+      action="/settings/recheck-panorama-types"
+      method="post"
+      onsubmit="return window.confirm('确认要对数据库中所有视频重新校验全景类型吗？识别为全景的视频会切换类型并重新生成缩略图。');"
+    >
+      <div>
+        <strong>全景重校验</strong>
+        <p class="muted">重新检查数据库中的视频宽高比例和文件名标记，把识别为全景的视频切换为全景并重建封面。</p>
+        {% if panorama_recheck is not none %}
+          <p class="settings-notice">已切换 {{ panorama_recheck }} 个视频为全景并重建封面。</p>
+        {% endif %}
+      </div>
+      <button class="danger-button" type="submit">全景重校验</button>
+    </form>
   </section>
 {% endblock %}

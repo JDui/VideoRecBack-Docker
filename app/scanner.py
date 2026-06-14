@@ -287,6 +287,7 @@ class Scanner:
             thumb_status = "error"
             thumb_error = str(exc)
         aspect_ratio = calculate_aspect_ratio(width, height)
+        video_type = detect_video_type(path, width, height)
 
         thumb_path = str(self.cache_dir / f"{stable_id(path_text)}.webp")
         with self.db.connect() as conn:
@@ -348,16 +349,54 @@ class Scanner:
                 return
         self._generate_and_record_thumbnail(Path(row["path"]), video_id, video_type, row["duration_seconds"])
 
+    def recheck_panorama_types(self) -> int:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path, type, duration_seconds, width, height
+                FROM videos
+                WHERE missing = 0
+                ORDER BY id ASC
+                """
+            ).fetchall()
+
+        changed = 0
+        for row in rows:
+            if row["type"] == "panorama":
+                continue
+            if detect_video_type(row["path"], row["width"], row["height"]) != "panorama":
+                continue
+            video_id = int(row["id"])
+            path = Path(row["path"])
+            with self.db.connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE videos
+                    SET type = 'panorama', thumb_status = 'pending', thumb_version = 0, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (video_id,),
+                )
+            self._generate_and_record_thumbnail(path, video_id, "panorama", row["duration_seconds"])
+            changed += 1
+        return changed
+
     def _refresh_metadata(self, path: Path, video_id: int) -> None:
         try:
             probe = probe_video(path)
         except (VideoToolError, OSError):
             return
+        video_type = detect_video_type(path, probe.width, probe.height)
         with self.db.connect() as conn:
             conn.execute(
                 """
                 UPDATE videos
-                SET duration_seconds = ?, width = ?, height = ?, aspect_ratio = ?, updated_at = CURRENT_TIMESTAMP
+                SET duration_seconds = ?,
+                    width = ?,
+                    height = ?,
+                    aspect_ratio = ?,
+                    type = CASE WHEN ? = 'panorama' THEN 'panorama' ELSE type END,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
                 (
@@ -365,6 +404,7 @@ class Scanner:
                     probe.width,
                     probe.height,
                     calculate_aspect_ratio(probe.width, probe.height),
+                    video_type,
                     video_id,
                 ),
             )

@@ -31,8 +31,39 @@ def test_settings_page_includes_panorama_thumbnail_refresh(monkeypatch, tmp_path
 
     assert response.status_code == 200
     assert 'action="/settings/refresh-panorama-thumbnails"' in response.text
+    assert 'action="/settings/recheck-panorama-types"' in response.text
     assert "确认要刷新全部全景视频封面吗" in response.text
+    assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
     assert "已提交刷新 2 个全景视频封面" in response.text
+
+
+def test_panorama_recheck_route_promotes_wide_video(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: None)
+    app = main.create_app()
+    video_path = tmp_path / "media" / "wide.mp4"
+    video_path.parent.mkdir()
+    video_path.write_bytes(b"video")
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, mtime, missing, type, duration_seconds, width, height, thumb_status, thumb_version
+            )
+            VALUES (1, ?, 'wide.mp4', 1, 0, 'flat', 12, 3840, 1920, 'ready', 7)
+            """,
+            (str(video_path),),
+        )
+
+    with TestClient(app) as client:
+        response = client.post("/settings/recheck-panorama-types", follow_redirects=False)
+
+    with app.state.db.connect() as conn:
+        row = conn.execute("SELECT type FROM videos WHERE id = 1").fetchone()
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?panorama_recheck=1"
+    assert row["type"] == "panorama"
 
 
 def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_path):

@@ -103,6 +103,7 @@ def create_app() -> FastAPI:
             {
                 "settings": load_settings(config_dir),
                 "panorama_refresh": request.query_params.get("panorama_refresh"),
+                "panorama_recheck": request.query_params.get("panorama_recheck"),
             },
         )
 
@@ -151,6 +152,11 @@ def create_app() -> FastAPI:
         for row in rows:
             await asyncio.to_thread(scanner.rebuild_video_thumbnail, int(row["id"]), "panorama")
         return RedirectResponse(f"/settings?panorama_refresh={len(rows)}", status_code=303)
+
+    @app.post("/settings/recheck-panorama-types")
+    async def recheck_panorama_types():
+        changed = await asyncio.to_thread(scanner.recheck_panorama_types)
+        return RedirectResponse(f"/settings?panorama_recheck={changed}", status_code=303)
 
     @app.post("/scan")
     async def trigger_scan():

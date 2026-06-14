@@ -41,6 +41,57 @@ def test_scan_path_indexes_only_target_file(monkeypatch, tmp_path):
     assert [row["name"] for row in rows] == ["one.mp4"]
 
 
+def test_scan_defaults_two_to_one_video_to_panorama(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "wide.mp4"
+    target.write_bytes(b"wide")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(10, 3840, 1920))
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: None)
+
+    scanner._scan_file_sync(Settings(video_root=str(root)), target)
+
+    with db.connect() as conn:
+        row = conn.execute("SELECT type FROM videos WHERE name = 'wide.mp4'").fetchone()
+
+    assert row["type"] == "panorama"
+
+
+def test_recheck_panorama_types_promotes_wide_videos_and_rebuilds_thumbnail(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "wide.mp4"
+    target.write_bytes(b"wide")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+    generated = []
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: generated.append(args))
+    with db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, mtime, missing, type, duration_seconds, width, height, thumb_status, thumb_version
+            )
+            VALUES (1, ?, 'wide.mp4', 1, 0, 'flat', 10, 3840, 1920, 'ready', 7)
+            """,
+            (str(target),),
+        )
+
+    changed = scanner.recheck_panorama_types()
+
+    with db.connect() as conn:
+        row = conn.execute("SELECT type FROM videos WHERE id = 1").fetchone()
+
+    assert changed == 1
+    assert row["type"] == "panorama"
+    assert generated
+
+
 def test_scan_ignores_dotfiles_and_dot_directories(monkeypatch, tmp_path):
     root = tmp_path / "media"
     hidden_dir = root / ".hidden"
