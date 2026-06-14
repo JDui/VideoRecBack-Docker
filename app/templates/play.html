@@ -17,8 +17,8 @@
     <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
       {% if video.type == "panorama" %}
         <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
-        <video id="videoPlayer" class="source-video hidden-video" playsinline preload="metadata" src="/media/{{ video.id }}"></video>
-        <div class="pano-hint">拖动或双指滑动切换视角，双指缩放视野</div>
+        <video id="videoPlayer" class="source-video hidden-video" playsinline preload="auto" src="/media/{{ video.id }}"></video>
+        <div class="pano-hint">拖动或双指滑动切换视角，滚轮或双指缩放视野，方向键和空格控制播放</div>
       {% else %}
         <video id="videoPlayer" class="player" controls autoplay playsinline preload="auto" src="/media/{{ video.id }}"></video>
       {% endif %}

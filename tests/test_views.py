@@ -45,6 +45,22 @@ def test_timeline_rail_attaches_labels(monkeypatch, tmp_path):
     assert rail[0]["labels"] == [{"label": "春节", "color": "#ff0000"}]
 
 
+def test_timeline_rail_fills_empty_quarters(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    rows = [
+        {"mtime": datetime(2026, 1, 10).timestamp()},
+        {"mtime": datetime(2025, 7, 8).timestamp()},
+    ]
+
+    rail = main.build_timeline_rail(rows)
+
+    assert [(item["year"], item["quarter"], item["count"]) for item in rail] == [
+        (2026, 1, 1),
+        (2025, 4, 0),
+        (2025, 3, 1),
+    ]
+
+
 def test_timeline_groups_include_quarter_anchor(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [{"mtime": datetime(2026, 7, 8).timestamp()}]

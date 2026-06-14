@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ settings.site_title }}{% endblock %}
+{% block body_class %}library-page{% endblock %}
 {% block chrome %}{% endblock %}
 {% block content %}
   {% set preview = videos[0] if videos else none %}
@@ -100,7 +101,7 @@
       </details>
       <form class="topbar-scan" action="/scan" method="post"><button type="submit">扫描</button></form>
       <a class="topbar-link" href="/settings">设置</a>
-      <button class="topbar-link theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">☀️</button>
+      <button class="topbar-link theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">明</button>
     </header>
 
     <section class="library-pane">
@@ -161,13 +162,14 @@
           </section>
         {% else %}
           <section class="timeline-view">
-            <aside class="timeline-rail" aria-label="季度视频数量">
+            <aside class="timeline-rail" aria-label="季度视频数量" style="--rail-count: {{ timeline_rail|length }}">
+              <span class="timeline-current-marker" data-timeline-current aria-hidden="true"></span>
               {% for mark in timeline_rail %}
-                <a class="timeline-mark" href="#timeline-{{ mark.year }}-q{{ mark.quarter }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" style="--video-count: {{ mark.count }}">
+                <a class="timeline-mark {% if mark.count == 0 %}timeline-mark--empty{% endif %}" href="{% if mark.count %}#timeline-{{ mark.year }}-q{{ mark.quarter }}{% else %}#{% endif %}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.label }}，{{ mark.count }} 个视频">
                   <span class="timeline-mark-label">{{ mark.label }}</span>
                   <span class="timeline-mark-bar"></span>
                   {% for label in mark.labels %}
-                    <span class="timeline-tag" style="--tag-color: {{ label.color }}" title="{{ label.label }}"></span>
+                    <span class="timeline-tag" style="--tag-color: {{ label.color }}" data-label="{{ label.label }}" aria-label="{{ label.label }}"></span>
                   {% endfor %}
                 </a>
               {% endfor %}

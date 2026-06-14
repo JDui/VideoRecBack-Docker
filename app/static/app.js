@@ -7,10 +7,13 @@ const resizer = document.querySelector("[data-resizer]");
 const previewSize = document.querySelector("[data-preview-size]");
 const themeToggle = document.querySelector("[data-theme-toggle]");
 const timelineLabelForm = document.querySelector("[data-timeline-label-form]");
+const libraryPane = document.querySelector(".library-pane");
+const timelineRail = document.querySelector(".timeline-rail");
+const timelineCurrent = document.querySelector("[data-timeline-current]");
 
 const setTheme = (theme) => {
   document.documentElement.dataset.theme = theme;
-  if (themeToggle) themeToggle.textContent = theme === "dark" ? "🌛" : "☀️";
+  if (themeToggle) themeToggle.textContent = theme === "dark" ? "暗" : "明";
 };
 
 setTheme(localStorage.getItem("videorecback-theme") || "light");
@@ -87,6 +90,62 @@ if (resizer && shell) {
       resizing = false;
     });
   }
+}
+
+if (libraryPane && shell) {
+  const syncScrolledState = () => {
+    shell.classList.toggle("is-scrolled", libraryPane.scrollTop > 8);
+  };
+  libraryPane.addEventListener("scroll", syncScrolledState, { passive: true });
+  syncScrolledState();
+}
+
+if (timelineRail && timelineCurrent && libraryPane) {
+  const marks = [...timelineRail.querySelectorAll(".timeline-mark")];
+  const markById = new Map(
+    marks
+      .map((mark) => {
+        const href = mark.getAttribute("href") || "";
+        return href.startsWith("#timeline-") ? [href.slice(1), mark] : null;
+      })
+      .filter(Boolean)
+  );
+  const sections = [...document.querySelectorAll(".asset-section[id^='timeline-']")];
+
+  for (const mark of marks) {
+    mark.addEventListener("click", (event) => {
+      if (mark.classList.contains("timeline-mark--empty")) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  const updateTimelineCurrent = () => {
+    if (!sections.length) return;
+    const paneRect = libraryPane.getBoundingClientRect();
+    const anchorY = paneRect.top + Math.min(160, paneRect.height * 0.28);
+    let activeSection = sections[0];
+
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= anchorY) {
+        activeSection = section;
+      } else {
+        break;
+      }
+    }
+
+    const mark = markById.get(activeSection.id);
+    if (!mark) return;
+    timelineRail.style.setProperty(
+      "--timeline-current-top",
+      `${mark.offsetTop + mark.offsetHeight / 2}px`
+    );
+    timelineCurrent.classList.add("is-visible");
+  };
+
+  libraryPane.addEventListener("scroll", updateTimelineCurrent, { passive: true });
+  window.addEventListener("resize", updateTimelineCurrent);
+  updateTimelineCurrent();
 }
 
 if (timelineLabelForm) {
