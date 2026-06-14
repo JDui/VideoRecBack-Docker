@@ -45,3 +45,11 @@ def test_default_scan_interval_is_low_frequency(tmp_path: Path):
     settings = load_settings(tmp_path)
 
     assert settings.scan_interval_hours == 150
+
+
+def test_scan_interval_allows_zero(tmp_path: Path):
+    save_settings(tmp_path, Settings(scan_interval_hours=0))
+
+    loaded = load_settings(tmp_path)
+
+    assert loaded.scan_interval_hours == 0

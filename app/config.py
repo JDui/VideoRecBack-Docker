@@ -37,10 +37,12 @@ def load_settings(config_dir: Path) -> Settings:
     interval_hours = raw.get("scan_interval_hours")
     if interval_hours is None and legacy_minutes is not None:
         interval_hours = max(1, round(int(legacy_minutes) / 60))
+    if interval_hours is None:
+        interval_hours = 150
     return Settings(
         site_title=str(raw.get("site_title") or "视频归档"),
         video_root=str(raw.get("video_root") or "/media"),
-        scan_interval_hours=max(1, int(interval_hours or 150)),
+        scan_interval_hours=int(interval_hours),
         default_volume_percent=clamp_percent(raw.get("default_volume_percent", 20)),
         show_date=bool(raw.get("show_date", True)),
         show_size=bool(raw.get("show_size", True)),
@@ -54,6 +56,7 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload: dict[str, Any] = asdict(settings)
     payload["video_extensions"] = normalize_extensions(payload["video_extensions"])
     payload["default_volume_percent"] = clamp_percent(payload.get("default_volume_percent", 20))
+    payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))
     config_path(config_dir).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

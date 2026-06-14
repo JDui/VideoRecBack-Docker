@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import shutil
@@ -8,7 +9,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
+
+from app.video_types import detect_video_type
 
 
 class VideoToolError(RuntimeError):
@@ -20,6 +23,16 @@ class ProbeResult:
     duration_seconds: float | None
     width: int | None
     height: int | None
+
+
+@dataclass(slots=True)
+class ThumbnailValidation:
+    valid: bool
+    reason: str
+    width: int | None = None
+    height: int | None = None
+    brightness: float | None = None
+    contrast: float | None = None
 
 
 def require_tool(name: str) -> str:
@@ -119,29 +132,89 @@ def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float
 
 
 def generate_panorama_thumbnail(video_path: Path, output_path: Path, duration: float | None) -> None:
+    result = generate_panorama_thumbnail_debug(video_path, output_path, duration)
+    if not result["valid"]:
+        reasons = "; ".join(f"{item['timestamp']:.3f}s: {item['reason']}" for item in result["attempts"])
+        raise VideoToolError(f"Unable to generate valid panorama thumbnail: {reasons}")
+
+
+def generate_panorama_thumbnail_debug(video_path: Path, output_path: Path, duration: float | None) -> dict[str, object]:
     ffmpeg = require_tool("ffmpeg")
-    timestamp = midpoint(duration)
+    attempts: list[dict[str, object]] = []
     with tempfile.TemporaryDirectory() as tmp:
-        frame_path = Path(tmp) / "panorama-frame.png"
-        run_ffmpeg(
-            [
-                ffmpeg,
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-ss",
-                f"{timestamp:.3f}",
-                "-i",
-                str(video_path),
-                "-frames:v",
-                "1",
-                "-vf",
-                "scale=1440:720:force_original_aspect_ratio=increase,crop=1440:720",
-                "-y",
-                str(frame_path),
-            ]
-        )
-        render_panorama_thumbnail(frame_path, output_path)
+        for index, timestamp in enumerate(panorama_sample_times(duration)):
+            frame_path = Path(tmp) / f"panorama-frame-{index}.png"
+            attempt = {"timestamp": timestamp, "frame": str(frame_path), "output": str(output_path)}
+            try:
+                extract_panorama_frame(ffmpeg, video_path, frame_path, timestamp)
+                render_panorama_thumbnail(frame_path, output_path)
+                validation = validate_thumbnail(output_path)
+                attempt.update(
+                    {
+                        "width": validation.width,
+                        "height": validation.height,
+                        "brightness": validation.brightness,
+                        "contrast": validation.contrast,
+                        "valid": validation.valid,
+                        "reason": validation.reason,
+                    }
+                )
+                attempts.append(attempt)
+                if validation.valid:
+                    return {
+                        "input": str(video_path),
+                        "is_panorama": detect_video_type(str(video_path)) == "panorama",
+                        "timestamp": timestamp,
+                        "output": str(output_path),
+                        "width": validation.width,
+                        "height": validation.height,
+                        "brightness": validation.brightness,
+                        "contrast": validation.contrast,
+                        "valid": True,
+                        "reason": validation.reason,
+                        "attempts": attempts,
+                    }
+                output_path.unlink(missing_ok=True)
+            except (VideoToolError, OSError) as exc:
+                output_path.unlink(missing_ok=True)
+                attempt.update({"valid": False, "reason": str(exc)})
+                attempts.append(attempt)
+
+    last = attempts[-1] if attempts else {"reason": "no attempts"}
+    return {
+        "input": str(video_path),
+        "is_panorama": detect_video_type(str(video_path)) == "panorama",
+        "timestamp": None,
+        "output": str(output_path),
+        "width": None,
+        "height": None,
+        "brightness": None,
+        "contrast": None,
+        "valid": False,
+        "reason": last["reason"],
+        "attempts": attempts,
+    }
+
+
+def extract_panorama_frame(ffmpeg: str, video_path: Path, frame_path: Path, timestamp: float) -> None:
+    run_ffmpeg(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{timestamp:.3f}",
+            "-i",
+            str(video_path),
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=1440:720:force_original_aspect_ratio=increase,crop=1440:720",
+            "-y",
+            str(frame_path),
+        ]
+    )
 
 
 def render_panorama_thumbnail(frame_path: Path, output_path: Path) -> None:
@@ -158,6 +231,33 @@ def render_panorama_thumbnail(frame_path: Path, output_path: Path) -> None:
     ball = rasterize_fisheye_ball(frame, ball_size)
     background.alpha_composite(ball, ((canvas_size[0] - ball_size) // 2, (canvas_size[1] - ball_size) // 2))
     background.convert("RGB").save(output_path, format="WEBP", quality=72, method=4)
+
+
+def validate_thumbnail(path: Path, expected_size: tuple[int, int] = (960, 720)) -> ThumbnailValidation:
+    if not path.exists() or path.stat().st_size <= 0:
+        return ThumbnailValidation(False, "missing output")
+    try:
+        with Image.open(path) as image:
+            image.load()
+            width, height = image.size
+            if image.size != expected_size:
+                return ThumbnailValidation(False, "unexpected dimensions", width, height)
+            if image.mode in {"RGBA", "LA"}:
+                alpha = image.getchannel("A")
+                alpha_min, alpha_max = alpha.getextrema()
+                if alpha_max == 0 or alpha_min < 8:
+                    return ThumbnailValidation(False, "invalid transparency", width, height)
+            gray = ImageOps.grayscale(image.convert("RGB"))
+            stat = ImageStat.Stat(gray)
+            brightness = float(stat.mean[0])
+            contrast = float(stat.stddev[0])
+            if brightness < 3 or brightness > 252:
+                return ThumbnailValidation(False, "blank brightness", width, height, brightness, contrast)
+            if contrast < 1.0:
+                return ThumbnailValidation(False, "blank contrast", width, height, brightness, contrast)
+            return ThumbnailValidation(True, "ok", width, height, brightness, contrast)
+    except OSError as exc:
+        return ThumbnailValidation(False, f"decode failed: {exc}")
 
 
 def rasterize_fisheye_ball(frame: Image.Image, size: int) -> Image.Image:
@@ -243,6 +343,23 @@ def sample_times(duration: float | None) -> list[float]:
     ]
 
 
+def panorama_sample_times(duration: float | None) -> list[float]:
+    if not duration or duration <= 0:
+        return [2.0]
+    safe_duration = max(duration - 0.25, 0.1)
+    candidates = [midpoint(duration)] + [duration * fraction for fraction in (0.2, 0.35, 0.5, 0.65, 0.8)]
+    normalized: list[float] = []
+    seen: set[float] = set()
+    for timestamp in candidates:
+        safe_timestamp = max(0.1, min(timestamp, safe_duration))
+        key = round(safe_timestamp, 3)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(safe_timestamp)
+    return normalized
+
+
 def midpoint(duration: float | None) -> float:
     if not duration or duration <= 0:
         return 2.0
@@ -253,3 +370,20 @@ def run_ffmpeg(command: list[str]) -> None:
     result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=180)
     if result.returncode != 0:
         raise VideoToolError(result.stderr.strip() or "ffmpeg failed")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate and validate a panorama thumbnail.")
+    parser.add_argument("input", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--duration", type=float, default=None)
+    args = parser.parse_args()
+
+    result = generate_panorama_thumbnail_debug(args.input, args.output, args.duration)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if not result["valid"]:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

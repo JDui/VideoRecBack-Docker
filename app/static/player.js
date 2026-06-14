@@ -4,6 +4,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 let volumeControl = null;
 let volumeValue = null;
 let exposureControl = null;
+let exposureValue = null;
 let exposure = 1;
 
 const syncVolumeUi = () => {
@@ -38,6 +39,7 @@ const seekBy = (seconds) => {
 const syncExposureUi = () => {
   const percent = String(Math.round(exposure * 100));
   if (exposureControl) exposureControl.value = percent;
+  if (exposureValue) exposureValue.textContent = `${percent}%`;
   if (video && shell?.dataset.videoType !== "panorama") {
     video.style.filter = `brightness(${exposure})`;
   }
@@ -61,6 +63,7 @@ if (video) {
     });
   }
   exposureControl = document.querySelector("[data-exposure-control]");
+  exposureValue = document.querySelector("[data-exposure-value]");
   if (exposureControl) {
     setExposure(Number(exposureControl.value) / 100);
     exposureControl.addEventListener("input", () => {
@@ -69,6 +72,7 @@ if (video) {
   }
 
   const speedSlider = document.querySelector("[data-speed-slider]");
+  const speedValue = document.querySelector("[data-speed-value]");
   if (speedSlider) {
     const speedValues = (speedSlider.dataset.speedValues || "0.5,1,1.5,2,4")
       .split(",")
@@ -79,6 +83,7 @@ if (video) {
       const nextRate = speedValues[index] || 1;
       speedSlider.value = String(index);
       speedSlider.style.setProperty("--speed-index", String(index));
+      if (speedValue) speedValue.textContent = `${nextRate}×`;
       if (video.playbackRate !== nextRate) {
         video.playbackRate = nextRate;
         video.defaultPlaybackRate = nextRate;
@@ -95,10 +100,22 @@ if (shell?.dataset.videoType === "panorama" && video) {
     initPanorama().catch(() => {
       video.classList.remove("hidden-video");
       video.controls = true;
-      document.querySelector(".pano-hint")?.replaceChildren("全景渲染加载失败，已切换为普通播放");
+      const error = document.createElement("div");
+      error.className = "pano-error";
+      error.textContent = "全景渲染加载失败，已切换为普通播放";
+      document.querySelector(".player-stage")?.append(error);
     });
   });
 }
+
+document.querySelector("[data-player-close]")?.addEventListener("click", () => {
+  const referrer = document.referrer ? new URL(document.referrer) : null;
+  if (referrer && referrer.origin === window.location.origin && window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.assign("/");
+  }
+});
 
 async function initPanorama() {
   const canvas = document.getElementById("panoramaCanvas");

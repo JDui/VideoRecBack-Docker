@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from app.thumbnails import VideoToolError, generate_thumbnail, probe_video
 from app.video_types import detect_video_type
 
 THUMBNAIL_VERSION = 7
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -19,6 +21,7 @@ class ScanSummary:
     thumbnails: int = 0
     errors: int = 0
     deleted: int = 0
+    skipped: int = 0
 
 
 class Scanner:
@@ -34,6 +37,14 @@ class Scanner:
     async def scan_path(self, settings: Settings, target: str | Path, action: str = "upsert") -> ScanSummary:
         async with self._lock:
             return await asyncio.to_thread(self._scan_path_sync, settings, Path(target), action)
+
+    async def scan_file(self, settings: Settings, target: str | Path, action: str = "upsert") -> ScanSummary:
+        async with self._lock:
+            return await asyncio.to_thread(self._scan_file_sync, settings, Path(target), action)
+
+    async def scan_folder(self, settings: Settings, target: str | Path, action: str = "upsert") -> ScanSummary:
+        async with self._lock:
+            return await asyncio.to_thread(self._scan_folder_sync, settings, Path(target), action)
 
     async def enqueue(self, target: str | Path, action: str = "upsert") -> None:
         clean_action = action if action in {"upsert", "delete"} else "upsert"
@@ -69,27 +80,74 @@ class Scanner:
         return summary
 
     def _scan_path_sync(self, settings: Settings, target: Path, action: str = "upsert") -> ScanSummary:
+        root = Path(settings.video_root)
+        target = Path(target)
+        target = normalize_target(root, target)
+        if target.exists() and target.is_dir():
+            return self._scan_folder_sync(settings, target, action)
+        return self._scan_file_sync(settings, target, action)
+
+    def _scan_file_sync(self, settings: Settings, target: Path, action: str = "upsert") -> ScanSummary:
         summary = ScanSummary()
         root = Path(settings.video_root)
-        target = normalize_target(root, target)
+        target = Path(target)
+        target = validate_target_in_root(root, target)
+        LOGGER.info("Scanning single file only: %s; no full scan will run.", target)
         if action == "delete" or not target.exists():
             summary.deleted = self._mark_target_missing(target)
             return summary
 
         extensions = {ext.lower() for ext in settings.video_extensions}
-        if target.is_file():
-            if target.suffix.lower() not in extensions:
-                return summary
-            summary.seen = 1
-            summary.indexed = self._upsert_video(target, root)
+        if not target.is_file() or target.suffix.lower() not in extensions:
+            summary.skipped = 1
+            LOGGER.info("Skipped single-file scan for %s; unsupported extension or not a file.", target)
             return summary
 
-        if target.is_dir():
-            for path in target.rglob("*"):
-                if not path.is_file() or path.suffix.lower() not in extensions:
-                    continue
-                summary.seen += 1
-                summary.indexed += self._upsert_video(path, root)
+        summary.seen = 1
+        summary.indexed = self._upsert_video(target, root)
+        LOGGER.info(
+            "Single-file scan complete: seen=%s indexed=%s skipped=%s deleted=%s.",
+            summary.seen,
+            summary.indexed,
+            summary.skipped,
+            summary.deleted,
+        )
+        return summary
+
+    def _scan_folder_sync(self, settings: Settings, target: Path, action: str = "upsert") -> ScanSummary:
+        summary = ScanSummary()
+        root = Path(settings.video_root)
+        target = Path(target)
+        target = validate_target_in_root(root, target)
+        LOGGER.info("Scanning folder only: %s; siblings and root will not be scanned.", target)
+        if action == "delete" or not target.exists():
+            summary.deleted = self._mark_target_missing(target)
+            LOGGER.info("Folder scan marked missing: target=%s deleted=%s.", target, summary.deleted)
+            return summary
+
+        if not target.is_dir():
+            summary.skipped = 1
+            return summary
+
+        extensions = {ext.lower() for ext in settings.video_extensions}
+        seen_paths: set[str] = set()
+        for path in target.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in extensions:
+                summary.skipped += 1
+                continue
+            summary.seen += 1
+            seen_paths.add(str(path))
+            summary.indexed += self._upsert_video(path, root)
+        summary.deleted = self._mark_missing_under_target(target, seen_paths)
+        LOGGER.info(
+            "Folder scan complete: target=%s seen=%s indexed=%s skipped=%s missing=%s errors=%s.",
+            target,
+            summary.seen,
+            summary.indexed,
+            summary.skipped,
+            summary.deleted,
+            summary.errors,
+        )
         return summary
 
     def _process_queue_sync(self, settings: Settings, limit: int) -> ScanSummary:
@@ -119,6 +177,7 @@ class Scanner:
                 total.thumbnails += summary.thumbnails
                 total.errors += summary.errors
                 total.deleted += summary.deleted
+                total.skipped += summary.skipped
                 with self.db.connect() as conn:
                     conn.execute(
                         "UPDATE scan_queue SET status = 'done', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -323,6 +382,29 @@ class Scanner:
                 )
         return len(rows)
 
+    def _mark_missing_under_target(self, target: Path, seen_paths: set[str]) -> int:
+        target_text = str(target)
+        prefix = f"{target_text.rstrip('/')}/"
+        changed = 0
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path
+                FROM videos
+                WHERE missing = 0 AND (path = ? OR path LIKE ?)
+                """,
+                (target_text, f"{prefix}%"),
+            ).fetchall()
+            for row in rows:
+                if row["path"] in seen_paths:
+                    continue
+                conn.execute(
+                    "UPDATE videos SET missing = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (row["id"],),
+                )
+                changed += 1
+        return changed
+
     def _mark_missing(self, seen_paths: set[str]) -> None:
         with self.db.connect() as conn:
             rows = conn.execute("SELECT id, path FROM videos WHERE missing = 0").fetchall()
@@ -357,3 +439,14 @@ def normalize_target(root: Path, target: Path) -> Path:
     if target.is_absolute():
         return target
     return root / target
+
+
+def validate_target_in_root(root: Path, target: Path) -> Path:
+    root_resolved = root.resolve()
+    target = normalize_target(root_resolved, target)
+    target_resolved = target.resolve() if target.exists() else target.resolve(strict=False)
+    try:
+        target_resolved.relative_to(root_resolved)
+    except ValueError as exc:
+        raise VideoToolError(f"Scan target is outside video root: {target_resolved}") from exc
+    return target_resolved

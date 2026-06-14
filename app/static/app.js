@@ -5,25 +5,12 @@ const frame = document.querySelector("[data-player-frame]");
 const closePlayer = document.querySelector("[data-close-player]");
 const resizer = document.querySelector("[data-resizer]");
 const previewSize = document.querySelector("[data-preview-size]");
-const themeToggle = document.querySelector("[data-theme-toggle]");
 const timelineLabelForm = document.querySelector("[data-timeline-label-form]");
 const libraryPane = document.querySelector(".library-pane");
 const timelineRail = document.querySelector(".timeline-rail");
 const timelineCurrent = document.querySelector("[data-timeline-current]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
-
-const setTheme = (theme) => {
-  document.documentElement.dataset.theme = theme;
-  if (themeToggle) themeToggle.textContent = theme === "dark" ? "暗" : "明";
-};
-
-setTheme(localStorage.getItem("videorecback-theme") || "light");
-themeToggle?.addEventListener("click", () => {
-  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  setTheme(next);
-  localStorage.setItem("videorecback-theme", next);
-});
 
 if (previewSize) {
   const savedSize = localStorage.getItem("videorecback-card-size") || previewSize.value;

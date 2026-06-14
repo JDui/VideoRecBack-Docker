@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import time
@@ -22,6 +23,7 @@ from app.scanner import Scanner
 
 
 BASE_DIR = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -99,7 +101,7 @@ def create_app() -> FastAPI:
         settings = Settings(
             site_title=site_title.strip() or "视频归档",
             video_root=video_root.strip() or "/media",
-            scan_interval_hours=max(1, scan_interval_hours),
+            scan_interval_hours=int(scan_interval_hours),
             default_volume_percent=clamp_percent(default_volume_percent),
             show_date=show_date == "on",
             show_size=show_size == "on",
@@ -134,6 +136,7 @@ def create_app() -> FastAPI:
             "seen": summary.seen,
             "indexed": summary.indexed,
             "deleted": summary.deleted,
+            "skipped": summary.skipped,
             "errors": summary.errors,
         }
 
@@ -228,6 +231,7 @@ def create_app() -> FastAPI:
                 """,
                 (video_type, video_id),
             )
+        LOGGER.info("Video %s type changed to %s; rebuilding only this thumbnail, no full scan.", video_id, video_type)
         await asyncio.to_thread(scanner.rebuild_video_thumbnail, video_id, video_type)
         return RedirectResponse(f"/video/{video_id}", status_code=303)
 
@@ -261,14 +265,25 @@ def create_app() -> FastAPI:
 
 
 async def background_maintenance(app: FastAPI) -> None:
-    last_full_scan = time.monotonic()
+    auto_scan_disabled_logged = False
     while True:
         settings = load_settings(app.state.config_dir)
         await app.state.scanner.process_queue(settings)
-        if time.monotonic() - last_full_scan >= settings.scan_interval_hours * 3600:
-            await app.state.scanner.scan(settings)
-            last_full_scan = time.monotonic()
-        await asyncio.sleep(60)
+        if settings.scan_interval_hours <= 0:
+            if not auto_scan_disabled_logged:
+                LOGGER.info("Automatic full scan is disabled; interval=%s, no root scan will run.", settings.scan_interval_hours)
+                auto_scan_disabled_logged = True
+            await asyncio.sleep(300)
+            continue
+
+        auto_scan_disabled_logged = False
+        await asyncio.sleep(settings.scan_interval_hours * 3600)
+        settings = load_settings(app.state.config_dir)
+        if settings.scan_interval_hours <= 0:
+            LOGGER.info("Automatic full scan was disabled before scheduled run; skipping root scan.")
+            continue
+        LOGGER.info("Running scheduled full scan for root %s.", settings.video_root)
+        await app.state.scanner.scan(settings)
 
 
 def sync_settings_to_db(db: Database, settings: Settings) -> None:

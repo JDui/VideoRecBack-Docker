@@ -1,49 +1,53 @@
 {% extends "base.html" %}
 {% block title %}播放 {{ video.name }} - {{ settings.site_title }}{% endblock %}
 {% block body_class %}player-page {% if embed %}player-page--embed{% endif %}{% endblock %}
-{% block chrome %}{% if not embed %}{{ super() }}{% endif %}{% endblock %}
+{% block chrome %}{% endblock %}
 {% block content %}
-  {% if not embed %}
-    <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
-  {% endif %}
   <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-default-volume="{{ settings.default_volume_percent / 100 }}">
     {% if not embed %}
-      <div class="player-heading">
-        <h1>播放：{{ video.name }}</h1>
-        <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
+      <div class="player-toolbar">
+        <h1 title="播放：{{ video.name }}">播放：{{ video.name[:12] }}{% if video.name|length > 12 %}…{% endif %}</h1>
+        <div class="player-toolbar-actions">
+          <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
+          <button class="nav-button secondary" type="button" data-player-close>关闭</button>
+        </div>
       </div>
     {% endif %}
     <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
       {% if video.type == "panorama" %}
         <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
         <video id="videoPlayer" class="source-video hidden-video" playsinline preload="auto" src="/media/{{ video.id }}"></video>
-        <div class="pano-hint">拖动或双指滑动切换视角，滚轮或双指缩放视野，方向键和空格控制播放</div>
       {% else %}
         <video id="videoPlayer" class="player" controls autoplay playsinline preload="auto" src="/media/{{ video.id }}"></video>
       {% endif %}
     </div>
     <div class="player-controls">
-      <label class="speed-strip" aria-label="播放倍速">
-        <input type="range" min="0" max="4" step="1" value="1" data-speed-slider data-speed-values="0.5,1,1.5,2,4">
-        <span class="speed-ghost" aria-hidden="true">
-          <span>0.5×</span>
-          <span>1×</span>
-          <span>1.5×</span>
-          <span>2×</span>
-          <span>4×</span>
+      <label class="control-row speed-strip" aria-label="播放倍速">
+        <span class="control-label">倍速</span>
+        <span class="control-field">
+          <input type="range" min="0" max="4" step="1" value="1" data-speed-slider data-speed-values="0.5,1,1.5,2,4">
+          <span class="speed-ghost" aria-hidden="true">
+            <span>0.5×</span>
+            <span>1×</span>
+            <span>1.5×</span>
+            <span>2×</span>
+            <span>4×</span>
+          </span>
         </span>
+        <span class="control-value" data-speed-value>1×</span>
       </label>
-      <div class="player-slider-stack">
-        <label class="exposure-strip" aria-label="曝光">
-          <input type="range" min="50" max="150" value="100" data-exposure-control>
+      <label class="control-row exposure-strip" aria-label="曝光">
+        <span class="control-label">曝光</span>
+        <span class="control-field"><input type="range" min="50" max="150" value="100" data-exposure-control></span>
+        <span class="control-value" data-exposure-value>100%</span>
+      </label>
+      {% if video.type == "panorama" %}
+        <label class="control-row volume-strip" aria-label="音量">
+          <span class="control-label">音量</span>
+          <span class="control-field"><input type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" data-volume-control></span>
+          <span class="control-value" data-volume-value>{{ settings.default_volume_percent }}%</span>
         </label>
-        {% if video.type == "panorama" %}
-          <label class="volume-strip" aria-label="音量">
-            <input type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" data-volume-control>
-            <span data-volume-value>{{ settings.default_volume_percent }}%</span>
-          </label>
-        {% endif %}
-      </div>
+      {% endif %}
     </div>
   </section>
 {% endblock %}
