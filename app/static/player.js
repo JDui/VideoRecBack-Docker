@@ -68,20 +68,25 @@ if (video) {
     });
   }
 
-  let speedTimer = null;
-  for (const button of document.querySelectorAll("[data-speed]")) {
-    button.addEventListener("click", () => {
-      document.querySelectorAll("[data-speed]").forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
-      window.clearTimeout(speedTimer);
-      speedTimer = window.setTimeout(() => {
-        const nextRate = Number(button.dataset.speed);
-        if (video.playbackRate !== nextRate) {
-          video.playbackRate = nextRate;
-          video.defaultPlaybackRate = nextRate;
-        }
-      }, 80);
-    });
+  const speedSlider = document.querySelector("[data-speed-slider]");
+  if (speedSlider) {
+    const speedValues = (speedSlider.dataset.speedValues || "0.5,1,1.5,2,4")
+      .split(",")
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item) && item > 0);
+    const applySpeed = () => {
+      const index = clamp(Math.round(Number(speedSlider.value)), 0, speedValues.length - 1);
+      const nextRate = speedValues[index] || 1;
+      speedSlider.value = String(index);
+      speedSlider.style.setProperty("--speed-index", String(index));
+      if (video.playbackRate !== nextRate) {
+        video.playbackRate = nextRate;
+        video.defaultPlaybackRate = nextRate;
+      }
+    };
+    applySpeed();
+    speedSlider.addEventListener("input", applySpeed);
+    speedSlider.addEventListener("change", applySpeed);
   }
 }
 

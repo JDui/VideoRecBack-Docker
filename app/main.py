@@ -405,7 +405,7 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
                     "count": quarters.get((year, quarter), 0),
                     "labels": labels.get((year, quarter), []),
                 }
-                for quarter in range(1, 5)
+                for quarter in range(4, 0, -1)
             ],
         }
         for year in years

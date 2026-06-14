@@ -34,19 +34,19 @@ def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):
         {
             "year": 2026,
             "quarters": [
-                {"year": 2026, "quarter": 1, "label": "Q1", "count": 2, "labels": []},
-                {"year": 2026, "quarter": 2, "label": "Q2", "count": 0, "labels": []},
-                {"year": 2026, "quarter": 3, "label": "Q3", "count": 0, "labels": []},
                 {"year": 2026, "quarter": 4, "label": "Q4", "count": 0, "labels": []},
+                {"year": 2026, "quarter": 3, "label": "Q3", "count": 0, "labels": []},
+                {"year": 2026, "quarter": 2, "label": "Q2", "count": 0, "labels": []},
+                {"year": 2026, "quarter": 1, "label": "Q1", "count": 2, "labels": []},
             ],
         },
         {
             "year": 2025,
             "quarters": [
-                {"year": 2025, "quarter": 1, "label": "Q1", "count": 0, "labels": []},
-                {"year": 2025, "quarter": 2, "label": "Q2", "count": 0, "labels": []},
-                {"year": 2025, "quarter": 3, "label": "Q3", "count": 0, "labels": []},
                 {"year": 2025, "quarter": 4, "label": "Q4", "count": 1, "labels": []},
+                {"year": 2025, "quarter": 3, "label": "Q3", "count": 0, "labels": []},
+                {"year": 2025, "quarter": 2, "label": "Q2", "count": 0, "labels": []},
+                {"year": 2025, "quarter": 1, "label": "Q1", "count": 0, "labels": []},
             ],
         },
     ]
@@ -58,7 +58,7 @@ def test_timeline_rail_attaches_labels(monkeypatch, tmp_path):
 
     rail = main.build_timeline_rail(rows, {(2026, 1): [{"label": "春节", "color": "#ff0000"}]})
 
-    assert rail[0]["quarters"][0]["labels"] == [{"label": "春节", "color": "#ff0000"}]
+    assert rail[0]["quarters"][-1]["labels"] == [{"label": "春节", "color": "#ff0000"}]
 
 
 def test_timeline_rail_fills_empty_quarters(monkeypatch, tmp_path):
@@ -75,14 +75,14 @@ def test_timeline_rail_fills_empty_quarters(monkeypatch, tmp_path):
         for year in rail
         for quarter in year["quarters"]
     ] == [
-        (2026, 1, 1),
-        (2026, 2, 0),
-        (2026, 3, 0),
         (2026, 4, 0),
-        (2025, 1, 0),
-        (2025, 2, 0),
-        (2025, 3, 1),
+        (2026, 3, 0),
+        (2026, 2, 0),
+        (2026, 1, 1),
         (2025, 4, 0),
+        (2025, 3, 1),
+        (2025, 2, 0),
+        (2025, 1, 0),
     ]
 
 
