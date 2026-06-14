@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ video.name }} - {{ settings.site_title }}{% endblock %}
+{% block content %}
+  <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
+  <section class="detail-shell">
+    <a class="detail-poster asset-card--{{ video.type }}" href="/video/{{ video.id }}/play">
+      {% if video.thumb_status == "ready" %}
+        <img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}">
+      {% else %}
+        <span class="poster-empty">{% if video.thumb_status == "error" %}封面生成失败{% else %}等待封面{% endif %}</span>
+      {% endif %}
+    </a>
+    <div class="detail-panel">
+      <span class="asset-type static">{% if video.type == "panorama" %}全景{% else %}平面{% endif %}</span>
+      <h1>{{ video.name }}</h1>
+      <dl class="meta-table">
+        <div><dt>日期</dt><dd>{{ video.mtime|date }}</dd></div>
+        <div><dt>大小</dt><dd>{{ video.size_bytes|size }}</dd></div>
+        <div><dt>时长</dt><dd>{{ video.duration_seconds|duration }}</dd></div>
+        <div><dt>画幅</dt><dd>{% if video.width and video.height %}{{ video.width }} × {{ video.height }}{% else %}未知{% endif %}</dd></div>
+        <div><dt>文件夹</dt><dd>{{ video.folder or "/" }}</dd></div>
+      </dl>
+      {% if video.thumb_error %}
+        <p class="error">{{ video.thumb_error }}</p>
+      {% endif %}
+      <p class="path-text">{{ video.path }}</p>
+      <form action="/video/{{ video.id }}/type" method="post" class="form">
+        <label>
+          视频类型
+          <select name="video_type">
+            <option value="flat" {% if video.type == "flat" %}selected{% endif %}>平面</option>
+            <option value="panorama" {% if video.type == "panorama" %}selected{% endif %}>全景</option>
+          </select>
+        </label>
+        <button type="submit">保存视频设置</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ settings.site_title if settings else "视频归档" }}{% endblock %}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    {% block head %}{% endblock %}
+  </head>
+  <body class="{% block body_class %}{% endblock %}">
+    {% block chrome %}
+      <header class="topbar">
+        <a class="brand" href="/">{{ settings.site_title if settings else "视频归档" }}</a>
+        <nav class="nav">
+          <a class="nav-link" href="/">时间线</a>
+          <form action="/scan" method="post">
+            <button class="nav-button" type="submit">扫描</button>
+          </form>
+          <a class="nav-button secondary" href="/settings">设置</a>
+        </nav>
+      </header>
+    {% endblock %}
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

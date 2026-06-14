@@ -1,0 +1,52 @@
+# VideoRecBack
+
+VideoRecBack 是一个面向 NAS 视频存档的容器化浏览器。它把设置存到 `/config`，把 SQLite 数据库和 webp 缩略图缓存存到 `/data`，视频目录通过 Docker volume 只读挂载到容器内路径。
+
+## 功能
+
+- 时间线首页，只读取数据库和缓存图，不遍历视频目录，左侧按年份和季度显示 Immich 风格视频数量横条；可右键季度横条添加彩色标签。
+- 首页使用置顶横向工具栏，时间线、文件夹、日历是三选一切换，筛选作为二级菜单打开。
+- 首页支持按类型、时长、画幅筛选，并可用滑条调节封面预览大小；日历视图默认从年视图进入。
+- 平面视频显示为 4:3 胶片卡片，封面是 4 个时间点合成的 1280x720 webp 四宫格。
+- 全景视频显示为 4:3 卡片内的球面预览，封面取 1/2 处并生成 720x720 webp 鱼眼预览。
+- 点击封面直接播放，右键或长按封面进入该视频设置。
+- 宽屏横屏下点击封面会在右侧展开内嵌播放器，并可拖动分隔条调整列表和播放器宽度比例；竖屏下点击封面跳转到播放页。
+- 播放页保持固定视口高度，有 S&Q 倍速控制，最高支持 4X；全景视频支持独立音量滑条、拖动、触控板双指滑动、触屏双指缩放和触控板缩放来控制视角与视野，双击全景播放器可全屏。
+- 首页支持明暗主题切换。
+- 设置页可调整页面标题、目标路径、按小时计的扫描间隔、默认播放音量、视频扩展名、日期/大小/时长显示项；默认播放音量会同步写入数据库。
+- 播放前不访问原视频文件；只有扫描任务和播放路由会读取视频目录。
+- 播放接口支持 HTTP Range，适合浏览器拖动进度条。
+
+## 构建镜像 tar
+
+```bash
+docker buildx build --platform linux/amd64 -t videorecback:0.1 --load .
+docker save -o videorecback-0.1-amd64.tar videorecback:0.1
+```
+
+## 运行
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -v /path/to/config:/config \
+  -v /path/to/data:/data \
+  -v /path/to/nas/videos:/media:ro \
+  videorecback:0.1
+```
+
+打开 `http://localhost:8080`，进入设置确认目标路径为 `/media`，然后点击扫描。
+
+## 全景视频识别
+
+默认按文件名识别全景视频，命中 `_360`、`-360`、` 360`、`.360`、`vr`、`equirect`、`panorama`、`全景` 时标记为全景。详情页可以手动切换平面或全景。
+
+## 本地开发
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+uvicorn app.main:app --reload
+```

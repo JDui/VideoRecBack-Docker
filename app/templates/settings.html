@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}设置 - {{ settings.site_title }}{% endblock %}
+{% block content %}
+  <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
+  <section class="settings-shell">
+    <div>
+      <p class="eyebrow">Preferences</p>
+      <h1>设置</h1>
+      <p class="muted">配置页面标题、扫描策略和时间线下方的元数据展示。</p>
+    </div>
+    <form class="form settings-form" action="/settings" method="post">
+      <label>
+        页面标题
+        <input name="site_title" type="text" value="{{ settings.site_title }}" required>
+      </label>
+      <label>
+        视频目标路径
+        <input name="video_root" type="text" value="{{ settings.video_root }}" required>
+      </label>
+      <label>
+        定期扫描间隔，小时
+        <input name="scan_interval_hours" type="number" min="1" value="{{ settings.scan_interval_hours }}" required>
+      </label>
+      <label>
+        默认播放音量，百分比
+        <input name="default_volume_percent" type="number" min="0" max="100" value="{{ settings.default_volume_percent }}" required>
+      </label>
+      <label>
+        视频扩展名
+        <input name="video_extensions" type="text" value="{{ settings.video_extensions|join(', ') }}" required>
+      </label>
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="show_date" {% if settings.show_date %}checked{% endif %}>显示日期</label>
+        <label class="check"><input type="checkbox" name="show_size" {% if settings.show_size %}checked{% endif %}>显示大小</label>
+        <label class="check"><input type="checkbox" name="show_duration" {% if settings.show_duration %}checked{% endif %}>显示时长</label>
+      </div>
+      <button type="submit">保存设置</button>
+    </form>
+  </section>
+{% endblock %}

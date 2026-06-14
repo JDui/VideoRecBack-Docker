@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}播放 {{ video.name }} - {{ settings.site_title }}{% endblock %}
+{% block body_class %}player-page {% if embed %}player-page--embed{% endif %}{% endblock %}
+{% block chrome %}{% if not embed %}{{ super() }}{% endif %}{% endblock %}
+{% block content %}
+  {% if not embed %}
+    <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
+  {% endif %}
+  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-default-volume="{{ settings.default_volume_percent / 100 }}">
+    <div class="player-heading">
+      <div>
+        <p class="eyebrow">{% if video.type == "panorama" %}Panorama Player{% else %}Video Player{% endif %}</p>
+        <h1>{{ video.name }}</h1>
+      </div>
+      <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
+    </div>
+    <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
+      {% if video.type == "panorama" %}
+        <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
+        <video id="videoPlayer" class="source-video hidden-video" playsinline preload="metadata" src="/media/{{ video.id }}"></video>
+        <div class="pano-hint">拖动或双指滑动切换视角，双指缩放视野</div>
+      {% else %}
+        <video id="videoPlayer" class="player" controls autoplay playsinline preload="auto" src="/media/{{ video.id }}"></video>
+      {% endif %}
+    </div>
+    <div class="player-controls">
+      <div class="speed-strip" aria-label="S&Q 倍速">
+        <span>S&amp;Q</span>
+        {% for speed in ["0.5", "0.75", "1", "1.25", "1.5", "2", "4"] %}
+          <button type="button" data-speed="{{ speed }}" {% if speed == "1" %}class="active"{% endif %}>{{ speed }}×</button>
+        {% endfor %}
+      </div>
+      {% if video.type == "panorama" %}
+        <label class="volume-strip">
+          <span>音量</span>
+          <input type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" data-volume-control>
+          <span data-volume-value>{{ settings.default_volume_percent }}%</span>
+        </label>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+  <script type="module" src="/static/player.js"></script>
+{% endblock %}

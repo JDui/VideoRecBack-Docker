@@ -1,0 +1,38 @@
+from app.db import Database
+
+
+def test_database_has_video_metadata_columns(tmp_path):
+    db = Database(tmp_path)
+    db.init()
+
+    with db.connect() as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(videos)").fetchall()}
+
+    assert {"relative_path", "folder", "width", "height", "aspect_ratio", "thumb_version"}.issubset(columns)
+
+
+def test_database_syncs_app_settings(tmp_path):
+    db = Database(tmp_path)
+    db.init()
+
+    db.sync_settings({"default_volume_percent": 20, "site_title": "视频归档"})
+    db.sync_settings({"default_volume_percent": 35})
+
+    with db.connect() as conn:
+        rows = {
+            row["key"]: row["value"]
+            for row in conn.execute("SELECT key, value FROM app_settings").fetchall()
+        }
+
+    assert rows["default_volume_percent"] == "35"
+    assert rows["site_title"] == "视频归档"
+
+
+def test_database_has_timeline_labels_table(tmp_path):
+    db = Database(tmp_path)
+    db.init()
+
+    with db.connect() as conn:
+        tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+
+    assert "timeline_labels" in tables

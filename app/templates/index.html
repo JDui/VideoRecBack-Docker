@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}{{ settings.site_title }}{% endblock %}
+{% block chrome %}{% endblock %}
+{% block content %}
+  {% set preview = videos[0] if videos else none %}
+  {% macro asset_card(video, compact=False) %}
+    <article class="asset-item {% if compact %}asset-item--compact{% endif %}">
+      <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-settings-url="/video/{{ video.id }}" aria-label="播放 {{ video.name }}">
+        {% if video.type == "panorama" and video.thumb_status == "ready" %}
+          <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp" alt=""></span>
+        {% endif %}
+        <span class="asset-thumb">
+          {% if video.thumb_status == "ready" %}
+            <img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}">
+          {% else %}
+            <span class="poster-empty">{% if video.thumb_status == "error" %}封面失败{% else %}生成中{% endif %}</span>
+          {% endif %}
+        </span>
+        {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
+        <span class="asset-overlay">
+          <strong>{{ video.name }}</strong>
+          <span>{% if video.width and video.height %}{{ video.width }}×{{ video.height }}{% endif %}</span>
+        </span>
+      </a>
+      <div class="asset-caption">
+        <strong title="{{ video.name }}">{{ video.name }}</strong>
+        <span>
+          {% if settings.show_date %}{{ video.mtime|date }}{% endif %}
+          {% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}
+          {% if settings.show_duration %}{% if settings.show_date or settings.show_size %} · {% endif %}{{ video.duration_seconds|duration }}{% endif %}
+        </span>
+      </div>
+    </article>
+  {% endmacro %}
+
+  {% macro cover_tile(item, kind) %}
+    <a class="folder-tile" href="{{ item.url if item.url is defined else '#' }}">
+      <span class="folder-cover">
+        {% if item.cover and item.cover.thumb_status == "ready" %}
+          <img src="/thumb/{{ item.cover.id }}.webp" alt="{{ item.label if item.label is defined else item.name }}">
+        {% endif %}
+      </span>
+      <span class="folder-info">
+        <strong>{{ item.label if item.label is defined else item.name }}</strong>
+        <span>{{ item.count }} 个视频</span>
+      </span>
+      <span class="folder-kind">{{ kind }}</span>
+    </a>
+  {% endmacro %}
+
+  <div class="app-shell">
+    <header class="library-topbar">
+      <div class="topbar-brand">
+        <strong>{{ settings.site_title }}</strong>
+        <span>{{ stats.total }} 个视频 · {{ stats.flat }} 平面 · {{ stats.panorama }} 全景</span>
+      </div>
+      <nav class="view-switch" aria-label="视图">
+        <a class="{% if filters.view == 'timeline' %}active{% endif %}" href="{{ view_urls.timeline }}">时间线</a>
+        <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}">文件夹</a>
+        <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}">日历</a>
+      </nav>
+      <label class="preview-size-control">
+        预览大小
+        <input type="range" min="132" max="280" step="4" value="176" data-preview-size>
+      </label>
+      <details class="filter-menu">
+        <summary>筛选</summary>
+        <form class="filterbar" method="get" action="/">
+          <input type="hidden" name="view" value="{{ filters.view }}">
+          {% if filters.view == "folders" and filters.folder %}<input type="hidden" name="folder" value="{{ filters.folder }}">{% endif %}
+          {% if filters.view == "calendar" %}<input type="hidden" name="calendar_zoom" value="{{ filters.calendar_zoom }}">{% endif %}
+          <label>
+            视频类型
+            <select name="type" onchange="this.form.submit()">
+              <option value="all" {% if filters.type == 'all' %}selected{% endif %}>全部</option>
+              <option value="flat" {% if filters.type == 'flat' %}selected{% endif %}>平面</option>
+              <option value="panorama" {% if filters.type == 'panorama' %}selected{% endif %}>全景</option>
+            </select>
+          </label>
+          <label>
+            视频时长
+            <select name="duration" onchange="this.form.submit()">
+              <option value="all" {% if filters.duration == 'all' %}selected{% endif %}>任意时长</option>
+              <option value="short" {% if filters.duration == 'short' %}selected{% endif %}>短于 1 分钟</option>
+              <option value="medium" {% if filters.duration == 'medium' %}selected{% endif %}>1 到 10 分钟</option>
+              <option value="long" {% if filters.duration == 'long' %}selected{% endif %}>长于 10 分钟</option>
+            </select>
+          </label>
+          <label>
+            宽高比
+            <select name="aspect" onchange="this.form.submit()">
+              <option value="all" {% if filters.aspect == 'all' %}selected{% endif %}>全部</option>
+              <option value="wide" {% if filters.aspect == 'wide' %}selected{% endif %}>横向</option>
+              <option value="vertical" {% if filters.aspect == 'vertical' %}selected{% endif %}>竖向</option>
+              <option value="square" {% if filters.aspect == 'square' %}selected{% endif %}>方形</option>
+            </select>
+          </label>
+          <button type="submit">应用</button>
+        </form>
+      </details>
+      <form class="topbar-scan" action="/scan" method="post"><button type="submit">扫描</button></form>
+      <a class="topbar-link" href="/settings">设置</a>
+      <button class="topbar-link theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">☀️</button>
+    </header>
+
+    <section class="library-pane">
+      <div class="library-head">
+        <div>
+          <p class="eyebrow">NAS Archive</p>
+          <h1>
+            {% if filters.view == "folders" %}文件夹{% elif filters.view == "calendar" %}日历{% else %}时间线{% endif %}
+          </h1>
+        </div>
+      </div>
+
+      {% if videos %}
+        {% if filters.view == "folders" %}
+          <section class="finder-view">
+            <nav class="breadcrumbs">
+              {% for crumb in folder_browser.breadcrumbs %}
+                <a href="{{ crumb.url }}">{{ crumb.label }}</a>
+              {% endfor %}
+            </nav>
+            <div class="folder-grid">
+              {% for folder in folder_browser.folders %}
+                {{ cover_tile(folder, "文件夹") }}
+              {% endfor %}
+            </div>
+            <div class="asset-grid">
+              {% for video in folder_browser.files %}{{ asset_card(video) }}{% endfor %}
+            </div>
+          </section>
+        {% elif filters.view == "calendar" %}
+          <section class="calendar-view">
+            <div class="calendar-zoom">
+              <a class="{% if calendar_model.zoom == 'year' %}active{% endif %}" href="{{ calendar_model.zoom_urls.year }}">年</a>
+              <a class="{% if calendar_model.zoom == 'month' %}active{% endif %}" href="{{ calendar_model.zoom_urls.month }}">月</a>
+              <a class="{% if calendar_model.zoom == 'day' %}active{% endif %}" href="{{ calendar_model.zoom_urls.day }}">日</a>
+            </div>
+            {% if calendar_model.zoom == "day" %}
+              {% for month in calendar_model.months %}
+                <section class="asset-section">
+                  <h2>{{ month.label }}</h2>
+                  {% for day in month.days %}
+                    <div class="day-row">
+                      <h3>{{ day.label }}</h3>
+                      <div class="asset-grid compact-grid">
+                        {% for video in day.videos %}{{ asset_card(video, True) }}{% endfor %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                </section>
+              {% endfor %}
+            {% else %}
+              <div class="calendar-aggregate-grid">
+                {% for item in calendar_model.groups %}
+                  {{ cover_tile(item, "日" if calendar_model.zoom == "month" else "月") }}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </section>
+        {% else %}
+          <section class="timeline-view">
+            <aside class="timeline-rail" aria-label="季度视频数量">
+              {% for mark in timeline_rail %}
+                <a class="timeline-mark" href="#timeline-{{ mark.year }}-q{{ mark.quarter }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" style="--video-count: {{ mark.count }}">
+                  <span class="timeline-mark-label">{{ mark.label }}</span>
+                  <span class="timeline-mark-bar"></span>
+                  {% for label in mark.labels %}
+                    <span class="timeline-tag" style="--tag-color: {{ label.color }}" title="{{ label.label }}"></span>
+                  {% endfor %}
+                </a>
+              {% endfor %}
+            </aside>
+            <div class="section-list">
+              {% for group in timeline_groups %}
+                <section class="asset-section" id="timeline-{{ group.year }}-q{{ group.quarter }}">
+                  <h2>{{ group.label }}</h2>
+                  <div class="asset-grid">
+                    {% for video in group.videos %}{{ asset_card(video) }}{% endfor %}
+                  </div>
+                </section>
+              {% endfor %}
+            </div>
+          </section>
+        {% endif %}
+      {% else %}
+        <section class="empty">没有匹配的视频。可以调整筛选条件，或确认设置里的目标路径后点击扫描。</section>
+      {% endif %}
+    </section>
+
+    <button class="pane-resizer" type="button" aria-label="调整播放器宽度" data-resizer></button>
+    <aside class="preview-pane" data-inline-player>
+      <div class="inline-player-head">
+        <strong>播放</strong>
+        <button type="button" data-close-player>关闭</button>
+      </div>
+      <iframe title="内嵌播放器" data-player-frame></iframe>
+    </aside>
+  </div>
+  <form class="timeline-label-popover" action="/timeline-labels" method="post" data-timeline-label-form hidden>
+    <input type="hidden" name="year" data-label-year>
+    <input type="hidden" name="quarter" data-label-quarter>
+    <label>
+      时间标签
+      <input name="label" type="text" maxlength="80" required data-label-text>
+    </label>
+    <label>
+      颜色
+      <input name="color" type="color" value="#16a394">
+    </label>
+    <button type="submit">添加</button>
+  </form>
+{% endblock %}
+{% block scripts %}
+  <script src="/static/app.js" defer></script>
+{% endblock %}
