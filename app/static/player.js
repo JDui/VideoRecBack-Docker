@@ -3,6 +3,9 @@ const shell = document.querySelector(".player-shell");
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 let volumeControl = null;
 let volumeValue = null;
+let exposureControl = null;
+let exposureValue = null;
+let exposure = 1;
 
 const syncVolumeUi = () => {
   if (!video || !volumeControl) return;
@@ -33,6 +36,20 @@ const seekBy = (seconds) => {
   video.currentTime = clamp(video.currentTime + seconds, 0, duration);
 };
 
+const syncExposureUi = () => {
+  const percent = String(Math.round(exposure * 100));
+  if (exposureControl) exposureControl.value = percent;
+  if (exposureValue) exposureValue.textContent = `${percent}%`;
+  if (video && shell?.dataset.videoType !== "panorama") {
+    video.style.filter = `brightness(${exposure})`;
+  }
+};
+
+const setExposure = (nextExposure) => {
+  exposure = clamp(nextExposure, 0.5, 1.5);
+  syncExposureUi();
+};
+
 if (video) {
   const configuredVolume = Number(shell?.dataset.defaultVolume ?? 0.2);
   video.volume = clamp(Number.isFinite(configuredVolume) ? configuredVolume : 0.2, 0, 1);
@@ -43,6 +60,14 @@ if (video) {
     syncVolumeUi();
     volumeControl.addEventListener("input", () => {
       setVideoVolume(Number(volumeControl.value) / 100);
+    });
+  }
+  exposureControl = document.querySelector("[data-exposure-control]");
+  exposureValue = document.querySelector("[data-exposure-value]");
+  if (exposureControl) {
+    setExposure(Number(exposureControl.value) / 100);
+    exposureControl.addEventListener("input", () => {
+      setExposure(Number(exposureControl.value) / 100);
     });
   }
 
@@ -90,6 +115,7 @@ async function initPanorama() {
     pitch: gl.getUniformLocation(program, "uPitch"),
     fov: gl.getUniformLocation(program, "uFov"),
     aspect: gl.getUniformLocation(program, "uAspect"),
+    exposure: gl.getUniformLocation(program, "uExposure"),
     texture: gl.getUniformLocation(program, "uTexture"),
   };
 
@@ -285,6 +311,7 @@ async function initPanorama() {
     gl.uniform1f(uniforms.pitch, pitch);
     gl.uniform1f(uniforms.fov, fov * Math.PI / 180);
     gl.uniform1f(uniforms.aspect, aspect);
+    gl.uniform1f(uniforms.exposure, exposure);
     gl.uniform1i(uniforms.texture, 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     requestAnimationFrame(render);
@@ -333,6 +360,7 @@ uniform float uYaw;
 uniform float uPitch;
 uniform float uFov;
 uniform float uAspect;
+uniform float uExposure;
 varying vec2 vUv;
 
 const float PI = 3.141592653589793;
@@ -357,7 +385,8 @@ void main() {
 
   float lon = atan(direction.x, -direction.z);
   float lat = asin(clamp(direction.y, -1.0, 1.0));
-  vec2 uv = vec2(fract(0.5 + lon / (2.0 * PI)), clamp(0.5 - lat / PI, 0.0, 1.0));
-  gl_FragColor = texture2D(uTexture, uv);
+  vec2 uv = vec2(fract(0.5 - lon / (2.0 * PI)), clamp(0.5 - lat / PI, 0.0, 1.0));
+  vec4 color = texture2D(uTexture, uv);
+  gl_FragColor = vec4(color.rgb * uExposure, color.a);
 }
 `;

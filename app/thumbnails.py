@@ -131,7 +131,7 @@ def generate_panorama_thumbnail(video_path: Path, output_path: Path, duration: f
             "-frames:v",
             "1",
             "-vf",
-            "v360=input=equirect:output=fisheye:w=720:h=720:pitch=-90:h_fov=180:v_fov=180,scale=720:720",
+            "v360=input=equirect:output=fisheye:w=720:h=720:h_fov=180:v_fov=180,hflip,scale=720:720",
             "-compression_level",
             "4",
             "-quality",

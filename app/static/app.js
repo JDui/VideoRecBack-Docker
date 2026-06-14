@@ -10,6 +10,8 @@ const timelineLabelForm = document.querySelector("[data-timeline-label-form]");
 const libraryPane = document.querySelector(".library-pane");
 const timelineRail = document.querySelector(".timeline-rail");
 const timelineCurrent = document.querySelector("[data-timeline-current]");
+const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
+const inlineSettings = document.querySelector("[data-inline-settings]");
 
 const setTheme = (theme) => {
   document.documentElement.dataset.theme = theme;
@@ -52,6 +54,13 @@ for (const card of document.querySelectorAll("[data-settings-url]")) {
     event.preventDefault();
     shell.classList.add("player-open");
     frame.src = `${card.href}?embed=1`;
+    if (inlinePlayerTitle) {
+      inlinePlayerTitle.textContent = card.getAttribute("aria-label")?.replace(/^播放\s*/, "") || "";
+    }
+    if (inlineSettings) {
+      inlineSettings.href = card.dataset.settingsUrl || "#";
+      inlineSettings.hidden = !card.dataset.settingsUrl;
+    }
   });
   card.addEventListener("touchstart", () => {
     longPressed = false;
@@ -71,6 +80,8 @@ for (const card of document.querySelectorAll("[data-settings-url]")) {
 closePlayer?.addEventListener("click", () => {
   shell?.classList.remove("player-open");
   if (frame) frame.src = "about:blank";
+  if (inlinePlayerTitle) inlinePlayerTitle.textContent = "";
+  if (inlineSettings) inlineSettings.hidden = true;
 });
 
 if (resizer && shell) {
@@ -136,9 +147,11 @@ if (timelineRail && timelineCurrent && libraryPane) {
 
     const mark = markById.get(activeSection.id);
     if (!mark) return;
+    const railRect = timelineRail.getBoundingClientRect();
+    const markRect = mark.getBoundingClientRect();
     timelineRail.style.setProperty(
       "--timeline-current-top",
-      `${mark.offsetTop + mark.offsetHeight / 2}px`
+      `${markRect.top - railRect.top + markRect.height / 2}px`
     );
     timelineCurrent.classList.add("is-visible");
   };

@@ -9,7 +9,7 @@ from app.db import Database
 from app.thumbnails import VideoToolError, generate_thumbnail, probe_video
 from app.video_types import detect_video_type
 
-THUMBNAIL_VERSION = 3
+THUMBNAIL_VERSION = 4
 
 
 @dataclass(slots=True)

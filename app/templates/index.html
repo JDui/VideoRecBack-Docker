@@ -105,15 +105,6 @@
     </header>
 
     <section class="library-pane">
-      <div class="library-head">
-        <div>
-          <p class="eyebrow">NAS Archive</p>
-          <h1>
-            {% if filters.view == "folders" %}文件夹{% elif filters.view == "calendar" %}日历{% else %}时间线{% endif %}
-          </h1>
-        </div>
-      </div>
-
       {% if videos %}
         {% if filters.view == "folders" %}
           <section class="finder-view">
@@ -162,16 +153,23 @@
           </section>
         {% else %}
           <section class="timeline-view">
-            <aside class="timeline-rail" aria-label="季度视频数量" style="--rail-count: {{ timeline_rail|length }}">
+            <aside class="timeline-rail" aria-label="季度视频数量">
               <span class="timeline-current-marker" data-timeline-current aria-hidden="true"></span>
-              {% for mark in timeline_rail %}
-                <a class="timeline-mark {% if mark.count == 0 %}timeline-mark--empty{% endif %}" href="{% if mark.count %}#timeline-{{ mark.year }}-q{{ mark.quarter }}{% else %}#{% endif %}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.label }}，{{ mark.count }} 个视频">
-                  <span class="timeline-mark-label">{{ mark.label }}</span>
-                  <span class="timeline-mark-bar"></span>
-                  {% for label in mark.labels %}
-                    <span class="timeline-tag" style="--tag-color: {{ label.color }}" data-label="{{ label.label }}" aria-label="{{ label.label }}"></span>
-                  {% endfor %}
-                </a>
+              {% for year in timeline_rail %}
+                <div class="timeline-year-group">
+                  <span class="timeline-year-label">{{ year.year }}</span>
+                  <div class="timeline-quarter-list">
+                    {% for mark in year.quarters %}
+                      <a class="timeline-mark {% if mark.count == 0 %}timeline-mark--empty{% endif %}" href="{% if mark.count %}#timeline-{{ mark.year }}-q{{ mark.quarter }}{% else %}#{% endif %}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频">
+                        <span class="timeline-mark-label">{{ mark.label }}</span>
+                        <span class="timeline-mark-bar"></span>
+                        {% for label in mark.labels %}
+                          <span class="timeline-tag" style="--tag-color: {{ label.color }}" data-label="{{ label.label }}" aria-label="{{ label.label }}"></span>
+                        {% endfor %}
+                      </a>
+                    {% endfor %}
+                  </div>
+                </div>
               {% endfor %}
             </aside>
             <div class="section-list">
@@ -194,8 +192,11 @@
     <button class="pane-resizer" type="button" aria-label="调整播放器宽度" data-resizer></button>
     <aside class="preview-pane" data-inline-player>
       <div class="inline-player-head">
-        <strong>播放</strong>
-        <button type="button" data-close-player>关闭</button>
+        <strong>播放 <span data-inline-player-title></span></strong>
+        <div class="inline-player-actions">
+          <a class="nav-button secondary" href="#" data-inline-settings hidden>视频设置</a>
+          <button type="button" data-close-player>关闭</button>
+        </div>
       </div>
       <iframe title="内嵌播放器" data-player-frame></iframe>
     </aside>

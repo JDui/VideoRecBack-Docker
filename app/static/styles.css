@@ -361,23 +361,49 @@ select:focus {
   align-items: start;
   display: grid;
   gap: 18px;
-  grid-template-columns: 108px minmax(0, 1fr);
+  grid-template-columns: 118px minmax(0, 1fr);
   min-height: calc(100vh - 116px);
+  padding-top: 18px;
 }
 
 .timeline-rail {
   --timeline-top: 18px;
-  align-content: stretch;
   border-right: 1px solid var(--line);
   display: grid;
-  gap: 0;
-  grid-template-rows: repeat(var(--rail-count), minmax(18px, 1fr));
+  gap: 14px;
   height: calc(100vh - 138px);
   min-height: 360px;
   overflow: visible;
-  padding: 0 18px 0 0;
+  padding: 0 16px 0 0;
   position: sticky;
   top: var(--timeline-top);
+}
+
+.timeline-year-group {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  min-height: 104px;
+}
+
+.timeline-year-label {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  writing-mode: vertical-rl;
+}
+
+.timeline-quarter-list {
+  display: grid;
+  grid-template-rows: repeat(4, minmax(20px, 1fr));
 }
 
 .timeline-mark {
@@ -385,8 +411,8 @@ select:focus {
   border-radius: 6px;
   display: grid;
   gap: 4px;
-  grid-template-columns: 58px 26px minmax(8px, 1fr);
-  min-height: 18px;
+  grid-template-columns: 22px 26px minmax(8px, 1fr);
+  min-height: 20px;
   position: relative;
 }
 
@@ -481,7 +507,7 @@ select:focus {
   border-radius: 999px;
   box-shadow: 0 0 0 2px rgba(22, 163, 148, 0.22);
   height: 11px;
-  left: 66px;
+  left: 62px;
   opacity: 0;
   pointer-events: none;
   position: absolute;
@@ -807,7 +833,28 @@ select:focus {
 .inline-player-head {
   align-items: center;
   display: flex;
+  gap: 12px;
   justify-content: space-between;
+  min-width: 0;
+}
+
+.inline-player-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inline-player-head strong span {
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.inline-player-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .inline-player-head button {
@@ -837,6 +884,7 @@ select:focus {
 :root[data-theme="dark"] .folder-tile,
 :root[data-theme="dark"] .calendar-zoom,
 :root[data-theme="dark"] .inline-player-head button,
+:root[data-theme="dark"] .inline-player-actions .nav-button.secondary,
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] select {
   background: var(--panel);
@@ -1201,6 +1249,7 @@ select:focus {
 }
 
 .player-shell--embed {
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
 }
 
@@ -1297,7 +1346,8 @@ select:focus {
 }
 
 .speed-strip span,
-.volume-strip span {
+.volume-strip span,
+.exposure-strip span {
   color: var(--muted);
   font-weight: 900;
 }
@@ -1312,13 +1362,15 @@ select:focus {
   color: #ffffff;
 }
 
-.volume-strip {
+.volume-strip,
+.exposure-strip {
   align-items: center;
   display: flex;
   gap: 9px;
 }
 
-.volume-strip input {
+.volume-strip input,
+.exposure-strip input {
   accent-color: var(--accent);
   min-height: auto;
   padding: 0;
@@ -1378,6 +1430,11 @@ select:focus {
     overflow-x: auto;
     padding: 0 0 10px;
     position: static;
+  }
+
+  .timeline-year-group {
+    flex: 0 0 auto;
+    min-height: 0;
   }
 
   .timeline-current-marker {

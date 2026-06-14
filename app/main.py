@@ -316,24 +316,23 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
     if not quarters:
         return []
 
-    def quarter_index(year: int, quarter: int) -> int:
-        return year * 4 + quarter - 1
-
-    def from_quarter_index(index: int) -> tuple[int, int]:
-        return index // 4, index % 4 + 1
-
     labels = labels or {}
-    newest = max(quarter_index(year, quarter) for year, quarter in quarters)
-    oldest = min(quarter_index(year, quarter) for year, quarter in quarters)
+    years = sorted({year for year, _quarter in quarters}, reverse=True)
     return [
         {
             "year": year,
-            "quarter": quarter,
-            "label": f"{year} Q{quarter}",
-            "count": quarters.get((year, quarter), 0),
-            "labels": labels.get((year, quarter), []),
+            "quarters": [
+                {
+                    "year": year,
+                    "quarter": quarter,
+                    "label": f"Q{quarter}",
+                    "count": quarters.get((year, quarter), 0),
+                    "labels": labels.get((year, quarter), []),
+                }
+                for quarter in range(1, 5)
+            ],
         }
-        for year, quarter in (from_quarter_index(index) for index in range(newest, oldest - 1, -1))
+        for year in years
     ]
 
 

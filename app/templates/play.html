@@ -7,13 +7,12 @@
     <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
   {% endif %}
   <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-default-volume="{{ settings.default_volume_percent / 100 }}">
-    <div class="player-heading">
-      <div>
-        <p class="eyebrow">{% if video.type == "panorama" %}Panorama Player{% else %}Video Player{% endif %}</p>
+    {% if not embed %}
+      <div class="player-heading">
         <h1>{{ video.name }}</h1>
+        <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
       </div>
-      <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
-    </div>
+    {% endif %}
     <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
       {% if video.type == "panorama" %}
         <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
@@ -30,6 +29,11 @@
           <button type="button" data-speed="{{ speed }}" {% if speed == "1" %}class="active"{% endif %}>{{ speed }}×</button>
         {% endfor %}
       </div>
+      <label class="exposure-strip">
+        <span>曝光</span>
+        <input type="range" min="50" max="150" value="100" data-exposure-control>
+        <span data-exposure-value>100%</span>
+      </label>
       {% if video.type == "panorama" %}
         <label class="volume-strip">
           <span>音量</span>
