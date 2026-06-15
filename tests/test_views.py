@@ -202,9 +202,9 @@ def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):
 
     rail = main.build_timeline_rail(rows)
 
-    assert rail[0]["granularity"] == "day"
-    assert [(mark["label"], mark["count"]) for mark in rail[0]["marks"]] == [("3/20", 1), ("1/10", 1)]
-    assert [(mark["label"], mark["count"]) for mark in rail[1]["marks"]] == [("11/5", 1)]
+    day_marks = [mark for mark in rail[0]["marks"] if mark["kind"] == "day"]
+    assert [(mark["label"], mark["count"]) for mark in day_marks] == [("3/20", 1), ("1/10", 1)]
+    assert [(mark["label"], mark["count"]) for mark in rail[1]["marks"] if mark["kind"] == "day"] == [("11/5", 1)]
 
 
 def test_timeline_rail_attaches_labels(monkeypatch, tmp_path):
@@ -213,7 +213,8 @@ def test_timeline_rail_attaches_labels(monkeypatch, tmp_path):
 
     rail = main.build_timeline_rail(rows, {(2026, 1): [{"label": "春节", "color": "#ff0000"}]})
 
-    assert rail[0]["marks"][0]["labels"] == [{"label": "春节", "color": "#ff0000"}]
+    quarter = next(mark for mark in rail[0]["marks"] if mark["kind"] == "quarter")
+    assert quarter["labels"] == [{"label": "春节", "color": "#ff0000"}]
 
 
 def test_timeline_rail_skips_empty_periods(monkeypatch, tmp_path):
@@ -229,6 +230,7 @@ def test_timeline_rail_skips_empty_periods(monkeypatch, tmp_path):
         (year["year"], mark["label"], mark["count"])
         for year in rail
         for mark in year["marks"]
+        if mark["kind"] == "day"
     ] == [
         (2026, "1/10", 1),
         (2025, "7/8", 1),
@@ -245,7 +247,7 @@ def test_timeline_rail_clamps_old_videos_to_2010_with_real_target(monkeypatch, t
     rail = main.build_timeline_rail(rows)
 
     assert [year["year"] for year in rail] == [2026, 2010]
-    old_mark = rail[1]["marks"][0]
+    old_mark = next(mark for mark in rail[1]["marks"] if mark["kind"] == "day")
     assert old_mark["label"] == "2010前"
     assert old_mark["href"] == "#timeline-2010-01-01"
     assert old_mark["target"] == "#timeline-2006-05-06"

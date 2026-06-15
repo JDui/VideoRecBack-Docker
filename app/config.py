@@ -10,6 +10,7 @@ DEFAULT_VIDEO_EXTENSIONS = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"]
 DEFAULT_IGNORE_NAME_PATTERNS = ["Thumbs.db", "desktop.ini", "._*"]
 QUALITY_OPTIONS = ("original", "ultra", "low", "high")
 THUMBNAIL_RESOLUTION_OPTIONS = (480, 576, 720)
+HLS_ENCODER_OPTIONS = ("h264_qsv", "h264_vaapi", "libx264_ultrafast", "libx264_veryfast")
 
 
 @dataclass(slots=True)
@@ -21,6 +22,8 @@ class Settings:
     default_flat_quality: str = "original"
     default_panorama_quality: str = "original"
     thumbnail_resolution: int = 576
+    hls_encoder: str = "libx264_ultrafast"
+    hls_cache_max_mb: int = 4096
     stream_cache_retention_days: int = 7
     show_date: bool = True
     show_size: bool = True
@@ -57,6 +60,8 @@ def load_settings(config_dir: Path) -> Settings:
         default_flat_quality=normalize_quality(raw.get("default_flat_quality", legacy_quality)),
         default_panorama_quality=normalize_quality(raw.get("default_panorama_quality", legacy_quality)),
         thumbnail_resolution=normalize_thumbnail_resolution(raw.get("thumbnail_resolution", 576)),
+        hls_encoder=normalize_hls_encoder(raw.get("hls_encoder", "libx264_ultrafast")),
+        hls_cache_max_mb=normalize_hls_cache_max_mb(raw.get("hls_cache_max_mb", 4096)),
         stream_cache_retention_days=clamp_days(raw.get("stream_cache_retention_days", 7)),
         show_date=bool(raw.get("show_date", True)),
         show_size=bool(raw.get("show_size", True)),
@@ -78,6 +83,8 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload["default_flat_quality"] = normalize_quality(payload.get("default_flat_quality", legacy_quality))
     payload["default_panorama_quality"] = normalize_quality(payload.get("default_panorama_quality", legacy_quality))
     payload["thumbnail_resolution"] = normalize_thumbnail_resolution(payload.get("thumbnail_resolution", 576))
+    payload["hls_encoder"] = normalize_hls_encoder(payload.get("hls_encoder", "libx264_ultrafast"))
+    payload["hls_cache_max_mb"] = normalize_hls_cache_max_mb(payload.get("hls_cache_max_mb", 4096))
     payload["stream_cache_retention_days"] = clamp_days(payload.get("stream_cache_retention_days", 7))
     payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))
     config_path(config_dir).write_text(
@@ -113,6 +120,19 @@ def normalize_thumbnail_resolution(value: Any) -> int:
     except (TypeError, ValueError):
         number = 576
     return number if number in THUMBNAIL_RESOLUTION_OPTIONS else 576
+
+
+def normalize_hls_encoder(value: Any) -> str:
+    text = str(value or "libx264_ultrafast").strip()
+    return text if text in HLS_ENCODER_OPTIONS else "libx264_ultrafast"
+
+
+def normalize_hls_cache_max_mb(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = 4096
+    return max(256, min(102400, number))
 
 
 def normalize_extensions(value: Any) -> list[str]:

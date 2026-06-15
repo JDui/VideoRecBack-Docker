@@ -3,13 +3,18 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.media import (
+    HlsJob,
     STREAM_QUALITIES,
+    _HLS_JOBS,
     build_hls_command,
     cleanup_stream_cache,
     generate_stream_cache,
+    hls_job_key,
     parse_range,
+    record_hls_heartbeat,
     resolve_hls_playlist,
     resolve_stream_path,
+    stop_hls_transcode,
 )
 
 
@@ -98,13 +103,27 @@ def test_build_hls_command_starts_at_requested_time(tmp_path):
     assert str(output_dir / "segment-%05d.ts") in command
 
 
+def test_build_hls_command_can_use_fast_encoder_profiles(tmp_path):
+    source = tmp_path / "input.mp4"
+    output_dir = tmp_path / "hls"
+
+    qsv = build_hls_command(source, output_dir, STREAM_QUALITIES["high"], 0, "h264_qsv")
+    vaapi = build_hls_command(source, output_dir, STREAM_QUALITIES["high"], 0, "h264_vaapi")
+    cpu = build_hls_command(source, output_dir, STREAM_QUALITIES["high"], 0, "libx264_ultrafast")
+
+    assert qsv[qsv.index("-c:v") + 1] == "h264_qsv"
+    assert vaapi[vaapi.index("-c:v") + 1] == "h264_vaapi"
+    assert "-vaapi_device" in vaapi
+    assert cpu[cpu.index("-preset") + 1] == "ultrafast"
+
+
 def test_resolve_hls_playlist_waits_for_first_segment(monkeypatch, tmp_path):
     data_dir = tmp_path / "data"
     source = tmp_path / "video.mp4"
     source.write_bytes(b"source")
     video = {"id": 7, "path": str(source)}
 
-    def start_hls(source_path, output_dir, quality, start_at):
+    def start_hls(source_path, output_dir, quality, start_at, encoder="libx264_ultrafast"):
         segment = output_dir / "segment-00000.ts"
         segment.write_bytes(b"segment")
         (output_dir / "index.m3u8").write_text(
@@ -120,7 +139,7 @@ def test_resolve_hls_playlist_waits_for_first_segment(monkeypatch, tmp_path):
     assert playlist.parent.name.startswith("hls-7-low-12345-")
 
 
-def test_cleanup_stream_cache_deletes_old_files_only_when_due(tmp_path):
+def test_cleanup_stream_cache_uses_rolling_size_limit(tmp_path):
     cache_dir = tmp_path / "cache"
     stream_dir = cache_dir / "streams"
     stream_dir.mkdir(parents=True)
@@ -132,8 +151,8 @@ def test_cleanup_stream_cache_deletes_old_files_only_when_due(tmp_path):
     old_hls_dir.mkdir()
     (old_hls_dir / "segment-00000.ts").write_bytes(b"segment")
     now = 2_000_000.0
-    old_mtime = now - 3 * 86400
-    new_mtime = now - 3600
+    old_mtime = now - 300
+    new_mtime = now - 60
     old_file.touch()
     new_file.touch()
     old_hls_dir.touch()
@@ -141,11 +160,50 @@ def test_cleanup_stream_cache_deletes_old_files_only_when_due(tmp_path):
     os.utime(new_file, (new_mtime, new_mtime))
     os.utime(old_hls_dir, (old_mtime, old_mtime))
 
-    deleted = cleanup_stream_cache(cache_dir, 2, now=now)
-    second_deleted = cleanup_stream_cache(cache_dir, 2, now=now + 60)
+    deleted = cleanup_stream_cache(cache_dir, 256, now=now)
+    second_deleted = cleanup_stream_cache(cache_dir, 256, now=now + 60)
 
-    assert deleted == 2
+    assert deleted == 0
     assert second_deleted == 0
-    assert not old_file.exists()
-    assert not old_hls_dir.exists()
+    assert old_file.exists()
+    assert old_hls_dir.exists()
     assert new_file.exists()
+
+    old_file.write_bytes(b"x" * (260 * 1024 * 1024))
+    deleted = cleanup_stream_cache(cache_dir, 256, now=now + 120)
+    assert deleted >= 1
+    assert not old_file.exists()
+
+
+def test_hls_heartbeat_and_stop_control_running_job(tmp_path):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"source")
+    data_dir = tmp_path / "data"
+    video = {"id": 7, "path": str(source)}
+
+    class Process:
+        def __init__(self):
+            self.terminated = False
+
+        def poll(self):
+            return None if not self.terminated else 0
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            self.terminated = True
+
+    key = hls_job_key(video, data_dir, "low", 12345, "libx264_ultrafast")
+    process = Process()
+    _HLS_JOBS[key] = HlsJob(process, 1.0)
+
+    record_hls_heartbeat(video, data_dir, "low", 12345, "libx264_ultrafast")
+    assert _HLS_JOBS[key].last_seen > 1.0
+
+    stop_hls_transcode(video, data_dir, "low", 12345, "libx264_ultrafast")
+    assert key not in _HLS_JOBS
+    assert process.terminated is True

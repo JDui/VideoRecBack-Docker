@@ -22,6 +22,8 @@ from app.config import (
     load_settings,
     normalize_extensions,
     normalize_ignore_patterns,
+    normalize_hls_cache_max_mb,
+    normalize_hls_encoder,
     normalize_quality,
     normalize_thumbnail_resolution,
     save_settings,
@@ -30,10 +32,11 @@ from app.db import Database
 from app.formatting import format_date, format_duration, format_size
 from app.media import (
     build_range_response,
-    cleanup_stream_cache,
+    record_hls_heartbeat,
     resolve_hls_playlist,
     resolve_hls_segment,
     resolve_stream_path,
+    stop_hls_transcode,
 )
 from app.scanner import Scanner
 
@@ -120,7 +123,9 @@ def create_app() -> FastAPI:
         default_flat_quality: str = Form("original"),
         default_panorama_quality: str = Form("original"),
         thumbnail_resolution: int = Form(576),
-        stream_cache_retention_days: int = Form(...),
+        hls_encoder: str = Form("libx264_ultrafast"),
+        hls_cache_max_mb: int = Form(4096),
+        stream_cache_retention_days: int = Form(7),
         show_date: str | None = Form(None),
         show_size: str | None = Form(None),
         show_duration: str | None = Form(None),
@@ -136,6 +141,8 @@ def create_app() -> FastAPI:
             default_flat_quality=normalize_quality(default_flat_quality),
             default_panorama_quality=normalize_quality(default_panorama_quality),
             thumbnail_resolution=normalize_thumbnail_resolution(thumbnail_resolution),
+            hls_encoder=normalize_hls_encoder(hls_encoder),
+            hls_cache_max_mb=normalize_hls_cache_max_mb(hls_cache_max_mb),
             stream_cache_retention_days=clamp_days(stream_cache_retention_days),
             show_date=show_date == "on",
             show_size=show_size == "on",
@@ -313,7 +320,16 @@ def create_app() -> FastAPI:
     @app.get("/media/{video_id}/hls/{quality}/{start_ms}/index.m3u8")
     async def hls_playlist(video_id: int, quality: str, start_ms: int):
         video = get_video(db, video_id)
-        playlist = await asyncio.to_thread(resolve_hls_playlist, video, data_dir, quality, start_ms)
+        settings = load_settings(config_dir)
+        playlist = await asyncio.to_thread(
+            resolve_hls_playlist,
+            video,
+            data_dir,
+            quality,
+            start_ms,
+            settings.hls_encoder,
+            settings.hls_cache_max_mb,
+        )
         return FileResponse(
             playlist,
             media_type="application/vnd.apple.mpegurl",
@@ -323,8 +339,23 @@ def create_app() -> FastAPI:
     @app.get("/media/{video_id}/hls/{quality}/{start_ms}/{segment}")
     async def hls_segment(video_id: int, quality: str, start_ms: int, segment: str):
         video = get_video(db, video_id)
-        path = await asyncio.to_thread(resolve_hls_segment, video, data_dir, quality, start_ms, segment)
+        settings = load_settings(config_dir)
+        path = await asyncio.to_thread(resolve_hls_segment, video, data_dir, quality, start_ms, segment, settings.hls_encoder)
         return FileResponse(path, media_type="video/mp2t", headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.post("/media/{video_id}/hls/{quality}/{start_ms}/heartbeat")
+    async def hls_heartbeat(video_id: int, quality: str, start_ms: int):
+        video = get_video(db, video_id)
+        settings = load_settings(config_dir)
+        await asyncio.to_thread(record_hls_heartbeat, video, data_dir, quality, start_ms, settings.hls_encoder)
+        return {"ok": True}
+
+    @app.post("/media/{video_id}/hls/{quality}/{start_ms}/stop")
+    async def hls_stop(video_id: int, quality: str, start_ms: int):
+        video = get_video(db, video_id)
+        settings = load_settings(config_dir)
+        await asyncio.to_thread(stop_hls_transcode, video, data_dir, quality, start_ms, settings.hls_encoder)
+        return {"ok": True}
 
     @app.get("/thumb/{video_id}.webp")
     async def thumb(video_id: int):
@@ -342,11 +373,6 @@ async def background_maintenance(app: FastAPI) -> None:
     while True:
         settings = load_settings(app.state.config_dir)
         await app.state.scanner.process_queue(settings)
-        await asyncio.to_thread(
-            cleanup_stream_cache,
-            stream_cache_dir(app),
-            settings.stream_cache_retention_days,
-        )
         if settings.scan_interval_hours <= 0:
             if not auto_scan_disabled_logged:
                 LOGGER.info("Automatic full scan is disabled; interval=%s, no root scan will run.", settings.scan_interval_hours)
@@ -356,30 +382,17 @@ async def background_maintenance(app: FastAPI) -> None:
 
         auto_scan_disabled_logged = False
         remaining_sleep = settings.scan_interval_hours * 3600
-        cache_check_seconds = settings.stream_cache_retention_days * 86400
         while remaining_sleep > 0:
-            sleep_seconds = min(remaining_sleep, cache_check_seconds)
-            await asyncio.sleep(sleep_seconds)
-            remaining_sleep -= sleep_seconds
+            await asyncio.sleep(remaining_sleep)
+            remaining_sleep = 0
             settings = load_settings(app.state.config_dir)
-            await asyncio.to_thread(
-                cleanup_stream_cache,
-                stream_cache_dir(app),
-                settings.stream_cache_retention_days,
-            )
             if settings.scan_interval_hours <= 0:
                 LOGGER.info("Automatic full scan was disabled before scheduled run; skipping root scan.")
                 break
-            if remaining_sleep > 0:
-                await app.state.scanner.process_queue(settings)
         if settings.scan_interval_hours <= 0:
             continue
         LOGGER.info("Running scheduled full scan for root %s.", settings.video_root)
         await app.state.scanner.scan(settings)
-
-
-def stream_cache_dir(app: FastAPI) -> Path:
-    return Path(getattr(app.state, "data_dir", Path(app.state.config_dir).parent / "data")) / "cache"
 
 
 def is_scan_running(app: FastAPI) -> bool:
@@ -419,6 +432,8 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "default_flat_quality": settings.default_flat_quality,
             "default_panorama_quality": settings.default_panorama_quality,
             "thumbnail_resolution": settings.thumbnail_resolution,
+            "hls_encoder": settings.hls_encoder,
+            "hls_cache_max_mb": settings.hls_cache_max_mb,
             "stream_cache_retention_days": settings.stream_cache_retention_days,
             "show_date": int(settings.show_date),
             "show_size": int(settings.show_size),
@@ -589,85 +604,81 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
     if not quarters:
         return []
 
-    if len(day_counts) <= 48:
-        granularity = "day"
-    elif len(month_counts) <= 36:
-        granularity = "month"
-    elif len(quarters) <= 28:
-        granularity = "quarter"
-    else:
-        granularity = "half"
-
     years = sorted({year for year, _quarter in quarters} | {year for year, _half in halves}, reverse=True)
     result = []
     for year in years:
         marks = []
-        if granularity == "day":
-            keys = sorted((key for key in day_counts if key[0] == year), reverse=True)
-            for key in keys:
-                y, month, day = key
-                quarter = (month - 1) // 3 + 1
-                marks.append(
-                    {
-                        "year": y,
-                        "quarter": quarter,
-                        "period": f"{y}-{month:02d}-{day:02d}",
-                        "label": "2010前" if y == TIMELINE_MIN_YEAR and month == 1 and day == 1 else f"{month}/{day}",
-                        "count": day_counts[key],
-                        "labels": labels.get((y, quarter), []),
-                        "href": f"#timeline-{y}-{month:02d}-{day:02d}",
-                        "target": target("day", key, f"#timeline-{y}-{month:02d}-{day:02d}"),
-                    }
-                )
-        elif granularity == "month":
-            keys = sorted((key for key in month_counts if key[0] == year), reverse=True)
-            for key in keys:
-                y, month = key
-                quarter = (month - 1) // 3 + 1
-                marks.append(
-                    {
-                        "year": y,
-                        "quarter": quarter,
-                        "period": f"{y}-{month:02d}",
-                        "label": f"{month}月",
-                        "count": month_counts[key],
-                        "labels": labels.get((y, quarter), []),
-                        "href": f"#timeline-{y}-{month:02d}",
-                        "target": target("month", key, f"#timeline-{y}-{month:02d}"),
-                    }
-                )
-        elif granularity == "quarter":
-            keys = sorted((key for key in quarters if key[0] == year), reverse=True)
-            for y, quarter in keys:
-                marks.append(
-                    {
-                        "year": y,
-                        "quarter": quarter,
-                        "period": f"{y}-q{quarter}",
-                        "label": f"Q{quarter}",
-                        "count": quarters[(y, quarter)],
-                        "labels": labels.get((y, quarter), []),
-                        "href": f"#timeline-{y}-q{quarter}",
-                        "target": target("quarter", (y, quarter), f"#timeline-{y}-q{quarter}"),
-                    }
-                )
-        else:
-            keys = sorted((key for key in halves if key[0] == year), reverse=True)
-            for y, half in keys:
-                quarter = 3 if half == 2 else 1
-                marks.append(
-                    {
-                        "year": y,
-                        "quarter": quarter,
-                        "period": f"{y}-h{half}",
-                        "label": f"H{half}",
-                        "count": halves[(y, half)],
-                        "labels": [],
-                        "href": f"#timeline-{y}-h{half}",
-                        "target": target("half", (y, half), f"#timeline-{y}-h{half}"),
-                    }
-                )
-        result.append({"year": year, "granularity": granularity, "marks": marks, "quarters": marks})
+        for y, half in sorted((key for key in halves if key[0] == year), reverse=True):
+            quarter = 3 if half == 2 else 1
+            marks.append(
+                {
+                    "kind": "half",
+                    "year": y,
+                    "quarter": quarter,
+                    "month": 7 if half == 2 else 1,
+                    "day": 1,
+                    "period": f"{y}-h{half}",
+                    "label": f"H{half}",
+                    "count": halves[(y, half)],
+                    "labels": [],
+                    "href": f"#timeline-{y}-h{half}",
+                    "target": target("half", (y, half), f"#timeline-{y}-h{half}"),
+                }
+            )
+        for y, quarter in sorted((key for key in quarters if key[0] == year), reverse=True):
+            marks.append(
+                {
+                    "kind": "quarter",
+                    "year": y,
+                    "quarter": quarter,
+                    "month": (quarter - 1) * 3 + 1,
+                    "day": 1,
+                    "period": f"{y}-q{quarter}",
+                    "label": f"Q{quarter}",
+                    "count": quarters[(y, quarter)],
+                    "labels": labels.get((y, quarter), []),
+                    "href": f"#timeline-{y}-q{quarter}",
+                    "target": target("quarter", (y, quarter), f"#timeline-{y}-q{quarter}"),
+                }
+            )
+        for key in sorted((key for key in month_counts if key[0] == year), reverse=True):
+            y, month = key
+            quarter = (month - 1) // 3 + 1
+            marks.append(
+                {
+                    "kind": "month",
+                    "year": y,
+                    "quarter": quarter,
+                    "month": month,
+                    "day": 1,
+                    "period": f"{y}-{month:02d}",
+                    "label": f"{month}月",
+                    "count": month_counts[key],
+                    "labels": labels.get((y, quarter), []),
+                    "href": f"#timeline-{y}-{month:02d}",
+                    "target": target("month", key, f"#timeline-{y}-{month:02d}"),
+                }
+            )
+        for key in sorted((key for key in day_counts if key[0] == year), reverse=True):
+            y, month, day = key
+            quarter = (month - 1) // 3 + 1
+            marks.append(
+                {
+                    "kind": "day",
+                    "year": y,
+                    "quarter": quarter,
+                    "month": month,
+                    "day": day,
+                    "period": f"{y}-{month:02d}-{day:02d}",
+                    "label": "2010前" if y == TIMELINE_MIN_YEAR and month == 1 and day == 1 else f"{month}/{day}",
+                    "count": day_counts[key],
+                    "labels": labels.get((y, quarter), []),
+                    "href": f"#timeline-{y}-{month:02d}-{day:02d}",
+                    "target": target("day", key, f"#timeline-{y}-{month:02d}-{day:02d}"),
+                }
+            )
+        marks.sort(key=lambda item: (item["year"], item["month"], item["day"], {"day": 4, "month": 3, "quarter": 2, "half": 1}[item["kind"]]), reverse=True)
+        result.append({"year": year, "marks": marks, "quarters": [mark for mark in marks if mark["kind"] == "quarter"]})
     return result
 
 

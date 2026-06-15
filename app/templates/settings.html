@@ -52,8 +52,18 @@
         </select>
       </label>
       <label>
-        串流缓存保留和检查间隔，天
-        <input name="stream_cache_retention_days" type="number" min="1" max="365" value="{{ settings.stream_cache_retention_days }}" required>
+        HLS 转码编码器
+        <select name="hls_encoder">
+          <option value="h264_qsv" {% if settings.hls_encoder == 'h264_qsv' %}selected{% endif %}>h264_qsv（硬件优先，性能开销最低）</option>
+          <option value="h264_vaapi" {% if settings.hls_encoder == 'h264_vaapi' %}selected{% endif %}>h264_vaapi（Linux VAAPI 硬件）</option>
+          <option value="libx264_ultrafast" {% if settings.hls_encoder == 'libx264_ultrafast' %}selected{% endif %}>libx264 ultrafast（CPU 实时优先）</option>
+          <option value="libx264_veryfast" {% if settings.hls_encoder == 'libx264_veryfast' %}selected{% endif %}>libx264 veryfast（CPU 画质优先）</option>
+        </select>
+      </label>
+      <label>
+        HLS 最大缓存占用，MB
+        <input name="hls_cache_max_mb" type="number" min="256" max="102400" value="{{ settings.hls_cache_max_mb }}" required>
+        <input name="stream_cache_retention_days" type="hidden" value="{{ settings.stream_cache_retention_days }}">
       </label>
       <label>
         视频扩展名

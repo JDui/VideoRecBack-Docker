@@ -5,6 +5,8 @@ from app.config import (
     clamp_days,
     load_settings,
     normalize_quality,
+    normalize_hls_cache_max_mb,
+    normalize_hls_encoder,
     normalize_thumbnail_resolution,
     normalize_extensions,
     normalize_ignore_patterns,
@@ -36,6 +38,13 @@ def test_normalize_thumbnail_resolution_accepts_known_values():
     assert normalize_thumbnail_resolution("bad") == 576
 
 
+def test_normalize_hls_encoder_and_cache_limit():
+    assert normalize_hls_encoder("h264_qsv") == "h264_qsv"
+    assert normalize_hls_encoder("bad") == "libx264_ultrafast"
+    assert normalize_hls_cache_max_mb("128") == 256
+    assert normalize_hls_cache_max_mb("8192") == 8192
+
+
 def test_settings_round_trip(tmp_path: Path):
     settings = Settings(
         site_title="家庭视频",
@@ -45,6 +54,8 @@ def test_settings_round_trip(tmp_path: Path):
         default_flat_quality="ultra",
         default_panorama_quality="low",
         thumbnail_resolution=720,
+        hls_encoder="h264_qsv",
+        hls_cache_max_mb=8192,
         stream_cache_retention_days=9,
         show_date=False,
         show_size=True,
@@ -64,6 +75,8 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.default_flat_quality == "ultra"
     assert loaded.default_panorama_quality == "low"
     assert loaded.thumbnail_resolution == 720
+    assert loaded.hls_encoder == "h264_qsv"
+    assert loaded.hls_cache_max_mb == 8192
     assert loaded.stream_cache_retention_days == 9
     assert loaded.show_date is False
     assert loaded.show_size is True

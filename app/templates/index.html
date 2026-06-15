@@ -161,11 +161,11 @@
             <aside class="timeline-rail" aria-label="季度视频数量">
               <span class="timeline-current-marker" data-timeline-current aria-hidden="true"></span>
               {% for year in timeline_rail %}
-                <div class="timeline-year-group" data-timeline-granularity="{{ year.granularity }}">
+                <div class="timeline-year-group">
                   <span class="timeline-year-label">{{ year.year }}</span>
                   <div class="timeline-quarter-list">
                     {% for mark in year.marks %}
-                      <a class="timeline-mark" href="{{ mark.href }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" data-period="{{ mark.period }}" data-target-anchor="{{ mark.target }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频">
+                      <a class="timeline-mark" href="{{ mark.href }}" data-kind="{{ mark.kind }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" data-month="{{ mark.month }}" data-day="{{ mark.day }}" data-period="{{ mark.period }}" data-target-anchor="{{ mark.target }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频" hidden>
                         <span class="timeline-mark-label">{{ mark.label }}</span>
                         <span class="timeline-mark-bar"></span>
                         {% for label in mark.labels %}
@@ -179,7 +179,7 @@
             </aside>
             <div class="section-list">
               {% for group in timeline_groups %}
-                <section class="asset-section" id="{{ group.anchor }}" data-year="{{ group.year }}" data-quarter="{{ group.quarter }}" data-month="{{ group.month }}">
+                <section class="asset-section" id="{{ group.anchor }}" data-year="{{ group.year }}" data-quarter="{{ group.quarter }}" data-month="{{ group.month }}" data-day="{{ group.day }}">
                   <h2>{{ group.label }}</h2>
                   <div class="asset-grid">
                     {% for video in group.videos %}{{ asset_card(video) }}{% endfor %}
@@ -224,5 +224,5 @@
   </form>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=0.8.0" defer></script>
+  <script src="/static/app.js?v=0.9.0" defer></script>
 {% endblock %}

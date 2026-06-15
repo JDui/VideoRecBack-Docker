@@ -10,6 +10,8 @@ let exposure = 1;
 let mediaTimeOffset = 0;
 let applyQualityAt = null;
 let hlsPlayer = null;
+let activeHlsSession = null;
+let hlsHeartbeatTimer = null;
 const qualityLabels = {
   original: "原画",
   ultra: "超清",
@@ -25,6 +27,46 @@ const centerAction = document.querySelector("[data-player-center-action]");
 const muteToggle = document.querySelector("[data-mute-toggle]");
 const fullscreenToggle = document.querySelector("[data-fullscreen-toggle]");
 const RETURN_STATE_KEY = "videorecback-return-state";
+
+const hlsControlUrl = (session, action) => {
+  if (!session) return "";
+  return `${session.base}/hls/${encodeURIComponent(session.quality)}/${session.startMs}/${action}`;
+};
+
+const sendHlsControl = (action, session = activeHlsSession) => {
+  const url = hlsControlUrl(session, action);
+  if (!url) return;
+  if (navigator.sendBeacon && action === "stop") {
+    navigator.sendBeacon(url, new Blob([], { type: "application/octet-stream" }));
+    return;
+  }
+  fetch(url, { method: "POST", keepalive: true }).catch(() => {});
+};
+
+const stopHlsHeartbeat = (sendStop = true) => {
+  if (hlsHeartbeatTimer) {
+    window.clearInterval(hlsHeartbeatTimer);
+    hlsHeartbeatTimer = null;
+  }
+  if (sendStop && activeHlsSession) sendHlsControl("stop");
+  activeHlsSession = null;
+};
+
+const startHlsHeartbeat = (quality, startAt) => {
+  const base = video?.dataset.mediaBase || video?.getAttribute("src") || "";
+  const cleanBase = base.split("#")[0];
+  activeHlsSession = {
+    base: cleanBase,
+    quality,
+    startMs: Math.round(Math.max(0, startAt) * 1000),
+  };
+  sendHlsControl("heartbeat");
+  if (hlsHeartbeatTimer) window.clearInterval(hlsHeartbeatTimer);
+  hlsHeartbeatTimer = window.setInterval(() => {
+    if (!video || video.paused || video.ended || document.hidden) return;
+    sendHlsControl("heartbeat");
+  }, 3000);
+};
 
 const syncVolumeUi = () => {
   if (!video || !volumeControl) return;
@@ -244,6 +286,7 @@ if (video) {
 
       if (quality === "original") {
         hideTranscodeOverlay();
+        stopHlsHeartbeat(true);
         destroyHls();
         mediaTimeOffset = 0;
         video.addEventListener("loadedmetadata", () => {
@@ -258,8 +301,10 @@ if (video) {
       }
 
       showTranscodeOverlay();
+      stopHlsHeartbeat(true);
       mediaTimeOffset = Math.max(0, resumeAt);
       const url = qualityUrl(quality, resumeAt);
+      startHlsHeartbeat(quality, resumeAt);
       if (canUseNativeHls()) {
         destroyHls();
         video.src = url;
@@ -323,8 +368,22 @@ if (video) {
   video.addEventListener("durationchange", syncProgressUi);
   video.addEventListener("loadedmetadata", syncProgressUi);
   video.addEventListener("play", syncPlayUi);
-  video.addEventListener("pause", syncPlayUi);
-  video.addEventListener("ended", syncPlayUi);
+  video.addEventListener("play", () => {
+    syncPlayUi();
+    if (video.dataset.currentQuality !== "original" && !activeHlsSession) {
+      applyQualityAt?.(video.dataset.currentQuality, getLogicalCurrentTime(), true);
+      return;
+    }
+    if (video.dataset.currentQuality !== "original" && activeHlsSession) sendHlsControl("heartbeat");
+  });
+  video.addEventListener("pause", () => {
+    syncPlayUi();
+    if (video.dataset.currentQuality !== "original") stopHlsHeartbeat(true);
+  });
+  video.addEventListener("ended", () => {
+    syncPlayUi();
+    stopHlsHeartbeat(true);
+  });
   video.addEventListener("volumechange", () => {
     syncVolumeUi();
     syncMuteUi();
@@ -391,6 +450,7 @@ const closePlayerPage = () => {
   try {
     video?.pause();
   } catch {}
+  stopHlsHeartbeat(true);
 
   const params = new URLSearchParams(window.location.search);
   const explicitReturn = params.get("return");
@@ -410,6 +470,10 @@ const closePlayerPage = () => {
 };
 
 document.querySelector("[data-player-close]")?.addEventListener("click", closePlayerPage);
+window.addEventListener("pagehide", () => stopHlsHeartbeat(true));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && video?.dataset.currentQuality !== "original") stopHlsHeartbeat(true);
+});
 
 async function initPanorama() {
   const canvas = document.getElementById("panoramaCanvas");

@@ -190,16 +190,27 @@ if (libraryPane && shell) {
 
 if (timelineRail && timelineCurrent && libraryPane) {
   const marks = [...timelineRail.querySelectorAll(".timeline-mark")];
-  const markById = new Map(
-    marks
-      .map((mark) => {
-        const href = mark.getAttribute("href") || "";
-        return href.startsWith("#timeline-") ? [href.slice(1), mark] : null;
-      })
-      .filter(Boolean)
-  );
+  const visibleKinds = ["day", "month", "quarter", "half"];
   const sections = [...document.querySelectorAll(".asset-section[id^='timeline-']")];
   const sectionById = new Map(sections.map((section) => [section.id, section]));
+  const markKey = (mark) => `${mark.dataset.kind}:${mark.dataset.period}`;
+  const sectionDayKey = (section) => `${section.dataset.year}-${String(section.dataset.month).padStart(2, "0")}-${String(section.dataset.day).padStart(2, "0")}`;
+  const sectionMonthKey = (section) => `${section.dataset.year}-${String(section.dataset.month).padStart(2, "0")}`;
+  const sectionQuarterKey = (section) => `${section.dataset.year}-q${section.dataset.quarter}`;
+  const sectionHalfKey = (section) => `${section.dataset.year}-h${Number(section.dataset.month || 0) >= 7 ? 2 : 1}`;
+  const markByKindPeriod = new Map(marks.map((mark) => [markKey(mark), mark]));
+  const visibleMarkForSection = (section) => {
+    for (const [kind, period] of [
+      ["day", sectionDayKey(section)],
+      ["month", sectionMonthKey(section)],
+      ["quarter", sectionQuarterKey(section)],
+      ["half", sectionHalfKey(section)],
+    ]) {
+      const mark = markByKindPeriod.get(`${kind}:${period}`);
+      if (mark && !mark.hidden) return mark;
+    }
+    return marks.find((mark) => !mark.hidden);
+  };
   const sectionForTimelineId = (id) => {
     if (sectionById.has(id)) return sectionById.get(id);
     const dateMatch = id.match(/^timeline-(\d{4})-(\d{2})(?:-(\d{2}))?$/);
@@ -234,24 +245,6 @@ if (timelineRail && timelineCurrent && libraryPane) {
     const id = href.startsWith("#") ? href.slice(1) : "";
     return sectionForTimelineId(id);
   };
-  const markForSection = (section) => {
-    const exact = markById.get(section.id);
-    if (exact) return exact;
-    const monthMark = markById.get(section.id.slice(0, "timeline-2026-01".length));
-    if (monthMark) return monthMark;
-    const quarterMark = marks.find((mark) => (
-      mark.dataset.year === section.dataset.year &&
-      mark.dataset.quarter === section.dataset.quarter &&
-      (mark.getAttribute("href") || "").includes("-q")
-    ));
-    if (quarterMark) return quarterMark;
-    return marks.find((mark) => {
-      const href = mark.getAttribute("href") || "";
-      const month = Number(section.dataset.month || 0);
-      return mark.dataset.year === section.dataset.year &&
-        ((href.endsWith("-h1") && month <= 6) || (href.endsWith("-h2") && month >= 7));
-    });
-  };
   const scrollToTimelineSection = (section) => {
     const paneRect = libraryPane.getBoundingClientRect();
     const sectionRect = section.getBoundingClientRect();
@@ -260,6 +253,58 @@ if (timelineRail && timelineCurrent && libraryPane) {
       behavior: "auto",
     });
     window.requestAnimationFrame(updateTimelineCurrent);
+  };
+
+  const quarterIndex = (year, quarter) => Number(year) * 4 + Number(quarter);
+  const dayIndex = (year, month, day) => Date.UTC(Number(year), Number(month) - 1, Number(day)) / 86400000;
+  const activeSection = () => {
+    const paneRect = libraryPane.getBoundingClientRect();
+    const anchorY = paneRect.top + Math.min(160, paneRect.height * 0.28);
+    let active = sections[0];
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= anchorY) active = section;
+      else break;
+    }
+    return active;
+  };
+  const sortedMarks = (kind) => marks.filter((mark) => mark.dataset.kind === kind);
+  const applyTimelineScale = (section) => {
+    if (!section) return;
+    const capacity = Math.max(8, Math.floor((timelineRail.clientHeight - 28) / 22));
+    const activeQuarter = quarterIndex(section.dataset.year, section.dataset.quarter);
+    const activeDay = dayIndex(section.dataset.year, section.dataset.month, section.dataset.day);
+    const selected = new Set();
+    const addRanked = (items, limit) => {
+      for (const mark of items) {
+        if (selected.size >= limit) break;
+        selected.add(mark);
+      }
+    };
+    const dayMarks = sortedMarks("day")
+      .sort((left, right) => Math.abs(dayIndex(left.dataset.year, left.dataset.month, left.dataset.day) - activeDay) - Math.abs(dayIndex(right.dataset.year, right.dataset.month, right.dataset.day) - activeDay));
+    addRanked(dayMarks.filter((mark) => Math.abs(quarterIndex(mark.dataset.year, mark.dataset.quarter) - activeQuarter) <= 1), Math.max(3, Math.floor(capacity * 0.42)));
+
+    const monthMarks = sortedMarks("month")
+      .sort((left, right) => Math.abs(quarterIndex(left.dataset.year, left.dataset.quarter) - activeQuarter) - Math.abs(quarterIndex(right.dataset.year, right.dataset.quarter) - activeQuarter));
+    addRanked(monthMarks.filter((mark) => Math.abs(quarterIndex(mark.dataset.year, mark.dataset.quarter) - activeQuarter) <= 2), Math.max(selected.size, Math.floor(capacity * 0.68)));
+
+    const quarterMarks = sortedMarks("quarter")
+      .sort((left, right) => Math.abs(quarterIndex(left.dataset.year, left.dataset.quarter) - activeQuarter) - Math.abs(quarterIndex(right.dataset.year, right.dataset.quarter) - activeQuarter));
+    addRanked(quarterMarks.filter((mark) => Math.abs(quarterIndex(mark.dataset.year, mark.dataset.quarter) - activeQuarter) <= 5), Math.max(selected.size, Math.floor(capacity * 0.86)));
+
+    const halfMarks = sortedMarks("half")
+      .sort((left, right) => Math.abs(quarterIndex(left.dataset.year, left.dataset.quarter) - activeQuarter) - Math.abs(quarterIndex(right.dataset.year, right.dataset.quarter) - activeQuarter));
+    addRanked(halfMarks, capacity);
+
+    for (const mark of marks) {
+      const visible = selected.has(mark);
+      mark.hidden = !visible;
+      mark.classList.toggle("is-folded", visible && mark.dataset.kind !== "day");
+      mark.classList.toggle("is-fine", visible && mark.dataset.kind === "day");
+    }
+    for (const group of timelineRail.querySelectorAll(".timeline-year-group")) {
+      group.hidden = !group.querySelector(".timeline-mark:not([hidden])");
+    }
   };
 
   for (const mark of marks) {
@@ -280,19 +325,9 @@ if (timelineRail && timelineCurrent && libraryPane) {
 
   const updateTimelineCurrent = () => {
     if (!sections.length) return;
-    const paneRect = libraryPane.getBoundingClientRect();
-    const anchorY = paneRect.top + Math.min(160, paneRect.height * 0.28);
-    let activeSection = sections[0];
-
-    for (const section of sections) {
-      if (section.getBoundingClientRect().top <= anchorY) {
-        activeSection = section;
-      } else {
-        break;
-      }
-    }
-
-    const mark = markForSection(activeSection);
+    const currentSection = activeSection();
+    applyTimelineScale(currentSection);
+    const mark = visibleMarkForSection(currentSection);
     if (!mark) return;
     for (const candidate of marks) {
       candidate.classList.toggle("is-current", candidate === mark);
@@ -304,27 +339,7 @@ if (timelineRail && timelineCurrent && libraryPane) {
       `${markRect.top - railRect.top + markRect.height / 2}px`
     );
     timelineCurrent.classList.add("is-visible");
-    updateTimelineGranularity(activeSection);
-  };
-
-  const quarterIndex = (year, quarter) => Number(year) * 4 + Number(quarter);
-  const updateTimelineGranularity = (activeSection) => {
-    if (!activeSection) return;
-    const activeIndex = quarterIndex(activeSection.dataset.year, activeSection.dataset.quarter);
-    for (const mark of marks) {
-      const label = mark.querySelector(".timeline-mark-label");
-      if (!label) continue;
-      if (!mark.dataset.fullLabel) mark.dataset.fullLabel = label.textContent || "";
-      const distance = Math.abs(quarterIndex(mark.dataset.year, mark.dataset.quarter) - activeIndex);
-      const month = Number((mark.dataset.period || "").match(/^\d{4}-(\d{2})/)?.[1] || 0);
-      if (distance <= 1) {
-        label.textContent = mark.dataset.fullLabel;
-        mark.classList.remove("is-folded");
-      } else {
-        label.textContent = distance > 4 ? (month >= 7 ? "H2" : "H1") : `Q${mark.dataset.quarter}`;
-        mark.classList.add("is-folded");
-      }
-    }
+    mark.scrollIntoView({ block: "nearest" });
   };
 
   libraryPane.addEventListener("scroll", updateTimelineCurrent, { passive: true });

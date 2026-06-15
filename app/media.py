@@ -84,14 +84,37 @@ class StreamQuality:
     segment_seconds: int = 2
 
 
+@dataclass(frozen=True, slots=True)
+class EncoderProfile:
+    codec: str
+    preset: str | None = None
+    hardware_device: str | None = None
+
+
 STREAM_QUALITIES = {
     "ultra": StreamQuality(height=None, width=None, bitrate="8M", audio_bitrate="192k"),
     "low": StreamQuality(height=1080, width=1920, bitrate="3M", audio_bitrate="160k"),
     "high": StreamQuality(height=720, width=1280, bitrate="1M", audio_bitrate="96k"),
 }
+ENCODER_PROFILES = {
+    "h264_qsv": EncoderProfile(codec="h264_qsv", preset="veryfast"),
+    "h264_vaapi": EncoderProfile(codec="h264_vaapi", preset=None, hardware_device="/dev/dri/renderD128"),
+    "libx264_ultrafast": EncoderProfile(codec="libx264", preset="ultrafast"),
+    "libx264_veryfast": EncoderProfile(codec="libx264", preset="veryfast"),
+}
 HLS_READY_TIMEOUT_SECONDS = 45.0
-_HLS_JOBS: dict[str, subprocess.Popen] = {}
+HLS_IDLE_TIMEOUT_SECONDS = 8.0
+
+
+@dataclass(slots=True)
+class HlsJob:
+    process: subprocess.Popen
+    last_seen: float
+
+
+_HLS_JOBS: dict[str, HlsJob] = {}
 _HLS_JOBS_LOCK = threading.Lock()
+_HLS_WATCHDOG_STARTED = False
 
 
 def resolve_stream_path(video, data_dir: Path, quality: str) -> Path:
@@ -141,6 +164,8 @@ def resolve_hls_playlist(
     data_dir: Path,
     quality: str,
     start_ms: int = 0,
+    encoder: str = "libx264_ultrafast",
+    max_cache_mb: int = 4096,
     timeout: float = HLS_READY_TIMEOUT_SECONDS,
 ) -> Path:
     if quality not in STREAM_QUALITIES:
@@ -151,17 +176,26 @@ def resolve_hls_playlist(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video file is missing")
 
     start_ms = max(0, int(start_ms))
-    output_dir = hls_cache_dir(video, source, data_dir, quality, start_ms)
+    clean_encoder = normalize_encoder(encoder)
+    output_dir = hls_cache_dir(video, source, data_dir, quality, start_ms, clean_encoder)
     playlist = output_dir / "index.m3u8"
     if hls_playlist_ready(playlist):
         return playlist
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    start_hls_transcode(source, output_dir, STREAM_QUALITIES[quality], start_ms / 1000)
+    cleanup_stream_cache(data_dir / "cache", max_cache_mb)
+    start_hls_transcode(source, output_dir, STREAM_QUALITIES[quality], start_ms / 1000, clean_encoder)
     return wait_for_hls_playlist(playlist, output_dir, timeout)
 
 
-def resolve_hls_segment(video, data_dir: Path, quality: str, start_ms: int, segment: str) -> Path:
+def resolve_hls_segment(
+    video,
+    data_dir: Path,
+    quality: str,
+    start_ms: int,
+    segment: str,
+    encoder: str = "libx264_ultrafast",
+) -> Path:
     if quality not in STREAM_QUALITIES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid stream quality")
     if not segment.startswith("segment-") or not segment.endswith(".ts"):
@@ -169,13 +203,20 @@ def resolve_hls_segment(video, data_dir: Path, quality: str, start_ms: int, segm
     source = Path(video["path"])
     if not source.exists() or not source.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video file is missing")
-    path = hls_cache_dir(video, source, data_dir, quality, max(0, int(start_ms))) / segment
+    path = hls_cache_dir(video, source, data_dir, quality, max(0, int(start_ms)), normalize_encoder(encoder)) / segment
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="HLS segment is not ready")
     return path
 
 
-def hls_cache_dir(video, source: Path, data_dir: Path, quality: str, start_ms: int) -> Path:
+def hls_cache_dir(
+    video,
+    source: Path,
+    data_dir: Path,
+    quality: str,
+    start_ms: int,
+    encoder: str = "libx264_ultrafast",
+) -> Path:
     stat = source.stat()
     key = "|".join(
         [
@@ -184,41 +225,58 @@ def hls_cache_dir(video, source: Path, data_dir: Path, quality: str, start_ms: i
             str(stat.st_mtime_ns),
             str(stat.st_size),
             quality,
+            normalize_encoder(encoder),
             str(max(0, int(start_ms))),
-            "hls-v2",
+            "hls-v3",
         ]
     )
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
     return data_dir / "cache" / "streams" / f"hls-{video['id']}-{quality}-{max(0, int(start_ms))}-{digest}"
 
 
-def start_hls_transcode(source: Path, output_dir: Path, quality: StreamQuality, start_at: float) -> None:
+def start_hls_transcode(
+    source: Path,
+    output_dir: Path,
+    quality: StreamQuality,
+    start_at: float,
+    encoder: str = "libx264_ultrafast",
+) -> None:
     key = str(output_dir)
+    ensure_hls_watchdog()
     with _HLS_JOBS_LOCK:
-        process = _HLS_JOBS.get(key)
-        if process and process.poll() is None:
+        job = _HLS_JOBS.get(key)
+        if job and job.process.poll() is None:
+            job.last_seen = time.time()
             return
 
         for stale in output_dir.glob("segment-*.ts"):
             stale.unlink(missing_ok=True)
         (output_dir / "index.m3u8").unlink(missing_ok=True)
 
-        command = build_hls_command(source, output_dir, quality, start_at)
-        _HLS_JOBS[key] = subprocess.Popen(
+        command = build_hls_command(source, output_dir, quality, start_at, encoder)
+        process = subprocess.Popen(
             command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        _HLS_JOBS[key] = HlsJob(process, time.time())
 
 
-def build_hls_command(source: Path, output_dir: Path, quality: StreamQuality, start_at: float) -> list[str]:
+def build_hls_command(
+    source: Path,
+    output_dir: Path,
+    quality: StreamQuality,
+    start_at: float,
+    encoder: str = "libx264_ultrafast",
+) -> list[str]:
+    profile = ENCODER_PROFILES[normalize_encoder(encoder)]
     video_filter = (
         f"scale=w='min({quality.width},iw)':h='min({quality.height},ih)':"
         "force_original_aspect_ratio=decrease:force_divisible_by=2"
         if quality.width and quality.height
         else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
     )
-    return [
+    command = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
@@ -226,8 +284,15 @@ def build_hls_command(source: Path, output_dir: Path, quality: StreamQuality, st
         "-y",
         "-ss",
         f"{max(0, start_at):.3f}",
+    ]
+    if profile.hardware_device and profile.codec.endswith("_vaapi"):
+        command.extend(["-vaapi_device", profile.hardware_device])
+        video_filter = f"{video_filter},format=nv12,hwupload"
+    command.extend([
         "-i",
         str(source),
+    ])
+    command.extend([
         "-map",
         "0:v:0",
         "-map",
@@ -235,9 +300,11 @@ def build_hls_command(source: Path, output_dir: Path, quality: StreamQuality, st
         "-vf",
         video_filter,
         "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
+        profile.codec,
+    ])
+    if profile.preset:
+        command.extend(["-preset", profile.preset])
+    command.extend([
         "-b:v",
         quality.bitrate,
         "-maxrate",
@@ -267,7 +334,8 @@ def build_hls_command(source: Path, output_dir: Path, quality: StreamQuality, st
         "-hls_segment_filename",
         str(output_dir / "segment-%05d.ts"),
         str(output_dir / "index.m3u8"),
-    ]
+    ])
+    return command
 
 
 def wait_for_hls_playlist(playlist: Path, output_dir: Path, timeout: float) -> Path:
@@ -277,8 +345,8 @@ def wait_for_hls_playlist(playlist: Path, output_dir: Path, timeout: float) -> P
         if hls_playlist_ready(playlist):
             return playlist
         with _HLS_JOBS_LOCK:
-            process = _HLS_JOBS.get(key)
-            exited = process is not None and process.poll() is not None
+            job = _HLS_JOBS.get(key)
+            exited = job is not None and job.process.poll() is not None
         if exited and not hls_playlist_ready(playlist):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -289,6 +357,69 @@ def wait_for_hls_playlist(playlist: Path, output_dir: Path, timeout: float) -> P
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="HLS stream is still preparing",
     )
+
+
+def normalize_encoder(encoder: str) -> str:
+    return encoder if encoder in ENCODER_PROFILES else "libx264_ultrafast"
+
+
+def hls_job_key(video, data_dir: Path, quality: str, start_ms: int, encoder: str) -> str:
+    source = Path(video["path"])
+    if not source.exists() or not source.is_file():
+        return ""
+    return str(hls_cache_dir(video, source, data_dir, quality, max(0, int(start_ms)), normalize_encoder(encoder)))
+
+
+def record_hls_heartbeat(video, data_dir: Path, quality: str, start_ms: int, encoder: str = "libx264_ultrafast") -> None:
+    key = hls_job_key(video, data_dir, quality, start_ms, encoder)
+    if not key:
+        return
+    with _HLS_JOBS_LOCK:
+        job = _HLS_JOBS.get(key)
+        if job and job.process.poll() is None:
+            job.last_seen = time.time()
+
+
+def stop_hls_transcode(video, data_dir: Path, quality: str, start_ms: int, encoder: str = "libx264_ultrafast") -> None:
+    key = hls_job_key(video, data_dir, quality, start_ms, encoder)
+    if key:
+        stop_hls_job(key)
+
+
+def stop_hls_job(key: str) -> None:
+    with _HLS_JOBS_LOCK:
+        job = _HLS_JOBS.pop(key, None)
+    if not job or job.process.poll() is not None:
+        return
+    job.process.terminate()
+    try:
+        job.process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        job.process.kill()
+
+
+def ensure_hls_watchdog() -> None:
+    global _HLS_WATCHDOG_STARTED
+    if _HLS_WATCHDOG_STARTED:
+        return
+    _HLS_WATCHDOG_STARTED = True
+    thread = threading.Thread(target=hls_watchdog_loop, name="hls-watchdog", daemon=True)
+    thread.start()
+
+
+def hls_watchdog_loop() -> None:
+    while True:
+        now = time.time()
+        stale_keys: list[str] = []
+        with _HLS_JOBS_LOCK:
+            for key, job in list(_HLS_JOBS.items()):
+                if job.process.poll() is not None:
+                    stale_keys.append(key)
+                elif now - job.last_seen > HLS_IDLE_TIMEOUT_SECONDS:
+                    stale_keys.append(key)
+        for key in stale_keys:
+            stop_hls_job(key)
+        time.sleep(1.0)
 
 
 def hls_playlist_ready(playlist: Path) -> bool:
@@ -356,26 +487,36 @@ def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) ->
         raise OSError("ffmpeg did not create a stream cache file")
 
 
-def cleanup_stream_cache(cache_dir: Path, retention_days: int, now: float | None = None, force: bool = False) -> int:
-    now = time.time() if now is None else now
-    retention_days = max(1, int(retention_days))
-    interval_seconds = retention_days * 86400
-    marker = cache_dir / ".stream-cache-cleanup"
-    if not force and marker.exists() and now - marker.stat().st_mtime < interval_seconds:
-        return 0
-
+def cleanup_stream_cache(cache_dir: Path, max_cache_mb: int = 4096, now: float | None = None, force: bool = False) -> int:
+    del now, force
     stream_dir = cache_dir / "streams"
-    deleted = 0
-    cutoff = now - interval_seconds
+    max_bytes = max(256, int(max_cache_mb)) * 1024 * 1024
+    entries: list[tuple[float, int, Path]] = []
+    total_size = 0
+    with _HLS_JOBS_LOCK:
+        active_paths = {Path(key).resolve(strict=False) for key, job in _HLS_JOBS.items() if job.process.poll() is None}
     if stream_dir.exists():
         for path in stream_dir.glob("stream-*.mp4"):
-            if not path.is_file() or path.stat().st_mtime >= cutoff:
+            if not path.is_file():
                 continue
-            path.unlink(missing_ok=True)
-            deleted += 1
+            size = path.stat().st_size
+            total_size += size
+            entries.append((path.stat().st_mtime, size, path))
         for path in stream_dir.glob("hls-*"):
-            if not path.is_dir() or path.stat().st_mtime >= cutoff:
+            if not path.is_dir():
                 continue
+            resolved = path.resolve(strict=False)
+            if resolved in active_paths:
+                continue
+            size = sum(child.stat().st_size for child in path.glob("*") if child.is_file())
+            total_size += size
+            entries.append((path.stat().st_mtime, size, path))
+
+    deleted = 0
+    for _mtime, size, path in sorted(entries, key=lambda item: item[0]):
+        if total_size <= max_bytes:
+            break
+        if path.is_dir():
             for child in path.glob("*"):
                 if child.is_file():
                     child.unlink(missing_ok=True)
@@ -383,8 +524,10 @@ def cleanup_stream_cache(cache_dir: Path, retention_days: int, now: float | None
                 path.rmdir()
             except OSError:
                 continue
-            deleted += 1
+        else:
+            path.unlink(missing_ok=True)
+        total_size -= size
+        deleted += 1
 
     cache_dir.mkdir(parents=True, exist_ok=True)
-    marker.touch()
     return deleted
