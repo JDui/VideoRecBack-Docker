@@ -103,7 +103,7 @@ class Scanner:
                 continue
             summary.seen += 1
             seen_paths.add(str(path))
-            summary.indexed += self._upsert_video(path, root)
+            summary.indexed += self._upsert_video(path, root, settings)
 
         summary.deleted = self._delete_missing(seen_paths)
         return summary
@@ -137,7 +137,7 @@ class Scanner:
             return summary
 
         summary.seen = 1
-        summary.indexed = self._upsert_video(target, root)
+        summary.indexed = self._upsert_video(target, root, settings)
         LOGGER.info(
             "Single-file scan complete: seen=%s indexed=%s skipped=%s deleted=%s.",
             summary.seen,
@@ -173,7 +173,7 @@ class Scanner:
                 continue
             summary.seen += 1
             seen_paths.add(str(path))
-            summary.indexed += self._upsert_video(path, root)
+            summary.indexed += self._upsert_video(path, root, settings)
         summary.deleted = self._delete_missing_under_target(target, seen_paths)
         LOGGER.info(
             "Folder scan complete: target=%s seen=%s indexed=%s skipped=%s missing=%s errors=%s.",
@@ -232,7 +232,7 @@ class Scanner:
                     )
         return total
 
-    def _upsert_video(self, path: Path, root: Path) -> int:
+    def _upsert_video(self, path: Path, root: Path, settings: Settings) -> int:
         stat = path.stat()
         path_text = str(path)
         name = path.name
@@ -270,7 +270,13 @@ class Scanner:
                 self._refresh_metadata(path, unchanged_metadata_id)
             if unchanged_thumbnail_args is not None:
                 row_id, cached_type, cached_duration = unchanged_thumbnail_args
-                self._generate_and_record_thumbnail(path, row_id, cached_type, cached_duration)
+                self._generate_and_record_thumbnail(
+                    path,
+                    row_id,
+                    cached_type,
+                    cached_duration,
+                    settings.thumbnail_resolution,
+                )
             return 0
 
         duration = None
@@ -339,15 +345,54 @@ class Scanner:
             video_id = int(row["id"])
 
         if thumb_status == "pending":
-            self._generate_and_record_thumbnail(path, video_id, video_type, duration)
+            self._generate_and_record_thumbnail(path, video_id, video_type, duration, settings.thumbnail_resolution)
         return 1
 
-    def rebuild_video_thumbnail(self, video_id: int, video_type: str) -> None:
+    def rebuild_video_thumbnail(self, video_id: int, video_type: str, thumbnail_resolution: int = 576) -> None:
         with self.db.connect() as conn:
             row = conn.execute("SELECT path, duration_seconds FROM videos WHERE id = ?", (video_id,)).fetchone()
             if row is None:
                 return
-        self._generate_and_record_thumbnail(Path(row["path"]), video_id, video_type, row["duration_seconds"])
+        self._generate_and_record_thumbnail(
+            Path(row["path"]),
+            video_id,
+            video_type,
+            row["duration_seconds"],
+            thumbnail_resolution,
+        )
+
+    def rebuild_all_thumbnails(self, settings: Settings) -> int:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path, type, duration_seconds, thumb_path
+                FROM videos
+                WHERE missing = 0
+                ORDER BY id ASC
+                """
+            ).fetchall()
+            conn.execute(
+                """
+                UPDATE videos
+                SET thumb_status = 'pending',
+                    thumb_error = NULL,
+                    thumb_version = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE missing = 0
+                """
+            )
+
+        for row in rows:
+            self._delete_thumbnail_files(row)
+        for row in rows:
+            self._generate_and_record_thumbnail(
+                Path(row["path"]),
+                int(row["id"]),
+                row["type"],
+                row["duration_seconds"],
+                settings.thumbnail_resolution,
+            )
+        return len(rows)
 
     def recheck_panorama_types(self) -> int:
         with self.db.connect() as conn:
@@ -415,10 +460,11 @@ class Scanner:
         video_id: int,
         video_type: str,
         duration: float | None,
+        thumbnail_resolution: int = 576,
     ) -> None:
         try:
             final_thumb_path = self.cache_dir / f"{video_id}.webp"
-            generate_thumbnail(path, final_thumb_path, video_type, duration)
+            generate_thumbnail(path, final_thumb_path, video_type, duration, thumbnail_resolution)
             with self.db.connect() as conn:
                 conn.execute(
                     """

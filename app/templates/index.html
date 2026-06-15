@@ -6,7 +6,7 @@
   {% set preview = videos[0] if videos else none %}
   {% macro asset_card(video, compact=False) %}
     <article class="asset-item {% if compact %}asset-item--compact{% endif %}">
-      <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-settings-url="/video/{{ video.id }}" aria-label="播放 {{ video.name }}">
+      <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-video-type="{{ video.type }}" data-settings-url="/video/{{ video.id }}" aria-label="播放 {{ video.name }}">
         {% if video.type == "panorama" and video.thumb_status == "ready" %}
           <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp" alt=""></span>
         {% endif %}
@@ -103,7 +103,7 @@
       </details>
       <form class="topbar-scan" action="/scan" method="post" data-scan-form data-scan-running="{{ '1' if scan_running else '0' }}">
         <button type="submit" data-scan-button class="{% if scan_running %}is-scanning{% endif %}">
-          <span data-scan-label>{% if scan_running %}扫描中{% else %}扫描{% endif %}</span>
+          <span data-scan-label>{% if scan_running %}更新中{% else %}扫描{% endif %}</span>
         </button>
       </form>
       <a class="topbar-link" href="/settings">设置</a>
@@ -224,5 +224,5 @@
   </form>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=0.7.0" defer></script>
+  <script src="/static/app.js?v=0.8.0" defer></script>
 {% endblock %}

@@ -5,6 +5,7 @@ from app.config import (
     clamp_days,
     load_settings,
     normalize_quality,
+    normalize_thumbnail_resolution,
     normalize_extensions,
     normalize_ignore_patterns,
     save_settings,
@@ -30,13 +31,20 @@ def test_normalize_quality_accepts_known_values():
     assert normalize_quality("bad") == "original"
 
 
+def test_normalize_thumbnail_resolution_accepts_known_values():
+    assert normalize_thumbnail_resolution("720") == 720
+    assert normalize_thumbnail_resolution("bad") == 576
+
+
 def test_settings_round_trip(tmp_path: Path):
     settings = Settings(
         site_title="家庭视频",
         video_root="/media/archive",
         scan_interval_hours=3,
         default_volume_percent=35,
-        default_quality="ultra",
+        default_flat_quality="ultra",
+        default_panorama_quality="low",
+        thumbnail_resolution=720,
         stream_cache_retention_days=9,
         show_date=False,
         show_size=True,
@@ -53,7 +61,9 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.video_root == "/media/archive"
     assert loaded.scan_interval_hours == 3
     assert loaded.default_volume_percent == 35
-    assert loaded.default_quality == "ultra"
+    assert loaded.default_flat_quality == "ultra"
+    assert loaded.default_panorama_quality == "low"
+    assert loaded.thumbnail_resolution == 720
     assert loaded.stream_cache_retention_days == 9
     assert loaded.show_date is False
     assert loaded.show_size is True
@@ -84,3 +94,12 @@ def test_scan_interval_allows_zero(tmp_path: Path):
     loaded = load_settings(tmp_path)
 
     assert loaded.scan_interval_hours == 0
+
+
+def test_legacy_default_quality_migrates_to_split_defaults(tmp_path: Path):
+    (tmp_path / "settings.json").write_text('{"default_quality":"ultra"}\n', encoding="utf-8")
+
+    loaded = load_settings(tmp_path)
+
+    assert loaded.default_flat_quality == "ultra"
+    assert loaded.default_panorama_quality == "ultra"

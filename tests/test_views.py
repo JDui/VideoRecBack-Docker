@@ -3,6 +3,8 @@ from importlib import import_module
 
 from fastapi.testclient import TestClient
 
+from app.config import Settings, save_settings
+
 
 def load_main(monkeypatch, tmp_path):
     monkeypatch.setenv("APP_CONFIG_DIR", str(tmp_path / "config"))
@@ -72,21 +74,23 @@ def test_calendar_zoom_urls_disable_unreachable_levels(monkeypatch, tmp_path):
     assert main.calendar_zoom_urls(year_filters)["day"] == "#"
 
 
-def test_settings_page_includes_panorama_thumbnail_refresh(monkeypatch, tmp_path):
+def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     app = main.create_app()
 
     with TestClient(app) as client:
-        response = client.get("/settings?panorama_refresh=2")
+        response = client.get("/settings?thumbnail_refresh=2")
 
     assert response.status_code == 200
-    assert 'action="/settings/refresh-panorama-thumbnails"' in response.text
+    assert 'action="/settings/refresh-thumbnails"' in response.text
     assert 'action="/settings/recheck-panorama-types"' in response.text
-    assert 'name="default_quality"' in response.text
+    assert 'name="default_flat_quality"' in response.text
+    assert 'name="default_panorama_quality"' in response.text
+    assert 'name="thumbnail_resolution"' in response.text
     assert '<option value="ultra"' in response.text
-    assert "确认要刷新全部全景视频封面吗" in response.text
+    assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
-    assert "已提交刷新 2 个全景视频封面" in response.text
+    assert "已提交刷新 2 个视频封面" in response.text
 
 
 def test_panorama_recheck_route_promotes_wide_video(monkeypatch, tmp_path):
@@ -120,6 +124,7 @@ def test_panorama_recheck_route_promotes_wide_video(monkeypatch, tmp_path):
 
 def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
+    save_settings(tmp_path / "config", Settings(default_flat_quality="ultra", default_panorama_quality="low"))
     app = main.create_app()
     video_path = tmp_path / "media" / "pano.mp4"
     video_path.parent.mkdir()
@@ -149,11 +154,13 @@ def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_p
     assert 'data-quality-option="ultra">超清' in response.text
     assert 'data-quality-option="low">高清' in response.text
     assert 'data-quality-option="high">流畅' in response.text
+    assert 'data-default-quality="low"' in response.text
     assert 'data-pano-progress' not in response.text
 
 
 def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
+    save_settings(tmp_path / "config", Settings(default_flat_quality="ultra", default_panorama_quality="low"))
     app = main.create_app()
     video_path = tmp_path / "media" / "flat.mp4"
     video_path.parent.mkdir()
@@ -177,6 +184,7 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert response.status_code == 200
     assert 'data-quality-menu' in response.text
     assert 'data-quality-option="ultra">超清' in response.text
+    assert 'data-default-quality="ultra"' in response.text
     assert 'data-flat-controls' in response.text
     assert 'class="flat-player-progress"' in response.text
     assert 'class="progress-strip"' not in response.text
@@ -251,3 +259,28 @@ def test_timeline_groups_include_quarter_anchor(monkeypatch, tmp_path):
 
     assert groups[0]["year"] == 2026
     assert groups[0]["quarter"] == 3
+
+
+def test_refresh_all_thumbnails_route_marks_background_pending(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    calls = []
+    app = main.create_app()
+
+    def rebuild_all(settings):
+        calls.append(settings.thumbnail_resolution)
+
+    app.state.scanner.rebuild_all_thumbnails = rebuild_all
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes)
+            VALUES (?, 'flat.mp4', 1, 0, 'flat', 1)
+            """,
+            (str(tmp_path / "flat.mp4"),),
+        )
+
+    response = TestClient(app).post("/settings/refresh-thumbnails", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?thumbnail_refresh=1"
+    assert calls == [576]

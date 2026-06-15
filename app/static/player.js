@@ -24,6 +24,7 @@ const flatPlayButton = document.querySelector("[data-flat-play]");
 const centerAction = document.querySelector("[data-player-center-action]");
 const muteToggle = document.querySelector("[data-mute-toggle]");
 const fullscreenToggle = document.querySelector("[data-fullscreen-toggle]");
+const RETURN_STATE_KEY = "videorecback-return-state";
 
 const syncVolumeUi = () => {
   if (!video || !volumeControl) return;
@@ -373,14 +374,42 @@ if (shell?.dataset.videoType === "panorama" && video) {
   });
 }
 
-document.querySelector("[data-player-close]")?.addEventListener("click", () => {
-  const referrer = document.referrer ? new URL(document.referrer) : null;
-  if (referrer && referrer.origin === window.location.origin && window.history.length > 1) {
-    window.history.back();
-  } else {
-    window.location.assign("/");
+const readReturnState = () => {
+  for (const storage of [sessionStorage, localStorage]) {
+    try {
+      const state = JSON.parse(storage.getItem(RETURN_STATE_KEY) || "null");
+      if (state && Date.now() - Number(state.savedAt || 0) < 24 * 60 * 60 * 1000) return state;
+    } catch {
+      storage.removeItem(RETURN_STATE_KEY);
+    }
   }
-});
+  return null;
+};
+
+const closePlayerPage = () => {
+  shell?.classList.add("is-closing");
+  try {
+    video?.pause();
+  } catch {}
+
+  const params = new URLSearchParams(window.location.search);
+  const explicitReturn = params.get("return");
+  if (explicitReturn && explicitReturn.startsWith("/")) {
+    window.location.replace(explicitReturn);
+    return;
+  }
+
+  const state = readReturnState();
+  if (state?.url) {
+    const target = `${state.url}${state.hash || ""}`;
+    window.location.replace(target);
+    return;
+  }
+
+  window.location.replace("/");
+};
+
+document.querySelector("[data-player-close]")?.addEventListener("click", closePlayerPage);
 
 async function initPanorama() {
   const canvas = document.getElementById("panoramaCanvas");

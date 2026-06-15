@@ -26,12 +26,29 @@
         <input name="default_volume_percent" type="number" min="0" max="100" value="{{ settings.default_volume_percent }}" required>
       </label>
       <label>
-        默认画质
-        <select name="default_quality">
-          <option value="original" {% if settings.default_quality == 'original' %}selected{% endif %}>原画</option>
-          <option value="ultra" {% if settings.default_quality == 'ultra' %}selected{% endif %}>超清</option>
-          <option value="low" {% if settings.default_quality == 'low' %}selected{% endif %}>高清</option>
-          <option value="high" {% if settings.default_quality == 'high' %}selected{% endif %}>流畅</option>
+        平面视频默认画质
+        <select name="default_flat_quality">
+          <option value="original" {% if settings.default_flat_quality == 'original' %}selected{% endif %}>原画</option>
+          <option value="ultra" {% if settings.default_flat_quality == 'ultra' %}selected{% endif %}>超清</option>
+          <option value="low" {% if settings.default_flat_quality == 'low' %}selected{% endif %}>高清</option>
+          <option value="high" {% if settings.default_flat_quality == 'high' %}selected{% endif %}>流畅</option>
+        </select>
+      </label>
+      <label>
+        全景视频默认画质
+        <select name="default_panorama_quality">
+          <option value="original" {% if settings.default_panorama_quality == 'original' %}selected{% endif %}>原画</option>
+          <option value="ultra" {% if settings.default_panorama_quality == 'ultra' %}selected{% endif %}>超清</option>
+          <option value="low" {% if settings.default_panorama_quality == 'low' %}selected{% endif %}>高清</option>
+          <option value="high" {% if settings.default_panorama_quality == 'high' %}selected{% endif %}>流畅</option>
+        </select>
+      </label>
+      <label>
+        封面分辨率
+        <select name="thumbnail_resolution">
+          <option value="480" {% if settings.thumbnail_resolution == 480 %}selected{% endif %}>480P</option>
+          <option value="576" {% if settings.thumbnail_resolution == 576 %}selected{% endif %}>576P</option>
+          <option value="720" {% if settings.thumbnail_resolution == 720 %}selected{% endif %}>720P</option>
         </select>
       </label>
       <label>
@@ -56,18 +73,24 @@
     </form>
     <form
       class="settings-action-panel"
-      action="/settings/refresh-panorama-thumbnails"
+      action="/settings/refresh-thumbnails"
       method="post"
-      onsubmit="return window.confirm('确认要刷新全部全景视频封面吗？这会重新读取全景视频并覆盖现有封面。');"
+      onsubmit="return window.confirm('确认要刷新所有封面吗？这会清理所有封面缓存、重建所有视频封面、读取视频文件，耗时取决于视频数量。不会触发全盘扫描，也不会修改视频路径、类型、时长等元数据。');"
     >
       <div>
-        <strong>刷新全景视频封面</strong>
-        <p class="muted">重新生成所有全景视频的球形封面，不会触发全盘扫描。</p>
-        {% if panorama_refresh is not none %}
-          <p class="settings-notice">已提交刷新 {{ panorama_refresh }} 个全景视频封面。</p>
+        <strong>刷新所有封面</strong>
+        <p class="muted">清理所有封面缓存，并在后台重建所有未丢失视频的封面，不会触发全盘扫描。</p>
+        {% if thumbnail_refresh is not none %}
+          <p class="settings-notice">
+            {% if thumbnail_refresh == 'running' %}
+              已有扫描或封面刷新任务正在运行。
+            {% else %}
+              已提交刷新 {{ thumbnail_refresh }} 个视频封面。
+            {% endif %}
+          </p>
         {% endif %}
       </div>
-      <button class="danger-button" type="submit">刷新全景视频封面</button>
+      <button class="danger-button" type="submit">刷新所有封面</button>
     </form>
     <form
       class="settings-action-panel"

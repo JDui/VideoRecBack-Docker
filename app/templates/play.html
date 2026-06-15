@@ -3,7 +3,8 @@
 {% block body_class %}player-page {% if embed %}player-page--embed{% endif %}{% endblock %}
 {% block chrome %}{% endblock %}
 {% block content %}
-  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ settings.default_quality }}">
+  {% set default_quality = settings.default_panorama_quality if video.type == "panorama" else settings.default_flat_quality %}
+  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ default_quality }}" data-embed="{{ '1' if embed else '0' }}">
       <div class="player-toolbar {% if embed %}player-toolbar--embed{% endif %}">
         {% if not embed %}
         <h1 title="播放：{{ video.name }}">播放：{{ video.name[:12] }}{% if video.name|length > 12 %}…{% endif %}</h1>
@@ -87,5 +88,5 @@
 {% endblock %}
 {% block scripts %}
   <script src="/static/vendor/hls.min.js"></script>
-  <script type="module" src="/static/player.js?v=0.7.0"></script>
+  <script type="module" src="/static/player.js?v=0.8.0"></script>
 {% endblock %}

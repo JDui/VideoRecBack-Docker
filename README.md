@@ -23,7 +23,7 @@ VideoRecBack 是一个面向 NAS 视频存档的容器化浏览器。它把设�
 ```yaml
 services:
   videorecback:
-    image: videorecback:0.7
+    image: videorecback:0.8
     container_name: videorecback
     ports:
       - "8080:8080"

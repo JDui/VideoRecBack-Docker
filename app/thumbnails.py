@@ -13,10 +13,8 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
 from app.video_types import detect_video_type
 
-FLAT_TILE_SIZE = (521, 293)
-FLAT_THUMBNAIL_SIZE = (1042, 586)
-PANORAMA_THUMBNAIL_SIZE = (781, 586)
-WEBP_QUALITY = "48"
+DEFAULT_THUMBNAIL_HEIGHT = 576
+WEBP_QUALITY = "60"
 WEBP_COMPRESSION_LEVEL = "6"
 
 
@@ -78,17 +76,58 @@ def probe_video(path: Path) -> ProbeResult:
     )
 
 
-def generate_thumbnail(video_path: Path, output_path: Path, video_type: str, duration: float | None) -> None:
+def flat_thumbnail_size(height: int = DEFAULT_THUMBNAIL_HEIGHT) -> tuple[int, int]:
+    clean_height = normalize_thumbnail_height(height)
+    width = round(clean_height * 16 / 9)
+    if width % 2:
+        width += 1
+    return width, clean_height
+
+
+def flat_tile_size(height: int = DEFAULT_THUMBNAIL_HEIGHT) -> tuple[int, int]:
+    width, clean_height = flat_thumbnail_size(height)
+    return width // 2, clean_height // 2
+
+
+def panorama_thumbnail_size(height: int = DEFAULT_THUMBNAIL_HEIGHT) -> tuple[int, int]:
+    clean_height = normalize_thumbnail_height(height)
+    width = round(clean_height * 4 / 3)
+    if width % 2:
+        width += 1
+    return width, clean_height
+
+
+def normalize_thumbnail_height(height: int | None) -> int:
+    try:
+        value = int(height or DEFAULT_THUMBNAIL_HEIGHT)
+    except (TypeError, ValueError):
+        value = DEFAULT_THUMBNAIL_HEIGHT
+    return value if value in {480, 576, 720} else DEFAULT_THUMBNAIL_HEIGHT
+
+
+def generate_thumbnail(
+    video_path: Path,
+    output_path: Path,
+    video_type: str,
+    duration: float | None,
+    height: int = DEFAULT_THUMBNAIL_HEIGHT,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if video_type == "panorama":
-        generate_panorama_thumbnail(video_path, output_path, duration)
+        generate_panorama_thumbnail(video_path, output_path, duration, height)
     else:
-        generate_flat_thumbnail(video_path, output_path, duration)
+        generate_flat_thumbnail(video_path, output_path, duration, height)
 
 
-def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float | None) -> None:
+def generate_flat_thumbnail(
+    video_path: Path,
+    output_path: Path,
+    duration: float | None,
+    height: int = DEFAULT_THUMBNAIL_HEIGHT,
+) -> None:
     ffmpeg = require_tool("ffmpeg")
     times = sample_times(duration)
+    tile_width, tile_height = flat_tile_size(height)
     with tempfile.TemporaryDirectory() as tmp:
         frame_paths: list[Path] = []
         for index, timestamp in enumerate(times):
@@ -106,7 +145,7 @@ def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float
                     "-frames:v",
                     "1",
                     "-vf",
-                    f"scale={FLAT_TILE_SIZE[0]}:{FLAT_TILE_SIZE[1]}:force_original_aspect_ratio=increase,crop={FLAT_TILE_SIZE[0]}:{FLAT_TILE_SIZE[1]}",
+                    f"scale={tile_width}:{tile_height}:force_original_aspect_ratio=increase,crop={tile_width}:{tile_height}",
                     "-compression_level",
                     WEBP_COMPRESSION_LEVEL,
                     "-quality",
@@ -123,7 +162,7 @@ def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float
         command.extend(
             [
                 "-filter_complex",
-                f"xstack=inputs=4:layout=0_0|{FLAT_TILE_SIZE[0]}_0|0_{FLAT_TILE_SIZE[1]}|{FLAT_TILE_SIZE[0]}_{FLAT_TILE_SIZE[1]}",
+                f"xstack=inputs=4:layout=0_0|{tile_width}_0|0_{tile_height}|{tile_width}_{tile_height}",
                 "-frames:v",
                 "1",
                 "-compression_level",
@@ -137,14 +176,24 @@ def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float
         run_ffmpeg(command)
 
 
-def generate_panorama_thumbnail(video_path: Path, output_path: Path, duration: float | None) -> None:
-    result = generate_panorama_thumbnail_debug(video_path, output_path, duration)
+def generate_panorama_thumbnail(
+    video_path: Path,
+    output_path: Path,
+    duration: float | None,
+    height: int = DEFAULT_THUMBNAIL_HEIGHT,
+) -> None:
+    result = generate_panorama_thumbnail_debug(video_path, output_path, duration, height)
     if not result["valid"]:
         reasons = "; ".join(f"{item['timestamp']:.3f}s: {item['reason']}" for item in result["attempts"])
         raise VideoToolError(f"Unable to generate valid panorama thumbnail: {reasons}")
 
 
-def generate_panorama_thumbnail_debug(video_path: Path, output_path: Path, duration: float | None) -> dict[str, object]:
+def generate_panorama_thumbnail_debug(
+    video_path: Path,
+    output_path: Path,
+    duration: float | None,
+    height: int = DEFAULT_THUMBNAIL_HEIGHT,
+) -> dict[str, object]:
     ffmpeg = require_tool("ffmpeg")
     attempts: list[dict[str, object]] = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -153,8 +202,8 @@ def generate_panorama_thumbnail_debug(video_path: Path, output_path: Path, durat
             attempt = {"timestamp": timestamp, "frame": str(frame_path), "output": str(output_path)}
             try:
                 extract_panorama_frame(ffmpeg, video_path, frame_path, timestamp)
-                render_panorama_thumbnail(frame_path, output_path)
-                validation = validate_thumbnail(output_path)
+                render_panorama_thumbnail(frame_path, output_path, height)
+                validation = validate_thumbnail(output_path, panorama_thumbnail_size(height))
                 attempt.update(
                     {
                         "width": validation.width,
@@ -223,12 +272,16 @@ def extract_panorama_frame(ffmpeg: str, video_path: Path, frame_path: Path, time
     )
 
 
-def render_panorama_thumbnail(frame_path: Path, output_path: Path) -> None:
+def render_panorama_thumbnail(
+    frame_path: Path,
+    output_path: Path,
+    height: int = DEFAULT_THUMBNAIL_HEIGHT,
+) -> None:
     with Image.open(frame_path) as raw_frame:
         frame = raw_frame.convert("RGB")
 
-    canvas_size = PANORAMA_THUMBNAIL_SIZE
-    ball_size = 538
+    canvas_size = panorama_thumbnail_size(height)
+    ball_size = min(canvas_size[1] - 48, round(canvas_size[1] * 0.918))
     background = ImageOps.fit(frame, canvas_size, method=Image.Resampling.BICUBIC)
     background = background.filter(ImageFilter.GaussianBlur(radius=30))
     background = ImageEnhance.Color(background).enhance(1.16)
@@ -239,7 +292,11 @@ def render_panorama_thumbnail(frame_path: Path, output_path: Path) -> None:
     background.convert("RGB").save(output_path, format="WEBP", quality=int(WEBP_QUALITY), method=6)
 
 
-def validate_thumbnail(path: Path, expected_size: tuple[int, int] = PANORAMA_THUMBNAIL_SIZE) -> ThumbnailValidation:
+def validate_thumbnail(
+    path: Path,
+    expected_size: tuple[int, int] | None = None,
+) -> ThumbnailValidation:
+    expected_size = expected_size or panorama_thumbnail_size()
     if not path.exists() or path.stat().st_size <= 0:
         return ThumbnailValidation(False, "missing output")
     try:

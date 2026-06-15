@@ -23,6 +23,7 @@ from app.config import (
     normalize_extensions,
     normalize_ignore_patterns,
     normalize_quality,
+    normalize_thumbnail_resolution,
     save_settings,
 )
 from app.db import Database
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.state.scanner = scanner
     app.state.maintenance_task = None
     app.state.manual_scan_pending = False
+    app.state.thumbnail_refresh_pending = False
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.filters["duration"] = format_duration
@@ -93,7 +95,7 @@ def create_app() -> FastAPI:
                 "timeline_rail": build_timeline_rail(rows, timeline_labels),
                 "folder_browser": build_folder_browser(rows, filters),
                 "calendar_model": build_calendar_model(rows, filters),
-                "scan_running": is_scan_running(app),
+                "scan_running": is_background_busy(app),
             },
         )
 
@@ -104,7 +106,7 @@ def create_app() -> FastAPI:
             "settings.html",
             {
                 "settings": load_settings(config_dir),
-                "panorama_refresh": request.query_params.get("panorama_refresh"),
+                "thumbnail_refresh": request.query_params.get("thumbnail_refresh"),
                 "panorama_recheck": request.query_params.get("panorama_recheck"),
             },
         )
@@ -115,7 +117,9 @@ def create_app() -> FastAPI:
         video_root: str = Form(...),
         scan_interval_hours: int = Form(...),
         default_volume_percent: int = Form(...),
-        default_quality: str = Form("original"),
+        default_flat_quality: str = Form("original"),
+        default_panorama_quality: str = Form("original"),
+        thumbnail_resolution: int = Form(576),
         stream_cache_retention_days: int = Form(...),
         show_date: str | None = Form(None),
         show_size: str | None = Form(None),
@@ -129,7 +133,9 @@ def create_app() -> FastAPI:
             video_root=video_root.strip() or "/media",
             scan_interval_hours=int(scan_interval_hours),
             default_volume_percent=clamp_percent(default_volume_percent),
-            default_quality=normalize_quality(default_quality),
+            default_flat_quality=normalize_quality(default_flat_quality),
+            default_panorama_quality=normalize_quality(default_panorama_quality),
+            thumbnail_resolution=normalize_thumbnail_resolution(thumbnail_resolution),
             stream_cache_retention_days=clamp_days(stream_cache_retention_days),
             show_date=show_date == "on",
             show_size=show_size == "on",
@@ -142,20 +148,16 @@ def create_app() -> FastAPI:
         sync_settings_to_db(db, settings)
         return RedirectResponse("/", status_code=303)
 
-    @app.post("/settings/refresh-panorama-thumbnails")
-    async def refresh_panorama_thumbnails():
+    @app.post("/settings/refresh-thumbnails")
+    async def refresh_thumbnails():
+        if is_background_busy(app):
+            return RedirectResponse("/settings?thumbnail_refresh=running", status_code=303)
+        settings = load_settings(config_dir)
+        app.state.thumbnail_refresh_pending = True
+        asyncio.create_task(run_thumbnail_refresh(app, settings))
         with db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id
-                FROM videos
-                WHERE type = 'panorama' AND missing = 0
-                ORDER BY id ASC
-                """
-            ).fetchall()
-        for row in rows:
-            await asyncio.to_thread(scanner.rebuild_video_thumbnail, int(row["id"]), "panorama")
-        return RedirectResponse(f"/settings?panorama_refresh={len(rows)}", status_code=303)
+            count = conn.execute("SELECT COUNT(*) AS count FROM videos WHERE missing = 0").fetchone()["count"]
+        return RedirectResponse(f"/settings?thumbnail_refresh={count}", status_code=303)
 
     @app.post("/settings/recheck-panorama-types")
     async def recheck_panorama_types():
@@ -164,7 +166,7 @@ def create_app() -> FastAPI:
 
     @app.post("/scan")
     async def trigger_scan():
-        if is_scan_running(app):
+        if is_background_busy(app):
             return RedirectResponse("/?scan=running", status_code=303)
         settings = load_settings(config_dir)
         app.state.manual_scan_pending = True
@@ -385,6 +387,10 @@ def is_scan_running(app: FastAPI) -> bool:
     return bool(getattr(app.state, "manual_scan_pending", False) or getattr(scanner, "is_running", False))
 
 
+def is_background_busy(app: FastAPI) -> bool:
+    return is_scan_running(app) or bool(getattr(app.state, "thumbnail_refresh_pending", False))
+
+
 async def run_manual_scan(app: FastAPI, settings: Settings) -> None:
     try:
         await app.state.scanner.scan(settings)
@@ -394,6 +400,15 @@ async def run_manual_scan(app: FastAPI, settings: Settings) -> None:
         app.state.manual_scan_pending = False
 
 
+async def run_thumbnail_refresh(app: FastAPI, settings: Settings) -> None:
+    try:
+        await asyncio.to_thread(app.state.scanner.rebuild_all_thumbnails, settings)
+    except Exception:
+        LOGGER.exception("Thumbnail refresh failed.")
+    finally:
+        app.state.thumbnail_refresh_pending = False
+
+
 def sync_settings_to_db(db: Database, settings: Settings) -> None:
     db.sync_settings(
         {
@@ -401,7 +416,9 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "video_root": settings.video_root,
             "scan_interval_hours": settings.scan_interval_hours,
             "default_volume_percent": settings.default_volume_percent,
-            "default_quality": settings.default_quality,
+            "default_flat_quality": settings.default_flat_quality,
+            "default_panorama_quality": settings.default_panorama_quality,
+            "thumbnail_resolution": settings.thumbnail_resolution,
             "stream_cache_retention_days": settings.stream_cache_retention_days,
             "show_date": int(settings.show_date),
             "show_size": int(settings.show_size),
