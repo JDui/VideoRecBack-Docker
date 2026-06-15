@@ -125,6 +125,46 @@ if (timelineRail && timelineCurrent && libraryPane) {
   );
   const sections = [...document.querySelectorAll(".asset-section[id^='timeline-']")];
   const sectionById = new Map(sections.map((section) => [section.id, section]));
+  const sectionForMark = (mark) => {
+    const href = mark.getAttribute("href") || "";
+    const id = href.startsWith("#") ? href.slice(1) : "";
+    if (sectionById.has(id)) return sectionById.get(id);
+    if (id.length === "timeline-2026-01".length) {
+      return sections.find((section) => section.id.startsWith(id));
+    }
+    if (id.includes("-q")) {
+      return sections.find((section) => (
+        section.dataset.year === mark.dataset.year &&
+        section.dataset.quarter === mark.dataset.quarter
+      ));
+    }
+    if (id.includes("-h")) {
+      const half = id.endsWith("-h2") ? "2" : "1";
+      return sections.find((section) => {
+        const month = Number(section.dataset.month || 0);
+        return section.dataset.year === mark.dataset.year && (half === "2" ? month >= 7 : month <= 6);
+      });
+    }
+    return null;
+  };
+  const markForSection = (section) => {
+    const exact = markById.get(section.id);
+    if (exact) return exact;
+    const monthMark = markById.get(section.id.slice(0, "timeline-2026-01".length));
+    if (monthMark) return monthMark;
+    const quarterMark = marks.find((mark) => (
+      mark.dataset.year === section.dataset.year &&
+      mark.dataset.quarter === section.dataset.quarter &&
+      (mark.getAttribute("href") || "").includes("-q")
+    ));
+    if (quarterMark) return quarterMark;
+    return marks.find((mark) => {
+      const href = mark.getAttribute("href") || "";
+      const month = Number(section.dataset.month || 0);
+      return mark.dataset.year === section.dataset.year &&
+        ((href.endsWith("-h1") && month <= 6) || (href.endsWith("-h2") && month >= 7));
+    });
+  };
   const scrollToTimelineSection = (section) => {
     const paneRect = libraryPane.getBoundingClientRect();
     const sectionRect = section.getBoundingClientRect();
@@ -143,7 +183,7 @@ if (timelineRail && timelineCurrent && libraryPane) {
       }
       const href = mark.getAttribute("href") || "";
       if (!href.startsWith("#timeline-")) return;
-      const section = sectionById.get(href.slice(1));
+      const section = sectionForMark(mark);
       if (!section) return;
       event.preventDefault();
       scrollToTimelineSection(section);
@@ -165,8 +205,11 @@ if (timelineRail && timelineCurrent && libraryPane) {
       }
     }
 
-    const mark = markById.get(activeSection.id);
+    const mark = markForSection(activeSection);
     if (!mark) return;
+    for (const candidate of marks) {
+      candidate.classList.toggle("is-current", candidate === mark);
+    }
     const railRect = timelineRail.getBoundingClientRect();
     const markRect = mark.getBoundingClientRect();
     timelineRail.style.setProperty(
@@ -178,7 +221,8 @@ if (timelineRail && timelineCurrent && libraryPane) {
 
   libraryPane.addEventListener("scroll", updateTimelineCurrent, { passive: true });
   window.addEventListener("resize", updateTimelineCurrent);
-  const initialSection = sectionById.get(window.location.hash.slice(1));
+  const initialMark = marks.find((mark) => mark.getAttribute("href") === window.location.hash);
+  const initialSection = sectionById.get(window.location.hash.slice(1)) || (initialMark ? sectionForMark(initialMark) : null);
   if (initialSection) {
     window.requestAnimationFrame(() => scrollToTimelineSection(initialSection));
   }

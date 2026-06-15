@@ -22,6 +22,56 @@ def test_calendar_defaults_to_year(monkeypatch, tmp_path):
     assert filters["calendar_zoom"] == "year"
 
 
+def test_calendar_filters_narrow_to_selected_year_and_month(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    videos = [
+        ("old.mp4", datetime(2025, 3, 1).timestamp()),
+        ("march.mp4", datetime(2026, 3, 1).timestamp()),
+        ("april.mp4", datetime(2026, 4, 1).timestamp()),
+    ]
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes)
+            VALUES (?, ?, ?, 0, 'flat', 1)
+            """,
+            [(str(tmp_path / name), name, mtime) for name, mtime in videos],
+        )
+
+    class YearRequest:
+        query_params = {"view": "calendar", "calendar_zoom": "month", "calendar_year": "2026"}
+
+    class MonthRequest:
+        query_params = {
+            "view": "calendar",
+            "calendar_zoom": "day",
+            "calendar_year": "2026",
+            "calendar_month": "3",
+        }
+
+    year_rows = main.query_videos(app.state.db, main.read_filters(YearRequest()))
+    month_rows = main.query_videos(app.state.db, main.read_filters(MonthRequest()))
+
+    assert [row["name"] for row in year_rows] == ["april.mp4", "march.mp4"]
+    assert [row["name"] for row in month_rows] == ["march.mp4"]
+
+
+def test_calendar_zoom_urls_disable_unreachable_levels(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    base_filters = main.read_filters(type("Request", (), {"query_params": {"view": "calendar"}})())
+    year_filters = {
+        **base_filters,
+        "calendar_zoom": "month",
+        "calendar_year": "2026",
+    }
+
+    assert main.calendar_zoom_urls(base_filters)["month"] == "#"
+    assert main.calendar_zoom_urls(base_filters)["day"] == "#"
+    assert main.calendar_zoom_urls(year_filters)["month"] != "#"
+    assert main.calendar_zoom_urls(year_filters)["day"] == "#"
+
+
 def test_settings_page_includes_panorama_thumbnail_refresh(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     app = main.create_app()
@@ -91,8 +141,10 @@ def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_p
     assert response.status_code == 200
     assert "/static/vendor/hls.min.js" in response.text
     assert 'data-transcode-overlay hidden' in response.text
-    assert 'data-pano-progress' in response.text
-    assert response.text.count('data-pano-progress-hit') == 4
+    assert 'data-seek-control' in response.text
+    assert 'data-quality-option="low">高清' in response.text
+    assert 'data-quality-option="high">流畅' in response.text
+    assert 'data-pano-progress' not in response.text
 
 
 def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):
@@ -105,26 +157,9 @@ def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):
 
     rail = main.build_timeline_rail(rows)
 
-    assert rail == [
-        {
-            "year": 2026,
-            "quarters": [
-                {"year": 2026, "quarter": 4, "label": "Q4", "count": 0, "labels": []},
-                {"year": 2026, "quarter": 3, "label": "Q3", "count": 0, "labels": []},
-                {"year": 2026, "quarter": 2, "label": "Q2", "count": 0, "labels": []},
-                {"year": 2026, "quarter": 1, "label": "Q1", "count": 2, "labels": []},
-            ],
-        },
-        {
-            "year": 2025,
-            "quarters": [
-                {"year": 2025, "quarter": 4, "label": "Q4", "count": 1, "labels": []},
-                {"year": 2025, "quarter": 3, "label": "Q3", "count": 0, "labels": []},
-                {"year": 2025, "quarter": 2, "label": "Q2", "count": 0, "labels": []},
-                {"year": 2025, "quarter": 1, "label": "Q1", "count": 0, "labels": []},
-            ],
-        },
-    ]
+    assert rail[0]["granularity"] == "day"
+    assert [(mark["label"], mark["count"]) for mark in rail[0]["marks"]] == [("3/20", 1), ("1/10", 1)]
+    assert [(mark["label"], mark["count"]) for mark in rail[1]["marks"]] == [("11/5", 1)]
 
 
 def test_timeline_rail_attaches_labels(monkeypatch, tmp_path):
@@ -133,10 +168,10 @@ def test_timeline_rail_attaches_labels(monkeypatch, tmp_path):
 
     rail = main.build_timeline_rail(rows, {(2026, 1): [{"label": "春节", "color": "#ff0000"}]})
 
-    assert rail[0]["quarters"][-1]["labels"] == [{"label": "春节", "color": "#ff0000"}]
+    assert rail[0]["marks"][0]["labels"] == [{"label": "春节", "color": "#ff0000"}]
 
 
-def test_timeline_rail_fills_empty_quarters(monkeypatch, tmp_path):
+def test_timeline_rail_skips_empty_periods(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [
         {"mtime": datetime(2026, 1, 10).timestamp()},
@@ -146,18 +181,12 @@ def test_timeline_rail_fills_empty_quarters(monkeypatch, tmp_path):
     rail = main.build_timeline_rail(rows)
 
     assert [
-        (year["year"], quarter["quarter"], quarter["count"])
+        (year["year"], mark["label"], mark["count"])
         for year in rail
-        for quarter in year["quarters"]
+        for mark in year["marks"]
     ] == [
-        (2026, 4, 0),
-        (2026, 3, 0),
-        (2026, 2, 0),
-        (2026, 1, 1),
-        (2025, 4, 0),
-        (2025, 3, 1),
-        (2025, 2, 0),
-        (2025, 1, 0),
+        (2026, "1/10", 1),
+        (2025, "7/8", 1),
     ]
 
 

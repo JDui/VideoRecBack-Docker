@@ -13,6 +13,12 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
 from app.video_types import detect_video_type
 
+FLAT_TILE_SIZE = (521, 293)
+FLAT_THUMBNAIL_SIZE = (1042, 586)
+PANORAMA_THUMBNAIL_SIZE = (781, 586)
+WEBP_QUALITY = "48"
+WEBP_COMPRESSION_LEVEL = "6"
+
 
 class VideoToolError(RuntimeError):
     pass
@@ -100,11 +106,11 @@ def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float
                     "-frames:v",
                     "1",
                     "-vf",
-                    "scale=640:360:force_original_aspect_ratio=increase,crop=640:360",
+                    f"scale={FLAT_TILE_SIZE[0]}:{FLAT_TILE_SIZE[1]}:force_original_aspect_ratio=increase,crop={FLAT_TILE_SIZE[0]}:{FLAT_TILE_SIZE[1]}",
                     "-compression_level",
-                    "4",
+                    WEBP_COMPRESSION_LEVEL,
                     "-quality",
-                    "72",
+                    WEBP_QUALITY,
                     "-y",
                     str(frame_path),
                 ]
@@ -117,13 +123,13 @@ def generate_flat_thumbnail(video_path: Path, output_path: Path, duration: float
         command.extend(
             [
                 "-filter_complex",
-                "xstack=inputs=4:layout=0_0|640_0|0_360|640_360",
+                f"xstack=inputs=4:layout=0_0|{FLAT_TILE_SIZE[0]}_0|0_{FLAT_TILE_SIZE[1]}|{FLAT_TILE_SIZE[0]}_{FLAT_TILE_SIZE[1]}",
                 "-frames:v",
                 "1",
                 "-compression_level",
-                "4",
+                WEBP_COMPRESSION_LEVEL,
                 "-quality",
-                "72",
+                WEBP_QUALITY,
                 "-y",
                 str(output_path),
             ]
@@ -221,8 +227,8 @@ def render_panorama_thumbnail(frame_path: Path, output_path: Path) -> None:
     with Image.open(frame_path) as raw_frame:
         frame = raw_frame.convert("RGB")
 
-    canvas_size = (960, 720)
-    ball_size = 660
+    canvas_size = PANORAMA_THUMBNAIL_SIZE
+    ball_size = 538
     background = ImageOps.fit(frame, canvas_size, method=Image.Resampling.BICUBIC)
     background = background.filter(ImageFilter.GaussianBlur(radius=30))
     background = ImageEnhance.Color(background).enhance(1.16)
@@ -230,10 +236,10 @@ def render_panorama_thumbnail(frame_path: Path, output_path: Path) -> None:
 
     ball = rasterize_fisheye_ball(frame, ball_size)
     background.alpha_composite(ball, ((canvas_size[0] - ball_size) // 2, (canvas_size[1] - ball_size) // 2))
-    background.convert("RGB").save(output_path, format="WEBP", quality=72, method=4)
+    background.convert("RGB").save(output_path, format="WEBP", quality=int(WEBP_QUALITY), method=6)
 
 
-def validate_thumbnail(path: Path, expected_size: tuple[int, int] = (960, 720)) -> ThumbnailValidation:
+def validate_thumbnail(path: Path, expected_size: tuple[int, int] = PANORAMA_THUMBNAIL_SIZE) -> ThumbnailValidation:
     if not path.exists() or path.stat().st_size <= 0:
         return ThumbnailValidation(False, "missing output")
     try:

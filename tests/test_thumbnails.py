@@ -29,7 +29,7 @@ def test_panorama_thumbnail_uses_front_fisheye(monkeypatch, tmp_path):
     monkeypatch.setattr(thumbnails, "require_tool", lambda name: name)
     monkeypatch.setattr(thumbnails, "run_ffmpeg", commands.append)
     monkeypatch.setattr(thumbnails, "render_panorama_thumbnail", lambda frame, output: renders.append((frame, output)))
-    monkeypatch.setattr(thumbnails, "validate_thumbnail", lambda output: ThumbnailValidation(True, "ok", 960, 720, 120, 30))
+    monkeypatch.setattr(thumbnails, "validate_thumbnail", lambda output: ThumbnailValidation(True, "ok", 781, 586, 120, 30))
 
     thumbnails.generate_panorama_thumbnail(Path("/videos/demo.mp4"), tmp_path / "thumb.webp", 10)
 
@@ -43,8 +43,8 @@ def test_panorama_thumbnail_uses_front_fisheye(monkeypatch, tmp_path):
 def test_panorama_thumbnail_retries_invalid_frame(monkeypatch, tmp_path):
     commands = []
     validations = [
-        ThumbnailValidation(False, "blank", 960, 720, 0, 0),
-        ThumbnailValidation(True, "ok", 960, 720, 120, 20),
+        ThumbnailValidation(False, "blank", 781, 586, 0, 0),
+        ThumbnailValidation(True, "ok", 781, 586, 120, 20),
     ]
 
     monkeypatch.setattr(thumbnails, "require_tool", lambda name: name)
@@ -60,7 +60,7 @@ def test_panorama_thumbnail_retries_invalid_frame(monkeypatch, tmp_path):
     assert result["attempts"][0]["reason"] == "blank"
 
 
-def test_panorama_thumbnail_renders_720p_webp(tmp_path):
+def test_panorama_thumbnail_renders_586p_webp(tmp_path):
     frame_path = tmp_path / "frame.png"
     output_path = tmp_path / "thumb.webp"
     frame = Image.new("RGB", (1440, 720))
@@ -73,18 +73,18 @@ def test_panorama_thumbnail_renders_720p_webp(tmp_path):
     thumbnails.render_panorama_thumbnail(frame_path, output_path)
 
     with Image.open(output_path) as image:
-        assert image.size == (960, 720)
+        assert image.size == (781, 586)
         assert image.format == "WEBP"
-        center = image.getpixel((480, 360))
+        center = image.getpixel((390, 293))
         corner = image.getpixel((20, 20))
-        edge = image.getpixel((480, 40))
+        edge = image.getpixel((390, 40))
     assert center != corner
     assert edge != corner
 
 
 def test_validate_thumbnail_rejects_blank(tmp_path):
     output_path = tmp_path / "blank.webp"
-    Image.new("RGB", (960, 720), "black").save(output_path)
+    Image.new("RGB", (781, 586), "black").save(output_path)
 
     validation = thumbnails.validate_thumbnail(output_path)
 

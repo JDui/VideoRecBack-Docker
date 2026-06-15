@@ -77,6 +77,12 @@ def test_build_hls_command_starts_at_requested_time(tmp_path):
     assert command[command.index("-f") + 1] == "hls"
     assert "-hls_time" in command
     assert command[command.index("-hls_time") + 1] == "2"
+    assert "-hls_playlist_type" in command
+    assert command[command.index("-hls_playlist_type") + 1] == "event"
+    assert "-hls_flags" in command
+    assert "independent_segments" in command[command.index("-hls_flags") + 1]
+    assert "-g" in command
+    assert command[command.index("-g") + 1] == "60"
     assert str(output_dir / "segment-%05d.ts") in command
 
 

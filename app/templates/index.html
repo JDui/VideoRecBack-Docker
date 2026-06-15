@@ -70,6 +70,8 @@
           <input type="hidden" name="view" value="{{ filters.view }}">
           {% if filters.view == "folders" and filters.folder %}<input type="hidden" name="folder" value="{{ filters.folder }}">{% endif %}
           {% if filters.view == "calendar" %}<input type="hidden" name="calendar_zoom" value="{{ filters.calendar_zoom }}">{% endif %}
+          {% if filters.view == "calendar" and filters.calendar_year %}<input type="hidden" name="calendar_year" value="{{ filters.calendar_year }}">{% endif %}
+          {% if filters.view == "calendar" and filters.calendar_month %}<input type="hidden" name="calendar_month" value="{{ filters.calendar_month }}">{% endif %}
           <label>
             视频类型
             <select name="type" onchange="this.form.submit()">
@@ -129,8 +131,8 @@
           <section class="calendar-view">
             <div class="calendar-zoom">
               <a class="{% if calendar_model.zoom == 'year' %}active{% endif %}" href="{{ calendar_model.zoom_urls.year }}">年</a>
-              <a class="{% if calendar_model.zoom == 'month' %}active{% endif %}" href="{{ calendar_model.zoom_urls.month }}">月</a>
-              <a class="{% if calendar_model.zoom == 'day' %}active{% endif %}" href="{{ calendar_model.zoom_urls.day }}">日</a>
+              <a class="{% if calendar_model.zoom == 'month' %}active{% endif %} {% if calendar_model.zoom_urls.month == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.month }}">月</a>
+              <a class="{% if calendar_model.zoom == 'day' %}active{% endif %} {% if calendar_model.zoom_urls.day == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.day }}">日</a>
             </div>
             {% if calendar_model.zoom == "day" %}
               {% for month in calendar_model.months %}
@@ -159,11 +161,11 @@
             <aside class="timeline-rail" aria-label="季度视频数量">
               <span class="timeline-current-marker" data-timeline-current aria-hidden="true"></span>
               {% for year in timeline_rail %}
-                <div class="timeline-year-group">
+                <div class="timeline-year-group" data-timeline-granularity="{{ year.granularity }}">
                   <span class="timeline-year-label">{{ year.year }}</span>
                   <div class="timeline-quarter-list">
-                    {% for mark in year.quarters %}
-                      <a class="timeline-mark {% if mark.count == 0 %}timeline-mark--empty{% endif %}" href="{% if mark.count %}#timeline-{{ mark.year }}-q{{ mark.quarter }}{% else %}#{% endif %}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频">
+                    {% for mark in year.marks %}
+                      <a class="timeline-mark" href="{{ mark.href }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" data-period="{{ mark.period }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频">
                         <span class="timeline-mark-label">{{ mark.label }}</span>
                         <span class="timeline-mark-bar"></span>
                         {% for label in mark.labels %}
@@ -177,7 +179,7 @@
             </aside>
             <div class="section-list">
               {% for group in timeline_groups %}
-                <section class="asset-section" id="timeline-{{ group.year }}-q{{ group.quarter }}">
+                <section class="asset-section" id="{{ group.anchor }}" data-year="{{ group.year }}" data-quarter="{{ group.quarter }}" data-month="{{ group.month }}">
                   <h2>{{ group.label }}</h2>
                   <div class="asset-grid">
                     {% for video in group.videos %}{{ asset_card(video) }}{% endfor %}

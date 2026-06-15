@@ -421,6 +421,8 @@ def read_filters(request: Request) -> dict[str, str]:
     view = params.get("view", "timeline") if params.get("view", "timeline") in {"timeline", "folders", "calendar"} else "timeline"
     requested_zoom = params.get("calendar_zoom")
     calendar_zoom = requested_zoom if requested_zoom in {"year", "month", "day"} else "year"
+    calendar_year = params.get("calendar_year", "").strip()
+    calendar_month = params.get("calendar_month", "").strip()
     return {
         "view": view,
         "type": params.get("type", "all") if params.get("type", "all") in {"all", "flat", "panorama"} else "all",
@@ -428,6 +430,8 @@ def read_filters(request: Request) -> dict[str, str]:
         "aspect": params.get("aspect", "all") if params.get("aspect", "all") in {"all", "wide", "vertical", "square"} else "all",
         "folder": params.get("folder", "").strip("/"),
         "calendar_zoom": calendar_zoom,
+        "calendar_year": calendar_year if calendar_year.isdigit() and len(calendar_year) == 4 else "",
+        "calendar_month": calendar_month if calendar_month.isdigit() and 1 <= int(calendar_month) <= 12 else "",
         "q": params.get("q", "").strip(),
     }
 
@@ -454,6 +458,20 @@ def query_videos(db: Database, filters: dict[str, str]):
         clauses.append("(name LIKE ? OR folder LIKE ? OR relative_path LIKE ?)")
         like = f"%{filters['q']}%"
         values.extend([like, like, like])
+    if filters["view"] == "calendar" and filters["calendar_year"]:
+        year_start = datetime(int(filters["calendar_year"]), 1, 1).timestamp()
+        year_end = datetime(int(filters["calendar_year"]) + 1, 1, 1).timestamp()
+        clauses.append("mtime >= ? AND mtime < ?")
+        values.extend([year_start, year_end])
+        if filters["calendar_month"]:
+            year = int(filters["calendar_year"])
+            month = int(filters["calendar_month"])
+            next_year = year + 1 if month == 12 else year
+            next_month = 1 if month == 12 else month + 1
+            month_start = datetime(year, month, 1).timestamp()
+            month_end = datetime(next_year, next_month, 1).timestamp()
+            clauses.append("mtime >= ? AND mtime < ?")
+            values.extend([month_start, month_end])
 
     sql = f"""
         SELECT *
@@ -471,7 +489,7 @@ def build_view_urls(filters: dict[str, str]) -> dict[str, str]:
         next_filters = {
             key: value
             for key, value in filters.items()
-            if value and value != "all" and key not in {"folder", "calendar_zoom"}
+            if value and value != "all" and key not in {"folder", "calendar_zoom", "calendar_year", "calendar_month"}
         }
         next_filters["view"] = view
         urls[view] = "/?" + urlencode(next_filters)
@@ -497,6 +515,9 @@ def group_by_date(rows):
                 "label": label,
                 "year": date.year,
                 "quarter": (date.month - 1) // 3 + 1,
+                "month": date.month,
+                "day": date.day,
+                "anchor": f"timeline-{date:%Y-%m-%d}",
                 "videos": [],
             },
         )
@@ -505,33 +526,99 @@ def group_by_date(rows):
 
 
 def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, object]]] | None = None) -> list[dict[str, object]]:
+    labels = labels or {}
+    day_counts: dict[tuple[int, int, int], int] = defaultdict(int)
+    month_counts: dict[tuple[int, int], int] = defaultdict(int)
     quarters: dict[tuple[int, int], int] = defaultdict(int)
+    halves: dict[tuple[int, int], int] = defaultdict(int)
     for row in rows:
         date = datetime.fromtimestamp(row["mtime"])
         quarter = (date.month - 1) // 3 + 1
+        half = 1 if date.month <= 6 else 2
+        day_counts[(date.year, date.month, date.day)] += 1
+        month_counts[(date.year, date.month)] += 1
         quarters[(date.year, quarter)] += 1
+        halves[(date.year, half)] += 1
 
     if not quarters:
         return []
 
-    labels = labels or {}
-    years = sorted({year for year, _quarter in quarters}, reverse=True)
-    return [
-        {
-            "year": year,
-            "quarters": [
-                {
-                    "year": year,
-                    "quarter": quarter,
-                    "label": f"Q{quarter}",
-                    "count": quarters.get((year, quarter), 0),
-                    "labels": labels.get((year, quarter), []),
-                }
-                for quarter in range(4, 0, -1)
-            ],
-        }
-        for year in years
-    ]
+    if len(day_counts) <= 48:
+        granularity = "day"
+    elif len(month_counts) <= 36:
+        granularity = "month"
+    elif len(quarters) <= 28:
+        granularity = "quarter"
+    else:
+        granularity = "half"
+
+    years = sorted({year for year, _quarter in quarters} | {year for year, _half in halves}, reverse=True)
+    result = []
+    for year in years:
+        marks = []
+        if granularity == "day":
+            keys = sorted((key for key in day_counts if key[0] == year), reverse=True)
+            for key in keys:
+                y, month, day = key
+                quarter = (month - 1) // 3 + 1
+                marks.append(
+                    {
+                        "year": y,
+                        "quarter": quarter,
+                        "period": f"{y}-{month:02d}-{day:02d}",
+                        "label": f"{month}/{day}",
+                        "count": day_counts[key],
+                        "labels": labels.get((y, quarter), []),
+                        "href": f"#timeline-{y}-{month:02d}-{day:02d}",
+                    }
+                )
+        elif granularity == "month":
+            keys = sorted((key for key in month_counts if key[0] == year), reverse=True)
+            for key in keys:
+                y, month = key
+                quarter = (month - 1) // 3 + 1
+                marks.append(
+                    {
+                        "year": y,
+                        "quarter": quarter,
+                        "period": f"{y}-{month:02d}",
+                        "label": f"{month}月",
+                        "count": month_counts[key],
+                        "labels": labels.get((y, quarter), []),
+                        "href": f"#timeline-{y}-{month:02d}",
+                    }
+                )
+        elif granularity == "quarter":
+            keys = sorted((key for key in quarters if key[0] == year), reverse=True)
+            for y, quarter in keys:
+                marks.append(
+                    {
+                        "year": y,
+                        "quarter": quarter,
+                        "period": f"{y}-q{quarter}",
+                        "label": f"Q{quarter}",
+                        "count": quarters[(y, quarter)],
+                        "labels": labels.get((y, quarter), []),
+                        "href": f"#timeline-{y}-q{quarter}",
+                    }
+                )
+        else:
+            keys = sorted((key for key in halves if key[0] == year), reverse=True)
+            for y, half in keys:
+                quarter = 3 if half == 2 else 1
+                marks.append(
+                    {
+                        "year": y,
+                        "quarter": quarter,
+                        "period": f"{y}-h{half}",
+                        "label": f"H{half}",
+                        "count": halves[(y, half)],
+                        "labels": [],
+                        "href": f"#timeline-{y}-h{half}",
+                    }
+                )
+        result.append({"year": year, "granularity": granularity, "marks": marks, "quarters": marks})
+    return result
 
 
 def get_timeline_labels(db: Database) -> dict[tuple[int, int], list[dict[str, object]]]:
@@ -597,7 +684,7 @@ def folder_url(filters: dict[str, str], folder: str) -> str:
     values = {
         key: value
         for key, value in filters.items()
-        if value and value != "all" and key not in {"folder", "calendar_zoom"}
+        if value and value != "all" and key not in {"folder", "calendar_zoom", "calendar_year", "calendar_month"}
     }
     values["view"] = "folders"
     if folder:
@@ -607,29 +694,46 @@ def folder_url(filters: dict[str, str], folder: str) -> str:
 
 def build_calendar_model(rows, filters: dict[str, str]) -> dict[str, object]:
     zoom = filters.get("calendar_zoom", "day")
+    selected_year = filters.get("calendar_year", "")
+    selected_month = filters.get("calendar_month", "")
     if zoom == "year":
         years: dict[str, list] = defaultdict(list)
         for row in rows:
-            years[datetime.fromtimestamp(row["mtime"]).strftime("%Y年")].append(row)
+            years[datetime.fromtimestamp(row["mtime"]).strftime("%Y")].append(row)
         return {
             "zoom": zoom,
             "zoom_urls": calendar_zoom_urls(filters),
+            "selected_year": selected_year,
+            "selected_month": selected_month,
             "groups": [
-                {"label": year, "count": len(videos), "cover": videos[0], "url": calendar_url(filters, "month")}
+                {
+                    "label": f"{year}年",
+                    "count": len(videos),
+                    "cover": videos[0],
+                    "url": calendar_url(filters, "month", year=year),
+                }
                 for year, videos in years.items()
             ],
         }
 
     if zoom == "month":
-        days: dict[str, list] = defaultdict(list)
+        months: dict[str, list] = defaultdict(list)
         for row in rows:
-            days[datetime.fromtimestamp(row["mtime"]).strftime("%Y年%m月%d日")].append(row)
+            date = datetime.fromtimestamp(row["mtime"])
+            months[date.strftime("%m")].append(row)
         return {
             "zoom": zoom,
             "zoom_urls": calendar_zoom_urls(filters),
+            "selected_year": selected_year,
+            "selected_month": selected_month,
             "groups": [
-                {"label": day, "count": len(videos), "cover": videos[0], "url": calendar_url(filters, "day")}
-                for day, videos in days.items()
+                {
+                    "label": f"{int(month)}月",
+                    "count": len(videos),
+                    "cover": videos[0],
+                    "url": calendar_url(filters, "day", year=selected_year, month=month),
+                }
+                for month, videos in months.items()
             ],
         }
 
@@ -640,6 +744,8 @@ def build_calendar_model(rows, filters: dict[str, str]) -> dict[str, object]:
     return {
         "zoom": zoom,
         "zoom_urls": calendar_zoom_urls(filters),
+        "selected_year": selected_year,
+        "selected_month": selected_month,
         "months": [
             {
                 "label": month,
@@ -650,19 +756,30 @@ def build_calendar_model(rows, filters: dict[str, str]) -> dict[str, object]:
     }
 
 
-def calendar_url(filters: dict[str, str], zoom: str) -> str:
+def calendar_url(filters: dict[str, str], zoom: str, year: str | None = None, month: str | None = None) -> str:
     values = {
         key: value
         for key, value in filters.items()
-        if value and value != "all" and key not in {"folder", "calendar_zoom"}
+        if value and value != "all" and key not in {"folder", "calendar_zoom", "calendar_year", "calendar_month"}
     }
     values["view"] = "calendar"
     values["calendar_zoom"] = zoom
+    if year:
+        values["calendar_year"] = year
+    elif zoom in {"month", "day"} and filters.get("calendar_year"):
+        values["calendar_year"] = filters["calendar_year"]
+    if month:
+        values["calendar_month"] = str(int(month))
+    elif zoom == "day" and filters.get("calendar_month"):
+        values["calendar_month"] = filters["calendar_month"]
     return "/?" + urlencode(values)
 
 
 def calendar_zoom_urls(filters: dict[str, str]) -> dict[str, str]:
-    return {zoom: calendar_url(filters, zoom) for zoom in ("year", "month", "day")}
+    urls = {"year": calendar_url(filters, "year")}
+    urls["month"] = calendar_url(filters, "month") if filters.get("calendar_year") else "#"
+    urls["day"] = calendar_url(filters, "day") if filters.get("calendar_year") and filters.get("calendar_month") else "#"
+    return urls
 
 
 app = create_app()

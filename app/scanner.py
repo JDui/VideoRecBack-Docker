@@ -11,7 +11,7 @@ from app.db import Database
 from app.thumbnails import VideoToolError, generate_thumbnail, probe_video
 from app.video_types import detect_video_type
 
-THUMBNAIL_VERSION = 7
+THUMBNAIL_VERSION = 8
 LOGGER = logging.getLogger(__name__)
 
 

@@ -11,13 +11,15 @@ let applyQualityAt = null;
 let hlsPlayer = null;
 const qualityLabels = {
   original: "原画",
-  low: "低压缩",
-  high: "高压缩",
+  low: "高清",
+  high: "流畅",
 };
 const totalDuration = Number(shell?.dataset.duration || 0);
 const transcodeOverlay = document.querySelector("[data-transcode-overlay]");
-const panoProgress = document.querySelector("[data-pano-progress]");
-const panoProgressFill = document.querySelector("[data-pano-progress-fill]");
+const seekControl = document.querySelector("[data-seek-control]");
+const timeValue = document.querySelector("[data-time-value]");
+const flatPlayButton = document.querySelector("[data-flat-play]");
+const centerAction = document.querySelector("[data-player-center-action]");
 
 const syncVolumeUi = () => {
   if (!video || !volumeControl) return;
@@ -36,7 +38,7 @@ const setVideoVolume = (nextVolume) => {
 const togglePlayback = () => {
   if (!video) return;
   if (video.paused) {
-    video.play();
+    video.play().catch(() => {});
   } else {
     video.pause();
   }
@@ -81,12 +83,34 @@ const hideTranscodeOverlay = () => {
   if (transcodeOverlay) transcodeOverlay.hidden = true;
 };
 
-const syncPanoProgress = () => {
-  if (!panoProgress || !panoProgressFill) return;
+const formatClock = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+};
+
+const syncProgressUi = () => {
   const duration = getLogicalDuration();
   const progress = Number.isFinite(duration) && duration > 0 ? clamp(getLogicalCurrentTime() / duration, 0, 1) : 0;
-  panoProgressFill.style.strokeDashoffset = String(100 - progress * 100);
-  panoProgress.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+  if (seekControl && document.activeElement !== seekControl) {
+    seekControl.value = String(Math.round(progress * 1000));
+  }
+  if (timeValue) {
+    const current = formatClock(getLogicalCurrentTime());
+    const total = Number.isFinite(duration) ? formatClock(duration) : "00:00";
+    timeValue.textContent = shell?.dataset.videoType === "panorama" ? current : `${current} / ${total}`;
+  }
+};
+
+const syncPlayUi = () => {
+  const label = video?.paused ? "播放" : "暂停";
+  if (flatPlayButton) flatPlayButton.textContent = label;
+  if (centerAction) {
+    centerAction.textContent = label;
+    centerAction.classList.toggle("is-hidden", !video?.paused);
+  }
 };
 
 const syncExposureUi = () => {
@@ -126,13 +150,10 @@ if (video) {
 
   const speedSlider = document.querySelector("[data-speed-slider]");
   const speedValue = document.querySelector("[data-speed-value]");
-  const qualitySlider = document.querySelector("[data-quality-slider]");
+  const qualityButtons = [...document.querySelectorAll("[data-quality-option]")];
   const qualityValue = document.querySelector("[data-quality-value]");
-  if (qualitySlider) {
-    const qualityValues = (qualitySlider.dataset.qualityValues || "original,low,high")
-      .split(",")
-      .map((item) => item.trim())
-      .filter((item) => item in qualityLabels);
+  if (qualityButtons.length) {
+    const qualityValues = qualityButtons.map((button) => button.dataset.qualityOption).filter((item) => item in qualityLabels);
     video.dataset.currentQuality = qualityValues[0] || "original";
     let qualitySwitchId = 0;
     const qualityUrl = (quality, startAt = 0) => {
@@ -153,16 +174,15 @@ if (video) {
         video.canPlayType("application/x-mpegURL")
       );
     };
-    const syncQualityUi = () => {
-      const index = clamp(Math.round(Number(qualitySlider.value)), 0, qualityValues.length - 1);
-      const quality = qualityValues[index] || "original";
-      qualitySlider.value = String(index);
-      qualitySlider.style.setProperty("--quality-index", String(index));
+    const syncQualityUi = (quality = video.dataset.currentQuality || "original") => {
+      for (const button of qualityButtons) {
+        button.classList.toggle("active", button.dataset.qualityOption === quality);
+      }
       if (qualityValue) qualityValue.textContent = qualityLabels[quality] || quality;
       return quality;
     };
-    const applyQuality = () => {
-      const quality = syncQualityUi();
+    const applyQuality = (quality) => {
+      syncQualityUi(quality);
       if (video.dataset.currentQuality === quality) return;
       applyQualityAt(quality, getLogicalCurrentTime(), false);
     };
@@ -179,7 +199,7 @@ if (video) {
         video.defaultPlaybackRate = playbackRate;
         video.volume = volume;
         syncVolumeUi();
-        syncPanoProgress();
+        syncProgressUi();
         hideTranscodeOverlay();
         if (shouldPlay) video.play().catch(() => {});
       };
@@ -234,8 +254,9 @@ if (video) {
       video.load();
     };
     syncQualityUi();
-    qualitySlider.addEventListener("input", applyQuality);
-    qualitySlider.addEventListener("change", applyQuality);
+    for (const button of qualityButtons) {
+      button.addEventListener("click", () => applyQuality(button.dataset.qualityOption));
+    }
   }
   if (speedSlider) {
     const speedValues = (speedSlider.dataset.speedValues || "0.5,1,1.5,2,4")
@@ -257,51 +278,30 @@ if (video) {
     speedSlider.addEventListener("input", applySpeed);
     speedSlider.addEventListener("change", applySpeed);
   }
-  video.addEventListener("timeupdate", syncPanoProgress);
-  video.addEventListener("durationchange", syncPanoProgress);
-  video.addEventListener("loadedmetadata", syncPanoProgress);
-}
-
-if (panoProgress && video) {
-  const seekFromProgressEvent = (event) => {
-    const rect = panoProgress.getBoundingClientRect();
-    const x = clamp(event.clientX - rect.left, 0, rect.width);
-    const y = clamp(event.clientY - rect.top, 0, rect.height);
-    const distances = [
-      { edge: "top", value: y },
-      { edge: "right", value: rect.width - x },
-      { edge: "bottom", value: rect.height - y },
-      { edge: "left", value: x },
-    ].sort((a, b) => a.value - b.value);
-    const edge = distances[0].edge;
-    const perimeter = Math.max(1, 2 * (rect.width + rect.height));
-    let distance = x;
-    if (edge === "right") distance = rect.width + y;
-    if (edge === "bottom") distance = rect.width + rect.height + (rect.width - x);
-    if (edge === "left") distance = rect.width * 2 + rect.height + (rect.height - y);
+  video.addEventListener("timeupdate", syncProgressUi);
+  video.addEventListener("durationchange", syncProgressUi);
+  video.addEventListener("loadedmetadata", syncProgressUi);
+  video.addEventListener("play", syncPlayUi);
+  video.addEventListener("pause", syncPlayUi);
+  video.addEventListener("ended", syncPlayUi);
+  seekControl?.addEventListener("input", () => {
     const duration = getLogicalDuration();
-    if (Number.isFinite(duration) && duration > 0) {
-      setLogicalCurrentTime(duration * clamp(distance / perimeter, 0, 1));
-    }
-    syncPanoProgress();
-  };
-
-  const startPanoProgressDrag = (event) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    seekFromProgressEvent(event);
-  };
-  const movePanoProgressDrag = (event) => {
-    if (!(event.buttons & 1)) return;
-    event.preventDefault();
-    seekFromProgressEvent(event);
-  };
-
-  for (const hit of document.querySelectorAll("[data-pano-progress-hit]")) {
-    hit.addEventListener("pointerdown", startPanoProgressDrag);
-    hit.addEventListener("pointermove", movePanoProgressDrag);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const nextTime = duration * (Number(seekControl.value) / 1000);
+    if (timeValue) timeValue.textContent = `${formatClock(nextTime)} / ${formatClock(duration)}`;
+  });
+  seekControl?.addEventListener("change", () => {
+    const duration = getLogicalDuration();
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    setLogicalCurrentTime(duration * (Number(seekControl.value) / 1000));
+  });
+  flatPlayButton?.addEventListener("click", togglePlayback);
+  centerAction?.addEventListener("click", togglePlayback);
+  if (shell?.dataset.videoType !== "panorama") {
+    video.addEventListener("click", togglePlayback);
   }
-  syncPanoProgress();
+  syncProgressUi();
+  syncPlayUi();
 }
 
 if (shell?.dataset.videoType === "panorama" && video) {
