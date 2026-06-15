@@ -26,6 +26,15 @@
         <input name="default_volume_percent" type="number" min="0" max="100" value="{{ settings.default_volume_percent }}" required>
       </label>
       <label>
+        默认画质
+        <select name="default_quality">
+          <option value="original" {% if settings.default_quality == 'original' %}selected{% endif %}>原画</option>
+          <option value="ultra" {% if settings.default_quality == 'ultra' %}selected{% endif %}>超清</option>
+          <option value="low" {% if settings.default_quality == 'low' %}selected{% endif %}>高清</option>
+          <option value="high" {% if settings.default_quality == 'high' %}selected{% endif %}>流畅</option>
+        </select>
+      </label>
+      <label>
         串流缓存保留和检查间隔，天
         <input name="stream_cache_retention_days" type="number" min="1" max="365" value="{{ settings.stream_cache_retention_days }}" required>
       </label>

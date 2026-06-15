@@ -1,5 +1,6 @@
 const video = document.getElementById("videoPlayer");
 const shell = document.querySelector(".player-shell");
+const stage = document.querySelector(".player-stage");
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 let volumeControl = null;
 let volumeValue = null;
@@ -11,6 +12,7 @@ let applyQualityAt = null;
 let hlsPlayer = null;
 const qualityLabels = {
   original: "原画",
+  ultra: "超清",
   low: "高清",
   high: "流畅",
 };
@@ -20,6 +22,8 @@ const seekControl = document.querySelector("[data-seek-control]");
 const timeValue = document.querySelector("[data-time-value]");
 const flatPlayButton = document.querySelector("[data-flat-play]");
 const centerAction = document.querySelector("[data-player-center-action]");
+const muteToggle = document.querySelector("[data-mute-toggle]");
+const fullscreenToggle = document.querySelector("[data-fullscreen-toggle]");
 
 const syncVolumeUi = () => {
   if (!video || !volumeControl) return;
@@ -32,6 +36,20 @@ const syncVolumeUi = () => {
 const setVideoVolume = (nextVolume) => {
   if (!video) return;
   video.volume = clamp(nextVolume, 0, 1);
+  video.muted = video.volume === 0;
+  syncVolumeUi();
+};
+
+const toggleMute = () => {
+  if (!video) return;
+  if (!video.muted && video.volume > 0) {
+    video.dataset.previousVolume = String(video.volume);
+    video.muted = true;
+  } else {
+    const previousVolume = Number(video.dataset.previousVolume || video.dataset.appliedVolume || 0.6);
+    video.muted = false;
+    video.volume = clamp(Number.isFinite(previousVolume) && previousVolume > 0 ? previousVolume : 0.6, 0, 1);
+  }
   syncVolumeUi();
 };
 
@@ -77,10 +95,12 @@ const showTranscodeOverlay = (message = "正在切换转码中...") => {
   if (!transcodeOverlay) return;
   transcodeOverlay.textContent = message;
   transcodeOverlay.hidden = false;
+  shell?.classList.add("is-transcoding");
 };
 
 const hideTranscodeOverlay = () => {
   if (transcodeOverlay) transcodeOverlay.hidden = true;
+  shell?.classList.remove("is-transcoding");
 };
 
 const formatClock = (seconds) => {
@@ -97,6 +117,9 @@ const syncProgressUi = () => {
   if (seekControl && document.activeElement !== seekControl) {
     seekControl.value = String(Math.round(progress * 1000));
   }
+  if (seekControl?.classList.contains("flat-player-progress")) {
+    seekControl.style.backgroundSize = `${Math.round(progress * 100)}% 100%, 100% 100%`;
+  }
   if (timeValue) {
     const current = formatClock(getLogicalCurrentTime());
     const total = Number.isFinite(duration) ? formatClock(duration) : "00:00";
@@ -111,6 +134,13 @@ const syncPlayUi = () => {
     centerAction.textContent = label;
     centerAction.classList.toggle("is-hidden", !video?.paused);
   }
+  shell?.classList.toggle("is-playing", Boolean(video && !video.paused && !video.ended));
+  shell?.classList.toggle("is-paused", Boolean(video && (video.paused || video.ended)));
+};
+
+const syncMuteUi = () => {
+  if (!video || !muteToggle) return;
+  muteToggle.textContent = video.muted || video.volume === 0 ? "静音" : "音量";
 };
 
 const syncExposureUi = () => {
@@ -136,7 +166,10 @@ if (video) {
   if (volumeControl) {
     syncVolumeUi();
     volumeControl.addEventListener("input", () => {
-      setVideoVolume(Number(volumeControl.value) / 100);
+      const nextVolume = Number(volumeControl.value) / 100;
+      video.muted = nextVolume === 0;
+      video.volume = clamp(nextVolume, 0, 1);
+      syncVolumeUi();
     });
   }
   exposureControl = document.querySelector("[data-exposure-control]");
@@ -154,13 +187,13 @@ if (video) {
   const qualityValue = document.querySelector("[data-quality-value]");
   if (qualityButtons.length) {
     const qualityValues = qualityButtons.map((button) => button.dataset.qualityOption).filter((item) => item in qualityLabels);
-    video.dataset.currentQuality = qualityValues[0] || "original";
+    const defaultQuality = shell?.dataset.defaultQuality || "original";
+    video.dataset.currentQuality = qualityValues.includes(defaultQuality) ? defaultQuality : (qualityValues[0] || "original");
     let qualitySwitchId = 0;
     const qualityUrl = (quality, startAt = 0) => {
       const base = video.dataset.mediaBase || video.getAttribute("src") || "";
       const cleanBase = base.split("#")[0];
-      const time = Math.max(0, startAt).toFixed(3);
-      if (quality === "original") return `${cleanBase}#t=${time}`;
+      if (quality === "original") return cleanBase;
       return `${cleanBase}/hls/${encodeURIComponent(quality)}/${Math.round(Math.max(0, startAt) * 1000)}/index.m3u8`;
     };
     const destroyHls = () => {
@@ -209,6 +242,7 @@ if (video) {
       video.addEventListener("seeked", resume, { once: true });
 
       if (quality === "original") {
+        hideTranscodeOverlay();
         destroyHls();
         mediaTimeOffset = 0;
         video.addEventListener("loadedmetadata", () => {
@@ -255,7 +289,13 @@ if (video) {
     };
     syncQualityUi();
     for (const button of qualityButtons) {
-      button.addEventListener("click", () => applyQuality(button.dataset.qualityOption));
+      button.addEventListener("click", () => {
+        applyQuality(button.dataset.qualityOption);
+        button.closest("details")?.removeAttribute("open");
+      });
+    }
+    if (video.dataset.currentQuality !== "original") {
+      applyQualityAt(video.dataset.currentQuality, 0, video.autoplay && shell?.dataset.videoType !== "panorama");
     }
   }
   if (speedSlider) {
@@ -284,6 +324,10 @@ if (video) {
   video.addEventListener("play", syncPlayUi);
   video.addEventListener("pause", syncPlayUi);
   video.addEventListener("ended", syncPlayUi);
+  video.addEventListener("volumechange", () => {
+    syncVolumeUi();
+    syncMuteUi();
+  });
   seekControl?.addEventListener("input", () => {
     const duration = getLogicalDuration();
     if (!Number.isFinite(duration) || duration <= 0) return;
@@ -297,11 +341,23 @@ if (video) {
   });
   flatPlayButton?.addEventListener("click", togglePlayback);
   centerAction?.addEventListener("click", togglePlayback);
+  muteToggle?.addEventListener("click", toggleMute);
+  for (const button of document.querySelectorAll("[data-seek-step]")) {
+    button.addEventListener("click", () => seekBy(Number(button.dataset.seekStep || 0)));
+  }
+  fullscreenToggle?.addEventListener("click", () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+      return;
+    }
+    stage?.requestFullscreen?.();
+  });
   if (shell?.dataset.videoType !== "panorama") {
     video.addEventListener("click", togglePlayback);
   }
   syncProgressUi();
   syncPlayUi();
+  syncMuteUi();
 }
 
 if (shell?.dataset.videoType === "panorama" && video) {

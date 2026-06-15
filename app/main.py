@@ -22,6 +22,7 @@ from app.config import (
     load_settings,
     normalize_extensions,
     normalize_ignore_patterns,
+    normalize_quality,
     save_settings,
 )
 from app.db import Database
@@ -38,6 +39,7 @@ from app.scanner import Scanner
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
+TIMELINE_MIN_YEAR = 2010
 
 
 def create_app() -> FastAPI:
@@ -113,6 +115,7 @@ def create_app() -> FastAPI:
         video_root: str = Form(...),
         scan_interval_hours: int = Form(...),
         default_volume_percent: int = Form(...),
+        default_quality: str = Form("original"),
         stream_cache_retention_days: int = Form(...),
         show_date: str | None = Form(None),
         show_size: str | None = Form(None),
@@ -126,6 +129,7 @@ def create_app() -> FastAPI:
             video_root=video_root.strip() or "/media",
             scan_interval_hours=int(scan_interval_hours),
             default_volume_percent=clamp_percent(default_volume_percent),
+            default_quality=normalize_quality(default_quality),
             stream_cache_retention_days=clamp_days(stream_cache_retention_days),
             show_date=show_date == "on",
             show_size=show_size == "on",
@@ -397,6 +401,7 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "video_root": settings.video_root,
             "scan_interval_hours": settings.scan_interval_hours,
             "default_volume_percent": settings.default_volume_percent,
+            "default_quality": settings.default_quality,
             "stream_cache_retention_days": settings.stream_cache_retention_days,
             "show_date": int(settings.show_date),
             "show_size": int(settings.show_size),
@@ -531,14 +536,38 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
     month_counts: dict[tuple[int, int], int] = defaultdict(int)
     quarters: dict[tuple[int, int], int] = defaultdict(int)
     halves: dict[tuple[int, int], int] = defaultdict(int)
+    target_anchors: dict[tuple[str, tuple[int, ...]], tuple[float, str]] = {}
+
+    def set_target(kind: str, key: tuple[int, ...], timestamp: float, date: datetime) -> None:
+        target_key = (kind, key)
+        anchor = f"#timeline-{date:%Y-%m-%d}"
+        if target_key not in target_anchors or timestamp > target_anchors[target_key][0]:
+            target_anchors[target_key] = (timestamp, anchor)
+
+    def target(kind: str, key: tuple[int, ...], fallback: str) -> str:
+        return target_anchors.get((kind, key), (0, fallback))[1]
+
     for row in rows:
         date = datetime.fromtimestamp(row["mtime"])
-        quarter = (date.month - 1) // 3 + 1
-        half = 1 if date.month <= 6 else 2
-        day_counts[(date.year, date.month, date.day)] += 1
-        month_counts[(date.year, date.month)] += 1
-        quarters[(date.year, quarter)] += 1
-        halves[(date.year, half)] += 1
+        display_date = date if date.year >= TIMELINE_MIN_YEAR else datetime(TIMELINE_MIN_YEAR, 1, 1)
+        year = display_date.year
+        month = display_date.month
+        day = display_date.day
+        display_quarter = (display_date.month - 1) // 3 + 1
+        half = 1 if display_date.month <= 6 else 2
+        timestamp = float(row["mtime"])
+        day_key = (year, month, day)
+        month_key = (year, month)
+        quarter_key = (year, display_quarter)
+        half_key = (year, half)
+        day_counts[day_key] += 1
+        month_counts[month_key] += 1
+        quarters[quarter_key] += 1
+        halves[half_key] += 1
+        set_target("day", day_key, timestamp, date)
+        set_target("month", month_key, timestamp, date)
+        set_target("quarter", quarter_key, timestamp, date)
+        set_target("half", half_key, timestamp, date)
 
     if not quarters:
         return []
@@ -566,10 +595,11 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
                         "year": y,
                         "quarter": quarter,
                         "period": f"{y}-{month:02d}-{day:02d}",
-                        "label": f"{month}/{day}",
+                        "label": "2010前" if y == TIMELINE_MIN_YEAR and month == 1 and day == 1 else f"{month}/{day}",
                         "count": day_counts[key],
                         "labels": labels.get((y, quarter), []),
                         "href": f"#timeline-{y}-{month:02d}-{day:02d}",
+                        "target": target("day", key, f"#timeline-{y}-{month:02d}-{day:02d}"),
                     }
                 )
         elif granularity == "month":
@@ -586,6 +616,7 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
                         "count": month_counts[key],
                         "labels": labels.get((y, quarter), []),
                         "href": f"#timeline-{y}-{month:02d}",
+                        "target": target("month", key, f"#timeline-{y}-{month:02d}"),
                     }
                 )
         elif granularity == "quarter":
@@ -600,6 +631,7 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
                         "count": quarters[(y, quarter)],
                         "labels": labels.get((y, quarter), []),
                         "href": f"#timeline-{y}-q{quarter}",
+                        "target": target("quarter", (y, quarter), f"#timeline-{y}-q{quarter}"),
                     }
                 )
         else:
@@ -615,6 +647,7 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
                         "count": halves[(y, half)],
                         "labels": [],
                         "href": f"#timeline-{y}-h{half}",
+                        "target": target("half", (y, half), f"#timeline-{y}-h{half}"),
                     }
                 )
         result.append({"year": year, "granularity": granularity, "marks": marks, "quarters": marks})

@@ -3,16 +3,27 @@
 {% block body_class %}player-page {% if embed %}player-page--embed{% endif %}{% endblock %}
 {% block chrome %}{% endblock %}
 {% block content %}
-  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}">
-    {% if not embed %}
-      <div class="player-toolbar">
+  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ settings.default_quality }}">
+      <div class="player-toolbar {% if embed %}player-toolbar--embed{% endif %}">
+        {% if not embed %}
         <h1 title="播放：{{ video.name }}">播放：{{ video.name[:12] }}{% if video.name|length > 12 %}…{% endif %}</h1>
+        {% endif %}
         <div class="player-toolbar-actions">
+          <details class="quality-menu" data-quality-menu>
+            <summary class="nav-button secondary">画质 <span data-quality-value>原画</span></summary>
+            <div class="quality-menu-panel" data-quality-choice>
+              <button type="button" class="active" data-quality-option="original">原画</button>
+              <button type="button" data-quality-option="ultra">超清</button>
+              <button type="button" data-quality-option="low">高清</button>
+              <button type="button" data-quality-option="high">流畅</button>
+            </div>
+          </details>
+          {% if not embed %}
           <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
           <button class="nav-button secondary" type="button" data-player-close>关闭</button>
+          {% endif %}
         </div>
       </div>
-    {% endif %}
     <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
       {% if video.type == "panorama" %}
         <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
@@ -20,19 +31,24 @@
       {% else %}
         <video id="videoPlayer" class="player" autoplay playsinline preload="auto" src="/media/{{ video.id }}" data-media-base="/media/{{ video.id }}"></video>
         <div class="player-center-action" data-player-center-action>播放</div>
+        <div class="flat-player-overlay" data-flat-controls>
+          <input class="flat-player-progress" type="range" min="0" max="1000" value="0" aria-label="播放进度" data-seek-control>
+          <div class="flat-player-controls">
+            <button class="flat-control-button" type="button" data-flat-play>播放</button>
+            <button class="flat-control-button" type="button" data-seek-step="-10">后退10秒</button>
+            <button class="flat-control-button" type="button" data-seek-step="10">前进10秒</button>
+            <div class="flat-volume-group">
+              <button class="flat-control-button" type="button" data-mute-toggle>音量</button>
+              <input class="flat-volume-slider" type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" aria-label="音量" data-volume-control>
+            </div>
+            <span class="player-time" data-time-value>00:00 / 00:00</span>
+            <button class="flat-control-button" type="button" data-fullscreen-toggle>全屏</button>
+          </div>
+        </div>
       {% endif %}
       <div class="transcode-overlay" data-transcode-overlay hidden>正在切换转码中...</div>
     </div>
     <div class="player-controls">
-      {% if video.type != "panorama" %}
-        <div class="flat-player-bar">
-          <button class="player-icon-button" type="button" data-flat-play>播放</button>
-          <label class="control-field flat-seek" aria-label="进度">
-            <input type="range" min="0" max="1000" value="0" data-seek-control>
-          </label>
-          <span class="player-time" data-time-value>00:00 / 00:00</span>
-        </div>
-      {% endif %}
       {% if video.type == "panorama" %}
         <label class="control-row progress-strip" aria-label="播放进度">
           <span class="control-label">进度</span>
@@ -40,15 +56,6 @@
           <span class="control-value" data-time-value>00:00</span>
         </label>
       {% endif %}
-      <div class="control-row quality-strip" aria-label="画质">
-        <span class="control-label">画质</span>
-        <span class="quality-choice" data-quality-choice>
-          <button type="button" class="active" data-quality-option="original">原画</button>
-          <button type="button" data-quality-option="low">高清</button>
-          <button type="button" data-quality-option="high">流畅</button>
-        </span>
-        <span class="control-value" data-quality-value>原画</span>
-      </div>
       <label class="control-row speed-strip" aria-label="播放倍速">
         <span class="control-label">倍速</span>
         <span class="control-field">
@@ -80,5 +87,5 @@
 {% endblock %}
 {% block scripts %}
   <script src="/static/vendor/hls.min.js"></script>
-  <script type="module" src="/static/player.js"></script>
+  <script type="module" src="/static/player.js?v=0.7.0"></script>
 {% endblock %}

@@ -42,11 +42,23 @@ def test_generate_stream_cache_uses_expected_low_quality_command(monkeypatch, tm
 
     command = commands[0]
     assert "-b:v" in command
-    assert command[command.index("-b:v") + 1] == "5M"
+    assert command[command.index("-b:v") + 1] == "3M"
     assert "-vf" in command
     assert "min(1920,iw)" in command[command.index("-vf") + 1]
     assert "min(1080,ih)" in command[command.index("-vf") + 1]
     assert output.exists()
+
+
+def test_ultra_quality_preserves_source_resolution_without_cap(tmp_path):
+    source = tmp_path / "input.mp4"
+    output_dir = tmp_path / "hls"
+    command = build_hls_command(source, output_dir, STREAM_QUALITIES["ultra"], 0)
+
+    assert "-b:v" in command
+    assert command[command.index("-b:v") + 1] == "8M"
+    assert "-vf" in command
+    assert "trunc(iw/2)*2" in command[command.index("-vf") + 1]
+    assert "min(" not in command[command.index("-vf") + 1]
 
 
 def test_resolve_stream_path_generates_high_quality_cache(monkeypatch, tmp_path):

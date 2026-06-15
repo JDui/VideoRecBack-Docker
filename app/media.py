@@ -77,15 +77,16 @@ def iter_file(path: Path, start: int, end: int):
 
 @dataclass(frozen=True, slots=True)
 class StreamQuality:
-    height: int
-    width: int
+    height: int | None
+    width: int | None
     bitrate: str
     audio_bitrate: str
     segment_seconds: int = 2
 
 
 STREAM_QUALITIES = {
-    "low": StreamQuality(height=1080, width=1920, bitrate="5M", audio_bitrate="160k"),
+    "ultra": StreamQuality(height=None, width=None, bitrate="8M", audio_bitrate="192k"),
+    "low": StreamQuality(height=1080, width=1920, bitrate="3M", audio_bitrate="160k"),
     "high": StreamQuality(height=720, width=1280, bitrate="1M", audio_bitrate="96k"),
 }
 HLS_READY_TIMEOUT_SECONDS = 45.0
@@ -128,7 +129,7 @@ def stream_cache_path(video, source: Path, data_dir: Path, quality: str) -> Path
             str(stat.st_mtime_ns),
             str(stat.st_size),
             quality,
-            "stream-v1",
+            "stream-v2",
         ]
     )
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
@@ -184,7 +185,7 @@ def hls_cache_dir(video, source: Path, data_dir: Path, quality: str, start_ms: i
             str(stat.st_size),
             quality,
             str(max(0, int(start_ms))),
-            "hls-v1",
+            "hls-v2",
         ]
     )
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
@@ -211,6 +212,12 @@ def start_hls_transcode(source: Path, output_dir: Path, quality: StreamQuality, 
 
 
 def build_hls_command(source: Path, output_dir: Path, quality: StreamQuality, start_at: float) -> list[str]:
+    video_filter = (
+        f"scale=w='min({quality.width},iw)':h='min({quality.height},ih)':"
+        "force_original_aspect_ratio=decrease:force_divisible_by=2"
+        if quality.width and quality.height
+        else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
+    )
     return [
         "ffmpeg",
         "-hide_banner",
@@ -226,10 +233,7 @@ def build_hls_command(source: Path, output_dir: Path, quality: StreamQuality, st
         "-map",
         "0:a:0?",
         "-vf",
-        (
-            f"scale=w='min({quality.width},iw)':h='min({quality.height},ih)':"
-            "force_original_aspect_ratio=decrease:force_divisible_by=2"
-        ),
+        video_filter,
         "-c:v",
         "libx264",
         "-preset",
@@ -304,6 +308,12 @@ def hls_playlist_ready(playlist: Path) -> bool:
 
 
 def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) -> None:
+    video_filter = (
+        f"scale=w='min({quality.width},iw)':h='min({quality.height},ih)':"
+        "force_original_aspect_ratio=decrease:force_divisible_by=2"
+        if quality.width and quality.height
+        else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
+    )
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -317,10 +327,7 @@ def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) ->
         "-map",
         "0:a:0?",
         "-vf",
-        (
-            f"scale=w='min({quality.width},iw)':h='min({quality.height},ih)':"
-            "force_original_aspect_ratio=decrease:force_divisible_by=2"
-        ),
+        video_filter,
         "-c:v",
         "libx264",
         "-preset",

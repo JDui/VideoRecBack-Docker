@@ -125,27 +125,39 @@ if (timelineRail && timelineCurrent && libraryPane) {
   );
   const sections = [...document.querySelectorAll(".asset-section[id^='timeline-']")];
   const sectionById = new Map(sections.map((section) => [section.id, section]));
-  const sectionForMark = (mark) => {
-    const href = mark.getAttribute("href") || "";
-    const id = href.startsWith("#") ? href.slice(1) : "";
+  const sectionForTimelineId = (id) => {
     if (sectionById.has(id)) return sectionById.get(id);
-    if (id.length === "timeline-2026-01".length) {
+    const dateMatch = id.match(/^timeline-(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+    if (dateMatch?.[3]) return null;
+    if (dateMatch) {
       return sections.find((section) => section.id.startsWith(id));
     }
-    if (id.includes("-q")) {
+    const quarterMatch = id.match(/^timeline-(\d{4})-q([1-4])$/);
+    if (quarterMatch) {
       return sections.find((section) => (
-        section.dataset.year === mark.dataset.year &&
-        section.dataset.quarter === mark.dataset.quarter
+        section.dataset.year === quarterMatch[1] &&
+        section.dataset.quarter === quarterMatch[2]
       ));
     }
-    if (id.includes("-h")) {
-      const half = id.endsWith("-h2") ? "2" : "1";
+    const halfMatch = id.match(/^timeline-(\d{4})-h([12])$/);
+    if (halfMatch) {
+      const half = halfMatch[2];
       return sections.find((section) => {
         const month = Number(section.dataset.month || 0);
-        return section.dataset.year === mark.dataset.year && (half === "2" ? month >= 7 : month <= 6);
+        return section.dataset.year === halfMatch[1] && (half === "2" ? month >= 7 : month <= 6);
       });
     }
     return null;
+  };
+  const sectionForMark = (mark) => {
+    const targetAnchor = mark.dataset.targetAnchor || "";
+    if (targetAnchor.startsWith("#")) {
+      const targetSection = sectionForTimelineId(targetAnchor.slice(1));
+      if (targetSection) return targetSection;
+    }
+    const href = mark.getAttribute("href") || "";
+    const id = href.startsWith("#") ? href.slice(1) : "";
+    return sectionForTimelineId(id);
   };
   const markForSection = (section) => {
     const exact = markById.get(section.id);
@@ -187,7 +199,7 @@ if (timelineRail && timelineCurrent && libraryPane) {
       if (!section) return;
       event.preventDefault();
       scrollToTimelineSection(section);
-      window.history.pushState(null, "", href);
+      window.history.pushState(null, "", mark.dataset.targetAnchor || href);
     });
   }
 
@@ -221,8 +233,7 @@ if (timelineRail && timelineCurrent && libraryPane) {
 
   libraryPane.addEventListener("scroll", updateTimelineCurrent, { passive: true });
   window.addEventListener("resize", updateTimelineCurrent);
-  const initialMark = marks.find((mark) => mark.getAttribute("href") === window.location.hash);
-  const initialSection = sectionById.get(window.location.hash.slice(1)) || (initialMark ? sectionForMark(initialMark) : null);
+  const initialSection = sectionForTimelineId(window.location.hash.slice(1));
   if (initialSection) {
     window.requestAnimationFrame(() => scrollToTimelineSection(initialSection));
   }

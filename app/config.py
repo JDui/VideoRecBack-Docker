@@ -8,6 +8,7 @@ from typing import Any
 
 DEFAULT_VIDEO_EXTENSIONS = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"]
 DEFAULT_IGNORE_NAME_PATTERNS = ["Thumbs.db", "desktop.ini", "._*"]
+QUALITY_OPTIONS = ("original", "ultra", "low", "high")
 
 
 @dataclass(slots=True)
@@ -16,6 +17,7 @@ class Settings:
     video_root: str = "/media"
     scan_interval_hours: int = 150
     default_volume_percent: int = 20
+    default_quality: str = "original"
     stream_cache_retention_days: int = 7
     show_date: bool = True
     show_size: bool = True
@@ -48,6 +50,7 @@ def load_settings(config_dir: Path) -> Settings:
         video_root=str(raw.get("video_root") or "/media"),
         scan_interval_hours=int(interval_hours),
         default_volume_percent=clamp_percent(raw.get("default_volume_percent", 20)),
+        default_quality=normalize_quality(raw.get("default_quality")),
         stream_cache_retention_days=clamp_days(raw.get("stream_cache_retention_days", 7)),
         show_date=bool(raw.get("show_date", True)),
         show_size=bool(raw.get("show_size", True)),
@@ -64,6 +67,7 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload["video_extensions"] = normalize_extensions(payload["video_extensions"])
     payload["ignore_name_patterns"] = normalize_ignore_patterns(payload.get("ignore_name_patterns"))
     payload["default_volume_percent"] = clamp_percent(payload.get("default_volume_percent", 20))
+    payload["default_quality"] = normalize_quality(payload.get("default_quality"))
     payload["stream_cache_retention_days"] = clamp_days(payload.get("stream_cache_retention_days", 7))
     payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))
     config_path(config_dir).write_text(
@@ -86,6 +90,11 @@ def clamp_days(value: Any) -> int:
     except (TypeError, ValueError):
         number = 7
     return max(1, min(365, number))
+
+
+def normalize_quality(value: Any) -> str:
+    text = str(value or "original").strip()
+    return text if text in QUALITY_OPTIONS else "original"
 
 
 def normalize_extensions(value: Any) -> list[str]:

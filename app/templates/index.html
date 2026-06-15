@@ -165,7 +165,7 @@
                   <span class="timeline-year-label">{{ year.year }}</span>
                   <div class="timeline-quarter-list">
                     {% for mark in year.marks %}
-                      <a class="timeline-mark" href="{{ mark.href }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" data-period="{{ mark.period }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频">
+                      <a class="timeline-mark" href="{{ mark.href }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" data-period="{{ mark.period }}" data-target-anchor="{{ mark.target }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频">
                         <span class="timeline-mark-label">{{ mark.label }}</span>
                         <span class="timeline-mark-bar"></span>
                         {% for label in mark.labels %}
@@ -224,5 +224,5 @@
   </form>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=0.7.0" defer></script>
 {% endblock %}

@@ -82,6 +82,8 @@ def test_settings_page_includes_panorama_thumbnail_refresh(monkeypatch, tmp_path
     assert response.status_code == 200
     assert 'action="/settings/refresh-panorama-thumbnails"' in response.text
     assert 'action="/settings/recheck-panorama-types"' in response.text
+    assert 'name="default_quality"' in response.text
+    assert '<option value="ultra"' in response.text
     assert "确认要刷新全部全景视频封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
     assert "已提交刷新 2 个全景视频封面" in response.text
@@ -142,9 +144,44 @@ def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_p
     assert "/static/vendor/hls.min.js" in response.text
     assert 'data-transcode-overlay hidden' in response.text
     assert 'data-seek-control' in response.text
+    assert "progress-strip" in response.text
+    assert 'data-quality-menu' in response.text
+    assert 'data-quality-option="ultra">超清' in response.text
     assert 'data-quality-option="low">高清' in response.text
     assert 'data-quality-option="high">流畅' in response.text
     assert 'data-pano-progress' not in response.text
+
+
+def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    video_path = tmp_path / "media" / "flat.mp4"
+    video_path.parent.mkdir()
+    video_path.write_bytes(b"video")
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, relative_path, folder, type, size_bytes,
+                duration_seconds, width, height, aspect_ratio, mtime,
+                missing, thumb_status, thumb_version
+            )
+            VALUES (1, ?, 'flat.mp4', 'flat.mp4', '/', 'flat', 5, 12, 640, 360, 1.7778, 1, 0, 'error', 0)
+            """,
+            (str(video_path),),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/video/1/play")
+
+    assert response.status_code == 200
+    assert 'data-quality-menu' in response.text
+    assert 'data-quality-option="ultra">超清' in response.text
+    assert 'data-flat-controls' in response.text
+    assert 'class="flat-player-progress"' in response.text
+    assert 'class="progress-strip"' not in response.text
+    assert 'class="flat-player-bar"' not in response.text
+    assert 'data-flat-play' in response.text
 
 
 def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):
@@ -188,6 +225,22 @@ def test_timeline_rail_skips_empty_periods(monkeypatch, tmp_path):
         (2026, "1/10", 1),
         (2025, "7/8", 1),
     ]
+
+
+def test_timeline_rail_clamps_old_videos_to_2010_with_real_target(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    rows = [
+        {"mtime": datetime(2006, 5, 6).timestamp()},
+        {"mtime": datetime(2026, 1, 10).timestamp()},
+    ]
+
+    rail = main.build_timeline_rail(rows)
+
+    assert [year["year"] for year in rail] == [2026, 2010]
+    old_mark = rail[1]["marks"][0]
+    assert old_mark["label"] == "2010前"
+    assert old_mark["href"] == "#timeline-2010-01-01"
+    assert old_mark["target"] == "#timeline-2006-05-06"
 
 
 def test_timeline_groups_include_quarter_anchor(monkeypatch, tmp_path):

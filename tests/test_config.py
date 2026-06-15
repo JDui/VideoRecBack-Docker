@@ -4,6 +4,7 @@ from app.config import (
     Settings,
     clamp_days,
     load_settings,
+    normalize_quality,
     normalize_extensions,
     normalize_ignore_patterns,
     save_settings,
@@ -24,12 +25,18 @@ def test_clamp_days_bounds_cache_retention():
     assert clamp_days("bad") == 7
 
 
+def test_normalize_quality_accepts_known_values():
+    assert normalize_quality("ultra") == "ultra"
+    assert normalize_quality("bad") == "original"
+
+
 def test_settings_round_trip(tmp_path: Path):
     settings = Settings(
         site_title="家庭视频",
         video_root="/media/archive",
         scan_interval_hours=3,
         default_volume_percent=35,
+        default_quality="ultra",
         stream_cache_retention_days=9,
         show_date=False,
         show_size=True,
@@ -46,6 +53,7 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.video_root == "/media/archive"
     assert loaded.scan_interval_hours == 3
     assert loaded.default_volume_percent == 35
+    assert loaded.default_quality == "ultra"
     assert loaded.stream_cache_retention_days == 9
     assert loaded.show_date is False
     assert loaded.show_size is True
