@@ -22,7 +22,8 @@ class Settings:
     default_flat_quality: str = "original"
     default_panorama_quality: str = "original"
     thumbnail_resolution: int = 576
-    hls_encoder: str = "libx264_ultrafast"
+    flat_hls_encoder: str = "libx264_ultrafast"
+    panorama_hls_encoder: str = "libx264_ultrafast"
     hls_cache_max_mb: int = 4096
     stream_cache_retention_days: int = 7
     show_date: bool = True
@@ -31,6 +32,10 @@ class Settings:
     video_extensions: list[str] = field(default_factory=lambda: DEFAULT_VIDEO_EXTENSIONS.copy())
     ignore_dotfiles: bool = True
     ignore_name_patterns: list[str] = field(default_factory=lambda: DEFAULT_IGNORE_NAME_PATTERNS.copy())
+
+    @property
+    def hls_encoder(self) -> str:
+        return self.flat_hls_encoder
 
 
 def config_path(config_dir: Path) -> Path:
@@ -52,6 +57,7 @@ def load_settings(config_dir: Path) -> Settings:
     if interval_hours is None:
         interval_hours = 150
     legacy_quality = normalize_quality(raw.get("default_quality"))
+    legacy_hls_encoder = normalize_hls_encoder(raw.get("hls_encoder", "libx264_ultrafast"))
     return Settings(
         site_title=str(raw.get("site_title") or "视频归档"),
         video_root=str(raw.get("video_root") or "/media"),
@@ -60,7 +66,8 @@ def load_settings(config_dir: Path) -> Settings:
         default_flat_quality=normalize_quality(raw.get("default_flat_quality", legacy_quality)),
         default_panorama_quality=normalize_quality(raw.get("default_panorama_quality", legacy_quality)),
         thumbnail_resolution=normalize_thumbnail_resolution(raw.get("thumbnail_resolution", 576)),
-        hls_encoder=normalize_hls_encoder(raw.get("hls_encoder", "libx264_ultrafast")),
+        flat_hls_encoder=normalize_hls_encoder(raw.get("flat_hls_encoder", legacy_hls_encoder)),
+        panorama_hls_encoder=normalize_hls_encoder(raw.get("panorama_hls_encoder", legacy_hls_encoder)),
         hls_cache_max_mb=normalize_hls_cache_max_mb(raw.get("hls_cache_max_mb", 4096)),
         stream_cache_retention_days=clamp_days(raw.get("stream_cache_retention_days", 7)),
         show_date=bool(raw.get("show_date", True)),
@@ -83,7 +90,10 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload["default_flat_quality"] = normalize_quality(payload.get("default_flat_quality", legacy_quality))
     payload["default_panorama_quality"] = normalize_quality(payload.get("default_panorama_quality", legacy_quality))
     payload["thumbnail_resolution"] = normalize_thumbnail_resolution(payload.get("thumbnail_resolution", 576))
-    payload["hls_encoder"] = normalize_hls_encoder(payload.get("hls_encoder", "libx264_ultrafast"))
+    legacy_hls_encoder = normalize_hls_encoder(payload.get("hls_encoder", "libx264_ultrafast"))
+    payload.pop("hls_encoder", None)
+    payload["flat_hls_encoder"] = normalize_hls_encoder(payload.get("flat_hls_encoder", legacy_hls_encoder))
+    payload["panorama_hls_encoder"] = normalize_hls_encoder(payload.get("panorama_hls_encoder", legacy_hls_encoder))
     payload["hls_cache_max_mb"] = normalize_hls_cache_max_mb(payload.get("hls_cache_max_mb", 4096))
     payload["stream_cache_retention_days"] = clamp_days(payload.get("stream_cache_retention_days", 7))
     payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))

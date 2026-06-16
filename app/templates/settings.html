@@ -52,12 +52,21 @@
         </select>
       </label>
       <label>
-        HLS 转码编码器
-        <select name="hls_encoder">
-          <option value="h264_qsv" {% if settings.hls_encoder == 'h264_qsv' %}selected{% endif %}>h264_qsv（硬件优先，性能开销最低）</option>
-          <option value="h264_vaapi" {% if settings.hls_encoder == 'h264_vaapi' %}selected{% endif %}>h264_vaapi（Linux VAAPI 硬件）</option>
-          <option value="libx264_ultrafast" {% if settings.hls_encoder == 'libx264_ultrafast' %}selected{% endif %}>libx264 ultrafast（CPU 实时优先）</option>
-          <option value="libx264_veryfast" {% if settings.hls_encoder == 'libx264_veryfast' %}selected{% endif %}>libx264 veryfast（CPU 画质优先）</option>
+        平面视频 HLS 转码编码器
+        <select name="flat_hls_encoder">
+          <option value="h264_qsv" {% if settings.flat_hls_encoder == 'h264_qsv' %}selected{% endif %}>h264_qsv（硬件优先，性能开销最低）</option>
+          <option value="h264_vaapi" {% if settings.flat_hls_encoder == 'h264_vaapi' %}selected{% endif %}>h264_vaapi（Linux VAAPI 硬件）</option>
+          <option value="libx264_ultrafast" {% if settings.flat_hls_encoder == 'libx264_ultrafast' %}selected{% endif %}>libx264 ultrafast（CPU 实时优先）</option>
+          <option value="libx264_veryfast" {% if settings.flat_hls_encoder == 'libx264_veryfast' %}selected{% endif %}>libx264 veryfast（CPU 画质优先）</option>
+        </select>
+      </label>
+      <label>
+        全景视频 HLS 转码编码器
+        <select name="panorama_hls_encoder">
+          <option value="h264_qsv" {% if settings.panorama_hls_encoder == 'h264_qsv' %}selected{% endif %}>h264_qsv（硬件优先，性能开销最低）</option>
+          <option value="h264_vaapi" {% if settings.panorama_hls_encoder == 'h264_vaapi' %}selected{% endif %}>h264_vaapi（Linux VAAPI 硬件）</option>
+          <option value="libx264_ultrafast" {% if settings.panorama_hls_encoder == 'libx264_ultrafast' %}selected{% endif %}>libx264 ultrafast（CPU 实时优先）</option>
+          <option value="libx264_veryfast" {% if settings.panorama_hls_encoder == 'libx264_veryfast' %}selected{% endif %}>libx264 veryfast（CPU 画质优先）</option>
         </select>
       </label>
       <label>

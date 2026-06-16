@@ -126,7 +126,7 @@ button {
 }
 
 .app-shell.player-open {
-  grid-template-columns: var(--player-width) 8px minmax(360px, 1fr);
+  grid-template-columns: minmax(360px, 1fr) 8px var(--player-width);
 }
 
 .library-topbar {
@@ -282,13 +282,15 @@ button {
 }
 
 .app-shell.player-open .library-topbar {
-  grid-column: 3;
+  grid-column: 1;
 }
 
 .app-shell.player-open .library-pane {
-  border-left: 1px solid var(--line);
-  border-right: 0;
-  grid-column: 3;
+  border-left: 0;
+  border-right: 1px solid var(--line);
+  grid-column: 1;
+  padding-left: 18px;
+  padding-right: 12px;
 }
 
 .library-head {
@@ -397,6 +399,11 @@ textarea {
   position: relative;
 }
 
+.app-shell.player-open .immich-timeline {
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 52px;
+}
+
 .timeline-stack {
   display: grid;
   gap: 34px;
@@ -406,10 +413,8 @@ textarea {
 }
 
 .timeline-section {
-  content-visibility: auto;
-  contain-intrinsic-size: 680px;
   display: grid;
-  gap: 12px;
+  gap: 18px;
   min-height: calc(100vh - 128px);
   scroll-margin-top: 16px;
 }
@@ -420,28 +425,74 @@ textarea {
 
 .timeline-section-head {
   align-items: baseline;
-  background: linear-gradient(180deg, rgba(248, 249, 247, 0.96), rgba(248, 249, 247, 0.82));
-  border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  padding: 8px 0;
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  scroll-margin-top: 18px;
+}
+
+.timeline-section-head::after {
+  background: linear-gradient(90deg, var(--line-strong), rgba(228, 229, 225, 0));
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  min-width: 24px;
 }
 
 .timeline-section-head h2 {
+  flex: 0 0 auto;
   color: var(--text);
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 920;
   margin: 0;
 }
 
 .timeline-section-head span {
   color: var(--muted);
+  flex: 0 0 auto;
   font-size: 12px;
   font-weight: 850;
+}
+
+.timeline-day-block {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  scroll-margin-top: 18px;
+}
+
+.timeline-day-divider {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  gap: 9px;
+  min-width: 0;
+}
+
+.timeline-day-divider::after {
+  background: linear-gradient(90deg, var(--line), rgba(228, 229, 225, 0));
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  min-width: 18px;
+}
+
+.timeline-day-divider span {
+  color: var(--text);
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 880;
+}
+
+.timeline-day-divider small {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.timeline-day-block.is-current-point .timeline-day-divider span {
+  color: var(--accent-deep);
 }
 
 .timeline-jump-rail {
@@ -450,11 +501,20 @@ textarea {
   gap: 10px;
   grid-column: 2;
   grid-row: 1;
-  max-height: calc(100vh - 140px);
-  overflow: hidden;
+  max-height: calc(100dvh - 140px);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-left: 10px;
   position: sticky;
   top: 18px;
+  scrollbar-width: thin;
+}
+
+.app-shell.player-open .timeline-jump-rail {
+  gap: 7px;
+  max-width: 52px;
+  padding-left: 4px;
+  top: 12px;
 }
 
 .timeline-jump-year {
@@ -466,6 +526,10 @@ textarea {
   color: var(--muted);
   font-size: 11px;
   font-weight: 900;
+}
+
+.app-shell.player-open .timeline-jump-year > span {
+  font-size: 9px;
 }
 
 .timeline-jump-year > div {
@@ -482,6 +546,19 @@ textarea {
   line-height: 1;
   min-height: 18px;
   padding: 4px 0 4px 7px;
+}
+
+.timeline-jump-mark span {
+  display: block;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.app-shell.player-open .timeline-jump-mark {
+  font-size: 9px;
+  min-height: 15px;
+  padding: 3px 0 3px 5px;
 }
 
 .timeline-jump-mark[hidden],
@@ -520,23 +597,6 @@ textarea {
   font-weight: 950;
 }
 
-.timeline-date-chip {
-  background: rgba(29, 43, 40, 0.9);
-  border-radius: 999px;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 900;
-  grid-column: 1;
-  grid-row: 1;
-  justify-self: start;
-  padding: 8px 12px;
-  pointer-events: none;
-  position: sticky;
-  top: 12px;
-  width: max-content;
-  z-index: 30;
-}
-
 .day-row {
   display: grid;
   gap: 9px;
@@ -551,8 +611,14 @@ textarea {
 .asset-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(var(--card-size), var(--card-size)));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-size)), var(--card-size)));
   justify-content: start;
+  min-width: 0;
+}
+
+.timeline-asset-grid {
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .compact-grid {
@@ -793,7 +859,7 @@ textarea {
 .preview-pane {
   background: linear-gradient(180deg, #ffffff 0%, #fbfbfa 100%);
   display: none;
-  grid-column: 1;
+  grid-column: 3;
   grid-row: 2;
   min-height: 0;
   min-width: 0;

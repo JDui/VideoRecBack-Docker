@@ -54,7 +54,8 @@ def test_settings_round_trip(tmp_path: Path):
         default_flat_quality="ultra",
         default_panorama_quality="low",
         thumbnail_resolution=720,
-        hls_encoder="h264_qsv",
+        flat_hls_encoder="h264_qsv",
+        panorama_hls_encoder="libx264_veryfast",
         hls_cache_max_mb=8192,
         stream_cache_retention_days=9,
         show_date=False,
@@ -75,7 +76,8 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.default_flat_quality == "ultra"
     assert loaded.default_panorama_quality == "low"
     assert loaded.thumbnail_resolution == 720
-    assert loaded.hls_encoder == "h264_qsv"
+    assert loaded.flat_hls_encoder == "h264_qsv"
+    assert loaded.panorama_hls_encoder == "libx264_veryfast"
     assert loaded.hls_cache_max_mb == 8192
     assert loaded.stream_cache_retention_days == 9
     assert loaded.show_date is False
@@ -116,3 +118,12 @@ def test_legacy_default_quality_migrates_to_split_defaults(tmp_path: Path):
 
     assert loaded.default_flat_quality == "ultra"
     assert loaded.default_panorama_quality == "ultra"
+
+
+def test_legacy_hls_encoder_migrates_to_split_defaults(tmp_path: Path):
+    (tmp_path / "settings.json").write_text('{"hls_encoder":"h264_qsv"}\n', encoding="utf-8")
+
+    loaded = load_settings(tmp_path)
+
+    assert loaded.flat_hls_encoder == "h264_qsv"
+    assert loaded.panorama_hls_encoder == "h264_qsv"

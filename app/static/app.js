@@ -8,15 +8,16 @@ const previewSize = document.querySelector("[data-preview-size]");
 const libraryPane = document.querySelector(".library-pane");
 const timelineRoot = document.querySelector("[data-timeline-root]");
 const timelineRail = document.querySelector("[data-timeline-jump]");
-const timelineDateChip = document.querySelector("[data-timeline-date-chip]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
 const scanForm = document.querySelector("[data-scan-form]");
 const scanButton = document.querySelector("[data-scan-button]");
 const scanLabel = document.querySelector("[data-scan-label]");
 const RETURN_STATE_KEY = "videorecback-return-state";
+const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
 let inlineFrameClearTimer = null;
 let restoredReturnState = null;
+let pendingReturnPosition = null;
 
 const timelineCache = (() => {
   try {
@@ -27,13 +28,13 @@ const timelineCache = (() => {
 })();
 
 const currentTimelineSection = () => {
-  const sections = [...document.querySelectorAll("[data-timeline-section]")];
-  if (!sections.length || !libraryPane) return "";
+  const points = [...document.querySelectorAll("[data-timeline-point]")];
+  if (!points.length || !libraryPane) return "";
   const paneRect = libraryPane.getBoundingClientRect();
-  const anchorY = paneRect.top + Math.min(160, paneRect.height * 0.28);
-  let active = sections[0];
-  for (const section of sections) {
-    if (section.getBoundingClientRect().top <= anchorY) active = section;
+  const anchorY = paneRect.top + Math.min(320, paneRect.height * 0.36);
+  let active = points[0];
+  for (const point of points) {
+    if (point.getBoundingClientRect().top <= anchorY) active = point;
     else break;
   }
   return active.id;
@@ -64,8 +65,7 @@ const restorePanePosition = (position) => {
   window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
 };
 
-const saveReturnState = () => {
-  const position = capturePanePosition();
+const saveReturnState = (position = capturePanePosition()) => {
   const state = {
     url: `${window.location.pathname}${window.location.search}`,
     hash: window.location.hash,
@@ -93,11 +93,26 @@ const readReturnState = () => {
   return null;
 };
 
+const consumeReturningFromPlayer = () => {
+  let returning = false;
+  for (const storage of [sessionStorage, localStorage]) {
+    try {
+      if (storage.getItem(RETURNING_FROM_PLAYER_KEY) === "1") returning = true;
+      storage.removeItem(RETURNING_FROM_PLAYER_KEY);
+    } catch {}
+  }
+  return returning;
+};
+
 const restoreReturnState = () => {
+  if (!consumeReturningFromPlayer()) return;
   const state = readReturnState();
   if (!state || !libraryPane) return;
   const expectedUrl = `${window.location.pathname}${window.location.search}`;
   if (state.url && state.url !== expectedUrl) return;
+  if (state.hash && window.location.hash !== state.hash) {
+    window.history.replaceState(null, "", `${expectedUrl}${state.hash}`);
+  }
   restoredReturnState = state;
   const top = Number(state.scrollTop || 0);
   libraryPane.scrollTop = top;
@@ -133,14 +148,18 @@ for (const card of document.querySelectorAll("[data-settings-url]")) {
   };
 
   card.addEventListener("contextmenu", openSettings);
+  card.addEventListener("pointerdown", () => {
+    pendingReturnPosition = capturePanePosition();
+  }, { passive: true });
   card.addEventListener("click", (event) => {
     if (longPressed) {
       event.preventDefault();
       longPressed = false;
       return;
     }
-    const panePosition = capturePanePosition();
-    saveReturnState();
+    const panePosition = pendingReturnPosition || capturePanePosition();
+    pendingReturnPosition = null;
+    saveReturnState(panePosition);
     if (!window.matchMedia(DESKTOP_QUERY).matches || !shell || !frame) return;
     event.preventDefault();
     if (inlineFrameClearTimer) window.clearTimeout(inlineFrameClearTimer);
@@ -206,14 +225,14 @@ if (resizer && shell) {
   resizer.addEventListener("pointermove", (event) => {
     if (!resizing) return;
     const rect = shell.getBoundingClientRect();
-    const width = Math.max(360, Math.min(rect.width * 0.62, event.clientX - rect.left));
+    const width = Math.max(360, Math.min(rect.width * 0.62, rect.right - event.clientX));
     shell.style.setProperty("--player-width", `${Math.round(width)}px`);
     window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
   });
   for (const name of ["pointerup", "pointercancel"]) {
     resizer.addEventListener(name, () => {
-    resizing = false;
-    window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
+      resizing = false;
+      window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
     });
   }
 }
@@ -229,14 +248,24 @@ if (libraryPane && shell) {
 if (timelineRail && libraryPane) {
   const marks = [...timelineRail.querySelectorAll(".timeline-jump-mark")];
   const sections = [...document.querySelectorAll("[data-timeline-section]")];
-  const sectionById = new Map(sections.map((section) => [section.id, section]));
-  const groupMetaByAnchor = new Map((Array.isArray(timelineCache.groups) ? timelineCache.groups : []).map((group) => [group.anchor, group]));
+  const points = [...document.querySelectorAll("[data-timeline-point]")];
+  const pointById = new Map(points.map((point) => [point.id, point]));
+  const groupMetaByAnchor = new Map();
+  for (const group of Array.isArray(timelineCache.groups) ? timelineCache.groups : []) {
+    groupMetaByAnchor.set(group.anchor, group);
+    for (const day of Array.isArray(group.days) ? group.days : []) {
+      groupMetaByAnchor.set(day.anchor, day);
+    }
+  }
   let timelineJumping = false;
   let timelineJumpTimer = null;
   let timelineFrame = 0;
 
   for (const section of sections) {
     section.tabIndex = -1;
+  }
+  for (const point of points) {
+    point.tabIndex = -1;
   }
 
   const two = (value) => String(value).padStart(2, "0");
@@ -250,26 +279,26 @@ if (timelineRail && libraryPane) {
     month: Number(section.dataset.month || 1),
     day: Number(section.dataset.day || 1),
   };
-  const matchingSection = (predicate) => sections.find((section) => predicate(sectionMeta(section)));
+  const matchingPoint = (predicate) => points.find((point) => predicate(sectionMeta(point)));
   const sectionForTimelineId = (rawId) => {
     const id = String(rawId || "").replace(/^#/, "");
     if (!id) return null;
-    if (sectionById.has(id)) return sectionById.get(id);
+    if (pointById.has(id)) return pointById.get(id);
     const dayMatch = id.match(/^timeline-(\d{4})-(\d{2})-(\d{2})$/);
     if (dayMatch) {
       const [, year, month, day] = dayMatch;
-      return matchingSection((meta) => String(meta.year) === year && two(meta.month) === month && two(meta.day) === day) ||
-        matchingSection((meta) => String(meta.year) === year && two(meta.month) === month) ||
-        matchingSection((meta) => String(meta.year) === year);
+      return matchingPoint((meta) => String(meta.year) === year && two(meta.month) === month && two(meta.day) === day) ||
+        matchingPoint((meta) => String(meta.year) === year && two(meta.month) === month) ||
+        matchingPoint((meta) => String(meta.year) === year);
     }
     const monthMatch = id.match(/^timeline-(\d{4})-(\d{2})$/);
     if (monthMatch) {
       const [, year, month] = monthMatch;
-      return matchingSection((meta) => String(meta.year) === year && two(meta.month) === month) ||
-        matchingSection((meta) => String(meta.year) === year);
+      return matchingPoint((meta) => String(meta.year) === year && two(meta.month) === month) ||
+        matchingPoint((meta) => String(meta.year) === year);
     }
     const yearMatch = id.match(/^timeline-(\d{4})$/);
-    if (yearMatch) return matchingSection((meta) => String(meta.year) === yearMatch[1]);
+    if (yearMatch) return matchingPoint((meta) => String(meta.year) === yearMatch[1]);
     return null;
   };
   const sectionForMark = (mark) => {
@@ -277,17 +306,24 @@ if (timelineRail && libraryPane) {
     if (targetSection) return targetSection;
     return sectionForTimelineId(mark.getAttribute("href") || "");
   };
+  const offsetTopInPane = (section) => {
+    let top = 0;
+    let node = section;
+    while (node && node !== libraryPane) {
+      top += node.offsetTop || 0;
+      node = node.offsetParent;
+    }
+    return top;
+  };
   const topForSection = (section) => {
-    const paneRect = libraryPane.getBoundingClientRect();
-    const sectionRect = section.getBoundingClientRect();
-    return Math.max(0, libraryPane.scrollTop + sectionRect.top - paneRect.top - 12);
+    return Math.max(0, offsetTopInPane(section) - 12);
   };
   const activeSection = () => {
     const paneRect = libraryPane.getBoundingClientRect();
-    const anchorY = paneRect.top + Math.min(120, paneRect.height * 0.24);
-    let active = sections[0];
-    for (const section of sections) {
-      if (section.getBoundingClientRect().top <= anchorY) active = section;
+    const anchorY = paneRect.top + Math.min(320, paneRect.height * 0.36);
+    let active = points[0];
+    for (const point of points) {
+      if (point.getBoundingClientRect().top <= anchorY) active = point;
       else break;
     }
     return active;
@@ -298,18 +334,31 @@ if (timelineRail && libraryPane) {
     timelineJumping = true;
     timelineRoot?.classList.add("is-jumping");
     libraryPane.style.scrollBehavior = "auto";
-    libraryPane.scrollTop = topForSection(section);
+    const align = () => {
+      libraryPane.scrollTop = topForSection(section);
+      const paneRect = libraryPane.getBoundingClientRect();
+      const sectionRect = section.getBoundingClientRect();
+      const delta = sectionRect.top - paneRect.top - 12;
+      if (Number.isFinite(delta) && Math.abs(delta) > 1) {
+        libraryPane.scrollTop += delta;
+      }
+    };
+    align();
     section.dataset.pageLoaded = "1";
     if (hash) {
       const method = replace ? "replaceState" : "pushState";
       window.history[method](null, "", hash);
     }
     window.requestAnimationFrame(() => {
-      updateTimelineCurrent(section);
-      timelineJumpTimer = window.setTimeout(() => {
-        timelineJumping = false;
-        timelineRoot?.classList.remove("is-jumping");
-      }, 80);
+      align();
+      window.requestAnimationFrame(() => {
+        align();
+        updateTimelineCurrent(section);
+        timelineJumpTimer = window.setTimeout(() => {
+          timelineJumping = false;
+          timelineRoot?.classList.remove("is-jumping");
+        }, 80);
+      });
     });
   };
   const jumpToSavedOffset = (top) => {
@@ -332,13 +381,7 @@ if (timelineRail && libraryPane) {
     if (timelineJumpTimer) window.clearTimeout(timelineJumpTimer);
     timelineJumping = true;
     timelineRoot?.classList.add("is-jumping");
-    const position = {
-      scrollTop: Number(restoredReturnState.scrollTop || 0),
-      sectionId: restoredReturnState.activeSection || "",
-      sectionOffset: Number(restoredReturnState.sectionOffset || 0),
-    };
-    if (position.sectionId) restorePanePosition(position);
-    else jumpToSavedOffset(position.scrollTop);
+    jumpToSavedOffset(Number(restoredReturnState.scrollTop || 0));
     timelineJumpTimer = window.setTimeout(() => {
       timelineJumping = false;
       timelineRoot?.classList.remove("is-jumping");
@@ -348,10 +391,12 @@ if (timelineRail && libraryPane) {
   const visibleMark = (mark, meta) => {
     if (mark.dataset.kind === "year") return true;
     if (mark.dataset.kind === "month") {
-      return Math.abs(monthIndex(mark.dataset.year, mark.dataset.month) - monthIndex(meta.year, meta.month)) <= 2;
+      return Number(mark.dataset.year) === Number(meta.year) ||
+        Math.abs(monthIndex(mark.dataset.year, mark.dataset.month) - monthIndex(meta.year, meta.month)) <= 2;
     }
     if (mark.dataset.kind === "day") {
-      return Math.abs(dayIndex(mark.dataset.year, mark.dataset.month, mark.dataset.day) - dayIndex(meta.year, meta.month, meta.day)) <= 3;
+      return Number(mark.dataset.year) === Number(meta.year) && Number(mark.dataset.month) === Number(meta.month) ||
+        Math.abs(dayIndex(mark.dataset.year, mark.dataset.month, mark.dataset.day) - dayIndex(meta.year, meta.month, meta.day)) <= 3;
     }
     return false;
   };
@@ -378,6 +423,16 @@ if (timelineRail && libraryPane) {
       marks.find((mark) => !mark.hidden && mark.dataset.period === monthKey) ||
       marks.find((mark) => !mark.hidden && mark.dataset.period === yearKey);
   };
+  const keepMarkVisible = (mark) => {
+    if (!mark) return;
+    const railRect = timelineRail.getBoundingClientRect();
+    const markRect = mark.getBoundingClientRect();
+    if (markRect.top < railRect.top) {
+      timelineRail.scrollTop -= railRect.top - markRect.top + 8;
+    } else if (markRect.bottom > railRect.bottom) {
+      timelineRail.scrollTop += markRect.bottom - railRect.bottom + 8;
+    }
+  };
   const updateTimelineCurrent = (forcedSection = null) => {
     if (!sections.length) return;
     const currentSection = forcedSection || activeSection();
@@ -386,15 +441,16 @@ if (timelineRail && libraryPane) {
     const mark = currentMarkForSection(currentSection);
     timelineRoot?.setAttribute("data-current-page", currentSection.id);
     for (const section of sections) {
-      section.classList.toggle("is-current-section", section === currentSection);
+      const isCurrentMonth = String(section.dataset.year) === String(meta.year) && two(section.dataset.month) === two(meta.month);
+      section.classList.toggle("is-current-section", isCurrentMonth);
+    }
+    for (const point of points) {
+      point.classList.toggle("is-current-point", point === currentSection);
     }
     for (const candidate of marks) {
       candidate.classList.toggle("is-current", candidate === mark);
     }
-    if (timelineDateChip) {
-      timelineDateChip.textContent = meta.label || currentSection.querySelector("h2")?.textContent || "";
-      timelineDateChip.hidden = false;
-    }
+    keepMarkVisible(mark);
   };
   const requestTimelineUpdate = () => {
     if (timelineJumping || timelineFrame) return;
@@ -430,9 +486,11 @@ if (timelineRail && libraryPane) {
       window.requestAnimationFrame(restoreSavedTimelinePosition);
     });
     window.setTimeout(restoreSavedTimelinePosition, 180);
+    window.setTimeout(restoreSavedTimelinePosition, 360);
+    window.setTimeout(restoreSavedTimelinePosition, 700);
     window.setTimeout(() => {
       restoredReturnState = null;
-    }, 260);
+    }, 820);
   } else {
     const initialSection = sectionForTimelineId(window.location.hash);
     if (initialSection) window.requestAnimationFrame(() => jumpToSection(initialSection, window.location.hash, true));

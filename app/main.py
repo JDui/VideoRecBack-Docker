@@ -125,7 +125,8 @@ def create_app() -> FastAPI:
         default_flat_quality: str = Form("original"),
         default_panorama_quality: str = Form("original"),
         thumbnail_resolution: int = Form(576),
-        hls_encoder: str = Form("libx264_ultrafast"),
+        flat_hls_encoder: str = Form("libx264_ultrafast"),
+        panorama_hls_encoder: str = Form("libx264_ultrafast"),
         hls_cache_max_mb: int = Form(4096),
         stream_cache_retention_days: int = Form(7),
         show_date: str | None = Form(None),
@@ -143,7 +144,8 @@ def create_app() -> FastAPI:
             default_flat_quality=normalize_quality(default_flat_quality),
             default_panorama_quality=normalize_quality(default_panorama_quality),
             thumbnail_resolution=normalize_thumbnail_resolution(thumbnail_resolution),
-            hls_encoder=normalize_hls_encoder(hls_encoder),
+            flat_hls_encoder=normalize_hls_encoder(flat_hls_encoder),
+            panorama_hls_encoder=normalize_hls_encoder(panorama_hls_encoder),
             hls_cache_max_mb=normalize_hls_cache_max_mb(hls_cache_max_mb),
             stream_cache_retention_days=clamp_days(stream_cache_retention_days),
             show_date=show_date == "on",
@@ -263,7 +265,7 @@ def create_app() -> FastAPI:
             data_dir,
             quality,
             start_ms,
-            settings.hls_encoder,
+            hls_encoder_for_video(settings, video),
             settings.hls_cache_max_mb,
         )
         return FileResponse(
@@ -276,21 +278,29 @@ def create_app() -> FastAPI:
     async def hls_segment(video_id: int, quality: str, start_ms: int, segment: str):
         video = get_video(db, video_id)
         settings = load_settings(config_dir)
-        path = await asyncio.to_thread(resolve_hls_segment, video, data_dir, quality, start_ms, segment, settings.hls_encoder)
+        path = await asyncio.to_thread(
+            resolve_hls_segment,
+            video,
+            data_dir,
+            quality,
+            start_ms,
+            segment,
+            hls_encoder_for_video(settings, video),
+        )
         return FileResponse(path, media_type="video/mp2t", headers={"Cache-Control": "public, max-age=86400"})
 
     @app.post("/media/{video_id}/hls/{quality}/{start_ms}/heartbeat")
     async def hls_heartbeat(video_id: int, quality: str, start_ms: int):
         video = get_video(db, video_id)
         settings = load_settings(config_dir)
-        await asyncio.to_thread(record_hls_heartbeat, video, data_dir, quality, start_ms, settings.hls_encoder)
+        await asyncio.to_thread(record_hls_heartbeat, video, data_dir, quality, start_ms, hls_encoder_for_video(settings, video))
         return {"ok": True}
 
     @app.post("/media/{video_id}/hls/{quality}/{start_ms}/stop")
     async def hls_stop(video_id: int, quality: str, start_ms: int):
         video = get_video(db, video_id)
         settings = load_settings(config_dir)
-        await asyncio.to_thread(stop_hls_transcode, video, data_dir, quality, start_ms, settings.hls_encoder)
+        await asyncio.to_thread(stop_hls_transcode, video, data_dir, quality, start_ms, hls_encoder_for_video(settings, video))
         return {"ok": True}
 
     @app.get("/thumb/{video_id}.webp")
@@ -368,7 +378,8 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "default_flat_quality": settings.default_flat_quality,
             "default_panorama_quality": settings.default_panorama_quality,
             "thumbnail_resolution": settings.thumbnail_resolution,
-            "hls_encoder": settings.hls_encoder,
+            "flat_hls_encoder": settings.flat_hls_encoder,
+            "panorama_hls_encoder": settings.panorama_hls_encoder,
             "hls_cache_max_mb": settings.hls_cache_max_mb,
             "stream_cache_retention_days": settings.stream_cache_retention_days,
             "show_date": int(settings.show_date),
@@ -379,6 +390,18 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "ignore_name_patterns": ",".join(settings.ignore_name_patterns),
         }
     )
+    with db.connect() as conn:
+        conn.execute("DELETE FROM app_settings WHERE key = 'hls_encoder'")
+
+
+def hls_encoder_for_video(settings: Settings, video) -> str:
+    try:
+        video_type = video["type"]
+    except (KeyError, TypeError):
+        video_type = getattr(video, "type", "flat")
+    if video_type == "panorama":
+        return settings.panorama_hls_encoder
+    return settings.flat_hls_encoder
 
 
 def get_video(db: Database, video_id: int):
@@ -488,13 +511,7 @@ def summarize_videos(rows) -> dict[str, int]:
 
 
 def timeline_group_config(rows) -> tuple[str, str, str, str]:
-    day_count = len({datetime.fromtimestamp(row["mtime"]).strftime("%Y-%m-%d") for row in rows})
-    month_count = len({datetime.fromtimestamp(row["mtime"]).strftime("%Y-%m") for row in rows})
-    if day_count <= 90:
-        return "day", "%Y-%m-%d", "%Y年%m月%d日", "timeline-%Y-%m-%d"
-    if month_count <= 72:
-        return "month", "%Y-%m", "%Y年%m月", "timeline-%Y-%m"
-    return "year", "%Y", "%Y年", "timeline-%Y"
+    return "month", "%Y-%m", "%Y年%m月", "timeline-%Y-%m"
 
 
 def build_timeline_groups(rows):
@@ -505,6 +522,7 @@ def build_timeline_groups(rows):
         date = datetime.fromtimestamp(row["mtime"])
         key = date.strftime(key_format)
         label = date.strftime(label_format)
+        day_key = date.strftime("%Y-%m-%d")
         entry = groups.setdefault(
             key,
             {
@@ -516,11 +534,28 @@ def build_timeline_groups(rows):
                 "month": date.month,
                 "day": date.day,
                 "anchor": date.strftime(anchor_format),
+                "day_groups": {},
                 "videos": [],
             },
         )
         entry["videos"].append(row)
-    return list(groups.values())
+        day_entry = entry["day_groups"].setdefault(
+            day_key,
+            {
+                "key": day_key,
+                "anchor": f"timeline-{date:%Y-%m-%d}",
+                "label": date.strftime("%m月%d日"),
+                "year": date.year,
+                "month": date.month,
+                "day": date.day,
+                "videos": [],
+            },
+        )
+        day_entry["videos"].append(row)
+    result = list(groups.values())
+    for group in result:
+        group["day_groups"] = list(group["day_groups"].values())
+    return result
 
 
 def group_by_date(rows):
@@ -528,22 +563,19 @@ def group_by_date(rows):
 
 
 def build_timeline_rail(rows) -> list[dict[str, object]]:
-    granularity = timeline_group_config(rows)[0]
     day_counts: dict[tuple[int, int, int], int] = defaultdict(int)
     month_counts: dict[tuple[int, int], int] = defaultdict(int)
     year_counts: dict[int, int] = defaultdict(int)
     target_anchors: dict[tuple[str, tuple[int, ...]], tuple[float, str]] = {}
 
-    def section_anchor(date: datetime) -> str:
-        if granularity == "year":
-            return f"#timeline-{date:%Y}"
-        if granularity == "month":
-            return f"#timeline-{date:%Y-%m}"
-        return f"#timeline-{date:%Y-%m-%d}"
-
     def set_target(kind: str, key: tuple[int, ...], timestamp: float, date: datetime) -> None:
         target_key = (kind, key)
-        anchor = section_anchor(date)
+        if kind == "day":
+            anchor = f"#timeline-{date:%Y-%m-%d}"
+        elif kind == "month":
+            anchor = f"#timeline-{date:%Y-%m}"
+        else:
+            anchor = f"#timeline-{date:%Y-%m}"
         if target_key not in target_anchors or timestamp > target_anchors[target_key][0]:
             target_anchors[target_key] = (timestamp, anchor)
 
@@ -640,6 +672,17 @@ def build_timeline_cache(groups, rail, filters: dict[str, str]) -> dict[str, obj
                 "month": group["month"],
                 "day": group["day"],
                 "count": len(group["videos"]),
+                "days": [
+                    {
+                        "anchor": day["anchor"],
+                        "label": day["label"],
+                        "year": day["year"],
+                        "month": day["month"],
+                        "day": day["day"],
+                        "count": len(day["videos"]),
+                    }
+                    for day in group["day_groups"]
+                ],
             }
             for group in groups
         ],

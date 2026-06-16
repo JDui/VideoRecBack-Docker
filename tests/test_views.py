@@ -87,6 +87,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="default_flat_quality"' in response.text
     assert 'name="default_panorama_quality"' in response.text
     assert 'name="thumbnail_resolution"' in response.text
+    assert 'name="flat_hls_encoder"' in response.text
+    assert 'name="panorama_hls_encoder"' in response.text
     assert '<option value="ultra"' in response.text
     assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
@@ -196,6 +198,33 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'data-flat-play' in response.text
 
 
+def test_hls_encoder_is_selected_by_video_type(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    settings = Settings(flat_hls_encoder="h264_qsv", panorama_hls_encoder="libx264_veryfast")
+
+    assert main.hls_encoder_for_video(settings, {"type": "flat"}) == "h264_qsv"
+    assert main.hls_encoder_for_video(settings, {"type": "panorama"}) == "libx264_veryfast"
+
+
+def test_settings_sync_splits_hls_encoder_keys(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.execute("INSERT INTO app_settings(key, value) VALUES ('hls_encoder', 'h264_qsv')")
+
+    main.sync_settings_to_db(app.state.db, Settings(flat_hls_encoder="h264_qsv", panorama_hls_encoder="libx264_veryfast"))
+
+    with app.state.db.connect() as conn:
+        values = {
+            row["key"]: row["value"]
+            for row in conn.execute("SELECT key, value FROM app_settings").fetchall()
+        }
+
+    assert values["flat_hls_encoder"] == "h264_qsv"
+    assert values["panorama_hls_encoder"] == "libx264_veryfast"
+    assert "hls_encoder" not in values
+
+
 def test_timeline_rail_exposes_year_month_day_buckets(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [
@@ -220,7 +249,7 @@ def test_timeline_rail_month_bucket_points_to_real_section(monkeypatch, tmp_path
 
     month = next(mark for mark in rail[0]["marks"] if mark["kind"] == "month")
     assert month["href"] == "#timeline-2026-01"
-    assert month["target"] == "#timeline-2026-01-10"
+    assert month["target"] == "#timeline-2026-01"
 
 
 def test_dense_timeline_rail_targets_existing_month_page(monkeypatch, tmp_path):
@@ -239,7 +268,7 @@ def test_dense_timeline_rail_targets_existing_month_page(monkeypatch, tmp_path):
         for mark in year["marks"]
         if mark["kind"] == "day" and mark["period"] == "2026-01-15"
     )
-    assert january_day["target"] == "#timeline-2026-01"
+    assert january_day["target"] == "#timeline-2026-01-15"
 
 
 def test_timeline_rail_skips_empty_periods(monkeypatch, tmp_path):
@@ -298,8 +327,9 @@ def test_timeline_cache_excludes_video_rows(monkeypatch, tmp_path):
     cache = main.build_timeline_cache(groups, rail, {"view": "timeline", "type": "flat"})
 
     assert cache["filters"]["type"] == "flat"
-    assert cache["groups"][0]["anchor"] == "timeline-2026-07-08"
+    assert cache["groups"][0]["anchor"] == "timeline-2026-07"
     assert cache["groups"][0]["count"] == 1
+    assert cache["groups"][0]["days"][0]["anchor"] == "timeline-2026-07-08"
     assert "videos" not in cache["groups"][0]
 
 
@@ -320,6 +350,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert "data-timeline-cache=" in response.text
+    assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
 

@@ -28,6 +28,7 @@ const muteToggle = document.querySelector("[data-mute-toggle]");
 const fullscreenToggle = document.querySelector("[data-fullscreen-toggle]");
 const playerPoster = document.querySelector("[data-player-poster]");
 const RETURN_STATE_KEY = "videorecback-return-state";
+const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
 let mediaLoaded = false;
 let seekingWithControl = false;
 
@@ -506,28 +507,34 @@ const readReturnState = () => {
   return null;
 };
 
+const markReturningFromPlayer = () => {
+  for (const storage of [sessionStorage, localStorage]) {
+    try {
+      storage.setItem(RETURNING_FROM_PLAYER_KEY, "1");
+    } catch {}
+  }
+};
+
 const closePlayerPage = () => {
   shell?.classList.add("is-closing");
-  try {
-    video?.pause();
-  } catch {}
-  stopHlsHeartbeat(true);
-
   const params = new URLSearchParams(window.location.search);
   const explicitReturn = params.get("return");
+  let target = "/";
   if (explicitReturn && explicitReturn.startsWith("/")) {
-    window.location.replace(explicitReturn);
-    return;
+    target = explicitReturn;
+  } else {
+    const state = readReturnState();
+    if (state?.url) target = state.url;
   }
 
-  const state = readReturnState();
-  if (state?.url) {
-    const target = `${state.url}${state.hash || ""}`;
-    window.location.replace(target);
-    return;
-  }
-
-  window.location.replace("/");
+  markReturningFromPlayer();
+  window.location.replace(target);
+  window.setTimeout(() => {
+    try {
+      video?.pause();
+    } catch {}
+    stopHlsHeartbeat(true);
+  }, 0);
 };
 
 document.querySelector("[data-player-close]")?.addEventListener("click", closePlayerPage);
