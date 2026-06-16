@@ -98,6 +98,14 @@
               <option value="square" {% if filters.aspect == 'square' %}selected{% endif %}>方形</option>
             </select>
           </label>
+          <label>
+            开始日期
+            <input name="date_from" type="date" value="{{ filters.date_from }}">
+          </label>
+          <label>
+            结束日期
+            <input name="date_to" type="date" value="{{ filters.date_to }}">
+          </label>
           <button type="submit">应用</button>
         </form>
       </details>
@@ -157,36 +165,35 @@
             {% endif %}
           </section>
         {% else %}
-          <section class="timeline-view">
-            <aside class="timeline-rail" aria-label="季度视频数量">
-              <span class="timeline-current-marker" data-timeline-current aria-hidden="true"></span>
+          <section class="immich-timeline" data-timeline-root>
+            <div class="timeline-date-chip" data-timeline-date-chip hidden></div>
+            <div class="timeline-stack">
+              {% for group in timeline_groups %}
+                <section class="timeline-section" id="{{ group.anchor }}" data-timeline-section data-year="{{ group.year }}" data-month="{{ group.month }}" data-day="{{ group.day }}" data-label="{{ group.label }}" data-granularity="{{ group.granularity }}">
+                  <header class="timeline-section-head">
+                    <h2>{{ group.label }}</h2>
+                    <span>{{ group.videos|length }} 个视频</span>
+                  </header>
+                  <div class="asset-grid timeline-asset-grid">
+                    {% for video in group.videos %}{{ asset_card(video) }}{% endfor %}
+                  </div>
+                </section>
+              {% endfor %}
+            </div>
+            <aside class="timeline-jump-rail" aria-label="快速跳转时间线" data-timeline-jump>
               {% for year in timeline_rail %}
-                <div class="timeline-year-group">
-                  <span class="timeline-year-label">{{ year.year }}</span>
-                  <div class="timeline-quarter-list">
+                <div class="timeline-jump-year">
+                  <span>{{ year.year }}</span>
+                  <div>
                     {% for mark in year.marks %}
-                      <a class="timeline-mark" href="{{ mark.href }}" data-kind="{{ mark.kind }}" data-year="{{ mark.year }}" data-quarter="{{ mark.quarter }}" data-month="{{ mark.month }}" data-day="{{ mark.day }}" data-period="{{ mark.period }}" data-target-anchor="{{ mark.target }}" style="--video-count: {{ mark.count }}" aria-label="{{ mark.year }} {{ mark.label }}，{{ mark.count }} 个视频" hidden>
-                        <span class="timeline-mark-label">{{ mark.label }}</span>
-                        <span class="timeline-mark-bar"></span>
-                        {% for label in mark.labels %}
-                          <span class="timeline-tag" style="--tag-color: {{ label.color }}" data-label-id="{{ label.id }}" data-label-year="{{ mark.year }}" data-label-quarter="{{ mark.quarter }}" data-label-text="{{ label.label }}" data-label-color="{{ label.color }}" data-label="{{ label.label }}" aria-label="{{ label.label }}" tabindex="0"></span>
-                        {% endfor %}
+                      <a class="timeline-jump-mark" href="{{ mark.href }}" data-kind="{{ mark.kind }}" data-year="{{ mark.year }}" data-month="{{ mark.month }}" data-day="{{ mark.day }}" data-period="{{ mark.period }}" data-target-anchor="{{ mark.target }}" data-count="{{ mark.count }}" aria-label="{{ mark.label }}，{{ mark.count }} 个视频">
+                        <span>{{ mark.label }}</span>
                       </a>
                     {% endfor %}
                   </div>
                 </div>
               {% endfor %}
             </aside>
-            <div class="section-list">
-              {% for group in timeline_groups %}
-                <section class="asset-section" id="{{ group.anchor }}" data-year="{{ group.year }}" data-quarter="{{ group.quarter }}" data-month="{{ group.month }}" data-day="{{ group.day }}">
-                  <h2>{{ group.label }}</h2>
-                  <div class="asset-grid">
-                    {% for video in group.videos %}{{ asset_card(video) }}{% endfor %}
-                  </div>
-                </section>
-              {% endfor %}
-            </div>
           </section>
         {% endif %}
       {% else %}
@@ -206,23 +213,7 @@
       <iframe title="内嵌播放器" data-player-frame></iframe>
     </aside>
   </div>
-  <form class="timeline-label-popover" action="/timeline-labels" method="post" data-timeline-label-form hidden>
-    <input type="hidden" name="year" data-label-year>
-    <input type="hidden" name="quarter" data-label-quarter>
-    <label>
-      <span data-label-form-title>时间标签</span>
-      <input name="label" type="text" maxlength="80" required data-label-text>
-    </label>
-    <label>
-      颜色
-      <input name="color" type="color" value="#16a394" data-label-color>
-    </label>
-    <div class="timeline-label-actions">
-      <button type="submit" data-label-save>添加</button>
-      <button class="danger-button" type="button" data-label-delete hidden>删除</button>
-    </div>
-  </form>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=0.9.0" defer></script>
+  <script src="/static/app.js?v=1.0.0" defer></script>
 {% endblock %}

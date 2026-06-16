@@ -26,7 +26,10 @@ const flatPlayButton = document.querySelector("[data-flat-play]");
 const centerAction = document.querySelector("[data-player-center-action]");
 const muteToggle = document.querySelector("[data-mute-toggle]");
 const fullscreenToggle = document.querySelector("[data-fullscreen-toggle]");
+const playerPoster = document.querySelector("[data-player-poster]");
 const RETURN_STATE_KEY = "videorecback-return-state";
+let mediaLoaded = false;
+let seekingWithControl = false;
 
 const hlsControlUrl = (session, action) => {
   if (!session) return "";
@@ -98,6 +101,11 @@ const toggleMute = () => {
 
 const togglePlayback = () => {
   if (!video) return;
+  if (!mediaLoaded) {
+    const quality = video.dataset.currentQuality || "original";
+    applyQualityAt?.(quality, getLogicalCurrentTime(), true);
+    return;
+  }
   if (video.paused) {
     video.play().catch(() => {});
   } else {
@@ -126,6 +134,10 @@ const setLogicalCurrentTime = (time) => {
   const duration = getLogicalDuration();
   const nextTime = clamp(time, 0, Number.isFinite(duration) ? duration : time);
   const currentQuality = video.dataset.currentQuality || "original";
+  if (!mediaLoaded) {
+    mediaTimeOffset = 0;
+    return;
+  }
   const relativeTime = nextTime - mediaTimeOffset;
   if (currentQuality !== "original" && (relativeTime < 0 || relativeTime > Math.max(0, video.duration || 0))) {
     applyQualityAt?.(currentQuality, nextTime, !video.paused);
@@ -157,7 +169,7 @@ const formatClock = (seconds) => {
 const syncProgressUi = () => {
   const duration = getLogicalDuration();
   const progress = Number.isFinite(duration) && duration > 0 ? clamp(getLogicalCurrentTime() / duration, 0, 1) : 0;
-  if (seekControl && document.activeElement !== seekControl) {
+  if (seekControl && !seekingWithControl && document.activeElement !== seekControl) {
     seekControl.value = String(Math.round(progress * 1000));
   }
   if (seekControl?.classList.contains("flat-player-progress")) {
@@ -259,6 +271,10 @@ if (video) {
     };
     const applyQuality = (quality) => {
       syncQualityUi(quality);
+      if (!mediaLoaded) {
+        video.dataset.currentQuality = quality;
+        return;
+      }
       if (video.dataset.currentQuality === quality) return;
       applyQualityAt(quality, getLogicalCurrentTime(), false);
     };
@@ -280,6 +296,9 @@ if (video) {
         if (shouldPlay) video.play().catch(() => {});
       };
       video.dataset.currentQuality = quality;
+      mediaLoaded = true;
+      shell?.classList.add("has-media");
+      if (playerPoster) playerPoster.hidden = true;
       video.addEventListener("canplay", resume, { once: true });
       video.addEventListener("playing", resume, { once: true });
       video.addEventListener("seeked", resume, { once: true });
@@ -340,9 +359,6 @@ if (video) {
         button.closest("details")?.removeAttribute("open");
       });
     }
-    if (video.dataset.currentQuality !== "original") {
-      applyQualityAt(video.dataset.currentQuality, 0, video.autoplay && shell?.dataset.videoType !== "panorama");
-    }
   }
   if (speedSlider) {
     const speedValues = (speedSlider.dataset.speedValues || "0.5,1,1.5,2,4")
@@ -388,7 +404,11 @@ if (video) {
     syncVolumeUi();
     syncMuteUi();
   });
+  seekControl?.addEventListener("pointerdown", () => {
+    seekingWithControl = true;
+  });
   seekControl?.addEventListener("input", () => {
+    seekingWithControl = true;
     const duration = getLogicalDuration();
     if (!Number.isFinite(duration) || duration <= 0) return;
     const nextTime = duration * (Number(seekControl.value) / 1000);
@@ -396,8 +416,11 @@ if (video) {
   });
   seekControl?.addEventListener("change", () => {
     const duration = getLogicalDuration();
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    setLogicalCurrentTime(duration * (Number(seekControl.value) / 1000));
+    if (Number.isFinite(duration) && duration > 0) {
+      setLogicalCurrentTime(duration * (Number(seekControl.value) / 1000));
+    }
+    seekingWithControl = false;
+    window.requestAnimationFrame(syncProgressUi);
   });
   flatPlayButton?.addEventListener("click", togglePlayback);
   centerAction?.addEventListener("click", togglePlayback);
@@ -412,9 +435,10 @@ if (video) {
     }
     stage?.requestFullscreen?.();
   });
-  if (shell?.dataset.videoType !== "panorama") {
-    video.addEventListener("click", togglePlayback);
-  }
+  if (seekControl) seekControl.addEventListener("pointerup", () => {
+    seekingWithControl = false;
+    window.requestAnimationFrame(syncProgressUi);
+  });
   syncProgressUi();
   syncPlayUi();
   syncMuteUi();

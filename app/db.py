@@ -35,15 +35,6 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS timeline_labels (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    year INTEGER NOT NULL,
-    quarter INTEGER NOT NULL,
-    label TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#16a394',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS scan_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT NOT NULL,
@@ -60,7 +51,6 @@ CREATE INDEX IF NOT EXISTS idx_videos_mtime ON videos(mtime DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_missing ON videos(missing);
 CREATE INDEX IF NOT EXISTS idx_videos_type ON videos(type);
 CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder);
-CREATE INDEX IF NOT EXISTS idx_timeline_labels_period ON timeline_labels(year DESC, quarter DESC);
 CREATE INDEX IF NOT EXISTS idx_scan_queue_status ON scan_queue(status, created_at);
 """
 

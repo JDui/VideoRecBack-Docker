@@ -84,7 +84,6 @@ def create_app() -> FastAPI:
         filters = read_filters(request)
         rows = query_videos(db, filters)
         stats = summarize_videos(rows)
-        timeline_labels = get_timeline_labels(db)
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -94,8 +93,8 @@ def create_app() -> FastAPI:
                 "filters": filters,
                 "stats": stats,
                 "view_urls": build_view_urls(filters),
-                "timeline_groups": group_by_date(rows),
-                "timeline_rail": build_timeline_rail(rows, timeline_labels),
+                "timeline_groups": build_timeline_groups(rows),
+                "timeline_rail": build_timeline_rail(rows),
                 "folder_browser": build_folder_browser(rows, filters),
                 "calendar_model": build_calendar_model(rows, filters),
                 "scan_running": is_background_busy(app),
@@ -201,72 +200,6 @@ def create_app() -> FastAPI:
             "skipped": summary.skipped,
             "errors": summary.errors,
         }
-
-    @app.post("/timeline-labels")
-    async def create_timeline_label(
-        year: int = Form(...),
-        quarter: int = Form(...),
-        label: str = Form(...),
-        color: str = Form("#16a394"),
-    ):
-        clean_label = label.strip()[:80]
-        if not clean_label or quarter not in {1, 2, 3, 4} or year < 1970 or year > 9999:
-            raise HTTPException(status_code=400, detail="Invalid timeline label")
-        clean_color = color.strip().lower()
-        if not re.fullmatch(r"#[0-9a-f]{6}", clean_color):
-            clean_color = "#16a394"
-        with db.connect() as conn:
-            conn.execute(
-                "INSERT INTO timeline_labels(year, quarter, label, color) VALUES (?, ?, ?, ?)",
-                (year, quarter, clean_label, clean_color),
-            )
-        return RedirectResponse(f"/#timeline-{year}-q{quarter}", status_code=303)
-
-    @app.post("/timeline-labels/{label_id}")
-    async def update_timeline_label(
-        label_id: int,
-        year: int = Form(...),
-        quarter: int = Form(...),
-        label: str = Form(...),
-        color: str = Form("#16a394"),
-    ):
-        clean_label = label.strip()[:80]
-        if not clean_label or quarter not in {1, 2, 3, 4} or year < 1970 or year > 9999:
-            raise HTTPException(status_code=400, detail="Invalid timeline label")
-        clean_color = color.strip().lower()
-        if not re.fullmatch(r"#[0-9a-f]{6}", clean_color):
-            clean_color = "#16a394"
-        with db.connect() as conn:
-            cursor = conn.execute(
-                """
-                UPDATE timeline_labels
-                SET label = ?, color = ?
-                WHERE id = ? AND year = ? AND quarter = ?
-                """,
-                (clean_label, clean_color, label_id, year, quarter),
-            )
-            updated = cursor.rowcount
-        if updated == 0:
-            raise HTTPException(status_code=404, detail="Timeline label not found")
-        return RedirectResponse(f"/#timeline-{year}-q{quarter}", status_code=303)
-
-    @app.post("/timeline-labels/{label_id}/delete")
-    async def delete_timeline_label(
-        label_id: int,
-        year: int = Form(...),
-        quarter: int = Form(...),
-    ):
-        if quarter not in {1, 2, 3, 4} or year < 1970 or year > 9999:
-            raise HTTPException(status_code=400, detail="Invalid timeline label")
-        with db.connect() as conn:
-            cursor = conn.execute(
-                "DELETE FROM timeline_labels WHERE id = ? AND year = ? AND quarter = ?",
-                (label_id, year, quarter),
-            )
-            deleted = cursor.rowcount
-        if deleted == 0:
-            raise HTTPException(status_code=404, detail="Timeline label not found")
-        return RedirectResponse(f"/#timeline-{year}-q{quarter}", status_code=303)
 
     @app.get("/video/{video_id}", response_class=HTMLResponse)
     async def video_detail(request: Request, video_id: int):
@@ -460,6 +393,8 @@ def read_filters(request: Request) -> dict[str, str]:
     calendar_zoom = requested_zoom if requested_zoom in {"year", "month", "day"} else "year"
     calendar_year = params.get("calendar_year", "").strip()
     calendar_month = params.get("calendar_month", "").strip()
+    date_from = params.get("date_from", "").strip()
+    date_to = params.get("date_to", "").strip()
     return {
         "view": view,
         "type": params.get("type", "all") if params.get("type", "all") in {"all", "flat", "panorama"} else "all",
@@ -469,6 +404,8 @@ def read_filters(request: Request) -> dict[str, str]:
         "calendar_zoom": calendar_zoom,
         "calendar_year": calendar_year if calendar_year.isdigit() and len(calendar_year) == 4 else "",
         "calendar_month": calendar_month if calendar_month.isdigit() and 1 <= int(calendar_month) <= 12 else "",
+        "date_from": date_from if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_from) else "",
+        "date_to": date_to if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_to) else "",
         "q": params.get("q", "").strip(),
     }
 
@@ -495,6 +432,12 @@ def query_videos(db: Database, filters: dict[str, str]):
         clauses.append("(name LIKE ? OR folder LIKE ? OR relative_path LIKE ?)")
         like = f"%{filters['q']}%"
         values.extend([like, like, like])
+    if filters.get("date_from"):
+        clauses.append("mtime >= ?")
+        values.append(datetime.strptime(filters["date_from"], "%Y-%m-%d").timestamp())
+    if filters.get("date_to"):
+        clauses.append("mtime < ?")
+        values.append((datetime.strptime(filters["date_to"], "%Y-%m-%d").timestamp() + 86400))
     if filters["view"] == "calendar" and filters["calendar_year"]:
         year_start = datetime(int(filters["calendar_year"]), 1, 1).timestamp()
         year_end = datetime(int(filters["calendar_year"]) + 1, 1, 1).timestamp()
@@ -541,15 +484,33 @@ def summarize_videos(rows) -> dict[str, int]:
     }
 
 
-def group_by_date(rows):
+def build_timeline_groups(rows):
+    day_count = len({datetime.fromtimestamp(row["mtime"]).strftime("%Y-%m-%d") for row in rows})
+    month_count = len({datetime.fromtimestamp(row["mtime"]).strftime("%Y-%m") for row in rows})
+    if day_count <= 90:
+        granularity = "day"
+        key_format = "%Y-%m-%d"
+        label_format = "%Y年%m月%d日"
+    elif month_count <= 72:
+        granularity = "month"
+        key_format = "%Y-%m"
+        label_format = "%Y年%m月"
+    else:
+        granularity = "year"
+        key_format = "%Y"
+        label_format = "%Y年"
+
     groups: dict[str, dict[str, object]] = {}
     for row in rows:
         date = datetime.fromtimestamp(row["mtime"])
-        label = date.strftime("%Y年%m月%d日")
+        key = date.strftime(key_format)
+        label = date.strftime(label_format)
         entry = groups.setdefault(
-            label,
+            key,
             {
+                "key": key,
                 "label": label,
+                "granularity": granularity,
                 "year": date.year,
                 "quarter": (date.month - 1) // 3 + 1,
                 "month": date.month,
@@ -562,12 +523,14 @@ def group_by_date(rows):
     return list(groups.values())
 
 
-def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, object]]] | None = None) -> list[dict[str, object]]:
-    labels = labels or {}
+def group_by_date(rows):
+    return build_timeline_groups(rows)
+
+
+def build_timeline_rail(rows) -> list[dict[str, object]]:
     day_counts: dict[tuple[int, int, int], int] = defaultdict(int)
     month_counts: dict[tuple[int, int], int] = defaultdict(int)
-    quarters: dict[tuple[int, int], int] = defaultdict(int)
-    halves: dict[tuple[int, int], int] = defaultdict(int)
+    year_counts: dict[int, int] = defaultdict(int)
     target_anchors: dict[tuple[str, tuple[int, ...]], tuple[float, str]] = {}
 
     def set_target(kind: str, key: tuple[int, ...], timestamp: float, date: datetime) -> None:
@@ -581,122 +544,71 @@ def build_timeline_rail(rows, labels: dict[tuple[int, int], list[dict[str, objec
 
     for row in rows:
         date = datetime.fromtimestamp(row["mtime"])
-        display_date = date if date.year >= TIMELINE_MIN_YEAR else datetime(TIMELINE_MIN_YEAR, 1, 1)
-        year = display_date.year
-        month = display_date.month
-        day = display_date.day
-        display_quarter = (display_date.month - 1) // 3 + 1
-        half = 1 if display_date.month <= 6 else 2
+        year = date.year if date.year >= TIMELINE_MIN_YEAR else TIMELINE_MIN_YEAR
+        month = date.month if date.year >= TIMELINE_MIN_YEAR else 1
+        day = date.day if date.year >= TIMELINE_MIN_YEAR else 1
         timestamp = float(row["mtime"])
         day_key = (year, month, day)
         month_key = (year, month)
-        quarter_key = (year, display_quarter)
-        half_key = (year, half)
         day_counts[day_key] += 1
         month_counts[month_key] += 1
-        quarters[quarter_key] += 1
-        halves[half_key] += 1
+        year_counts[year] += 1
         set_target("day", day_key, timestamp, date)
         set_target("month", month_key, timestamp, date)
-        set_target("quarter", quarter_key, timestamp, date)
-        set_target("half", half_key, timestamp, date)
+        set_target("year", (year,), timestamp, date)
 
-    if not quarters:
+    if not year_counts:
         return []
 
-    years = sorted({year for year, _quarter in quarters} | {year for year, _half in halves}, reverse=True)
-    result = []
+    result: list[dict[str, object]] = []
+    years = sorted(year_counts, reverse=True)
     for year in years:
-        marks = []
-        for y, half in sorted((key for key in halves if key[0] == year), reverse=True):
-            quarter = 3 if half == 2 else 1
-            marks.append(
-                {
-                    "kind": "half",
-                    "year": y,
-                    "quarter": quarter,
-                    "month": 7 if half == 2 else 1,
-                    "day": 1,
-                    "period": f"{y}-h{half}",
-                    "label": f"H{half}",
-                    "count": halves[(y, half)],
-                    "labels": [],
-                    "href": f"#timeline-{y}-h{half}",
-                    "target": target("half", (y, half), f"#timeline-{y}-h{half}"),
-                }
-            )
-        for y, quarter in sorted((key for key in quarters if key[0] == year), reverse=True):
-            marks.append(
-                {
-                    "kind": "quarter",
-                    "year": y,
-                    "quarter": quarter,
-                    "month": (quarter - 1) * 3 + 1,
-                    "day": 1,
-                    "period": f"{y}-q{quarter}",
-                    "label": f"Q{quarter}",
-                    "count": quarters[(y, quarter)],
-                    "labels": labels.get((y, quarter), []),
-                    "href": f"#timeline-{y}-q{quarter}",
-                    "target": target("quarter", (y, quarter), f"#timeline-{y}-q{quarter}"),
-                }
-            )
+        marks = [
+            {
+                "kind": "year",
+                "year": year,
+                "month": 1,
+                "day": 1,
+                "period": f"{year}",
+                "label": f"{year}",
+                "count": year_counts[year],
+                "href": f"#timeline-{year}",
+                "target": target("year", (year,), f"#timeline-{year}"),
+            }
+        ]
         for key in sorted((key for key in month_counts if key[0] == year), reverse=True):
             y, month = key
-            quarter = (month - 1) // 3 + 1
             marks.append(
                 {
                     "kind": "month",
                     "year": y,
-                    "quarter": quarter,
                     "month": month,
                     "day": 1,
                     "period": f"{y}-{month:02d}",
                     "label": f"{month}月",
                     "count": month_counts[key],
-                    "labels": labels.get((y, quarter), []),
                     "href": f"#timeline-{y}-{month:02d}",
                     "target": target("month", key, f"#timeline-{y}-{month:02d}"),
                 }
             )
         for key in sorted((key for key in day_counts if key[0] == year), reverse=True):
             y, month, day = key
-            quarter = (month - 1) // 3 + 1
             marks.append(
                 {
                     "kind": "day",
                     "year": y,
-                    "quarter": quarter,
                     "month": month,
                     "day": day,
                     "period": f"{y}-{month:02d}-{day:02d}",
                     "label": "2010前" if y == TIMELINE_MIN_YEAR and month == 1 and day == 1 else f"{month}/{day}",
                     "count": day_counts[key],
-                    "labels": labels.get((y, quarter), []),
                     "href": f"#timeline-{y}-{month:02d}-{day:02d}",
                     "target": target("day", key, f"#timeline-{y}-{month:02d}-{day:02d}"),
                 }
             )
-        marks.sort(key=lambda item: (item["year"], item["month"], item["day"], {"day": 4, "month": 3, "quarter": 2, "half": 1}[item["kind"]]), reverse=True)
-        result.append({"year": year, "marks": marks, "quarters": [mark for mark in marks if mark["kind"] == "quarter"]})
+        marks.sort(key=lambda item: (item["year"], item["month"], item["day"], {"day": 3, "month": 2, "year": 1}[item["kind"]]), reverse=True)
+        result.append({"year": year, "marks": marks})
     return result
-
-
-def get_timeline_labels(db: Database) -> dict[tuple[int, int], list[dict[str, object]]]:
-    grouped: dict[tuple[int, int], list[dict[str, object]]] = defaultdict(list)
-    with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT id, year, quarter, label, color FROM timeline_labels ORDER BY created_at ASC, id ASC"
-        ).fetchall()
-    for row in rows:
-        grouped[(row["year"], row["quarter"])].append(
-            {
-                "id": row["id"],
-                "label": row["label"],
-                "color": row["color"],
-            }
-        )
-    return grouped
 
 
 def build_folder_browser(rows, filters: dict[str, str]) -> dict[str, object]:

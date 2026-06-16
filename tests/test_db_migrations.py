@@ -28,14 +28,14 @@ def test_database_syncs_app_settings(tmp_path):
     assert rows["site_title"] == "视频归档"
 
 
-def test_database_has_timeline_labels_table(tmp_path):
+def test_database_does_not_create_legacy_timeline_labels_table(tmp_path):
     db = Database(tmp_path)
     db.init()
 
     with db.connect() as conn:
         tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
 
-    assert "timeline_labels" in tables
+    assert "timeline_labels" not in tables
 
 
 def test_database_has_scan_queue_table(tmp_path):

@@ -155,6 +155,8 @@ def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_p
     assert 'data-quality-option="low">高清' in response.text
     assert 'data-quality-option="high">流畅' in response.text
     assert 'data-default-quality="low"' in response.text
+    assert 'src="/media/1"' not in response.text
+    assert 'preload="none"' in response.text
     assert 'data-pano-progress' not in response.text
 
 
@@ -185,6 +187,8 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'data-quality-menu' in response.text
     assert 'data-quality-option="ultra">超清' in response.text
     assert 'data-default-quality="ultra"' in response.text
+    assert 'src="/media/1"' not in response.text
+    assert 'preload="none"' in response.text
     assert 'data-flat-controls' in response.text
     assert 'class="flat-player-progress"' in response.text
     assert 'class="progress-strip"' not in response.text
@@ -192,7 +196,7 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'data-flat-play' in response.text
 
 
-def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):
+def test_timeline_rail_exposes_year_month_day_buckets(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [
         {"mtime": datetime(2026, 1, 10).timestamp()},
@@ -202,19 +206,21 @@ def test_timeline_rail_groups_by_quarter(monkeypatch, tmp_path):
 
     rail = main.build_timeline_rail(rows)
 
+    assert [mark["kind"] for mark in rail[0]["marks"]] == ["day", "month", "day", "month", "year"]
     day_marks = [mark for mark in rail[0]["marks"] if mark["kind"] == "day"]
     assert [(mark["label"], mark["count"]) for mark in day_marks] == [("3/20", 1), ("1/10", 1)]
     assert [(mark["label"], mark["count"]) for mark in rail[1]["marks"] if mark["kind"] == "day"] == [("11/5", 1)]
 
 
-def test_timeline_rail_attaches_labels(monkeypatch, tmp_path):
+def test_timeline_rail_month_bucket_points_to_real_section(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [{"mtime": datetime(2026, 1, 10).timestamp()}]
 
-    rail = main.build_timeline_rail(rows, {(2026, 1): [{"label": "春节", "color": "#ff0000"}]})
+    rail = main.build_timeline_rail(rows)
 
-    quarter = next(mark for mark in rail[0]["marks"] if mark["kind"] == "quarter")
-    assert quarter["labels"] == [{"label": "春节", "color": "#ff0000"}]
+    month = next(mark for mark in rail[0]["marks"] if mark["kind"] == "month")
+    assert month["href"] == "#timeline-2026-01"
+    assert month["target"] == "#timeline-2026-01-10"
 
 
 def test_timeline_rail_skips_empty_periods(monkeypatch, tmp_path):
@@ -253,14 +259,15 @@ def test_timeline_rail_clamps_old_videos_to_2010_with_real_target(monkeypatch, t
     assert old_mark["target"] == "#timeline-2006-05-06"
 
 
-def test_timeline_groups_include_quarter_anchor(monkeypatch, tmp_path):
+def test_timeline_groups_include_calendar_data(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [{"mtime": datetime(2026, 7, 8).timestamp()}]
 
     groups = main.group_by_date(rows)
 
     assert groups[0]["year"] == 2026
-    assert groups[0]["quarter"] == 3
+    assert groups[0]["month"] == 7
+    assert groups[0]["day"] == 8
 
 
 def test_refresh_all_thumbnails_route_marks_background_pending(monkeypatch, tmp_path):

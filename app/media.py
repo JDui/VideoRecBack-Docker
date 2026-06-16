@@ -180,10 +180,12 @@ def resolve_hls_playlist(
     output_dir = hls_cache_dir(video, source, data_dir, quality, start_ms, clean_encoder)
     playlist = output_dir / "index.m3u8"
     if hls_playlist_ready(playlist):
+        touch_hls_job(str(output_dir))
         return playlist
 
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_stream_cache(data_dir / "cache", max_cache_mb)
+    stop_related_hls_jobs(video["id"], quality, except_key=str(output_dir))
     start_hls_transcode(source, output_dir, STREAM_QUALITIES[quality], start_ms / 1000, clean_encoder)
     return wait_for_hls_playlist(playlist, output_dir, timeout)
 
@@ -206,6 +208,7 @@ def resolve_hls_segment(
     path = hls_cache_dir(video, source, data_dir, quality, max(0, int(start_ms)), normalize_encoder(encoder)) / segment
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="HLS segment is not ready")
+    touch_hls_job(str(path.parent))
     return path
 
 
@@ -343,6 +346,7 @@ def wait_for_hls_playlist(playlist: Path, output_dir: Path, timeout: float) -> P
     key = str(output_dir)
     while time.time() < deadline:
         if hls_playlist_ready(playlist):
+            touch_hls_job(key)
             return playlist
         with _HLS_JOBS_LOCK:
             job = _HLS_JOBS.get(key)
@@ -374,6 +378,10 @@ def record_hls_heartbeat(video, data_dir: Path, quality: str, start_ms: int, enc
     key = hls_job_key(video, data_dir, quality, start_ms, encoder)
     if not key:
         return
+    touch_hls_job(key)
+
+
+def touch_hls_job(key: str) -> None:
     with _HLS_JOBS_LOCK:
         job = _HLS_JOBS.get(key)
         if job and job.process.poll() is None:
@@ -396,6 +404,31 @@ def stop_hls_job(key: str) -> None:
         job.process.wait(timeout=2)
     except subprocess.TimeoutExpired:
         job.process.kill()
+    cleanup_hls_dir(Path(key))
+
+
+def stop_related_hls_jobs(video_id: object, quality: str, except_key: str = "") -> None:
+    prefix = f"hls-{video_id}-{quality}-"
+    with _HLS_JOBS_LOCK:
+        keys = [
+            key
+            for key, job in _HLS_JOBS.items()
+            if key != except_key and Path(key).name.startswith(prefix) and job.process.poll() is None
+        ]
+    for key in keys:
+        stop_hls_job(key)
+
+
+def cleanup_hls_dir(path: Path) -> None:
+    if not path.exists() or not path.is_dir():
+        return
+    for child in path.glob("*"):
+        if child.is_file():
+            child.unlink(missing_ok=True)
+    try:
+        path.rmdir()
+    except OSError:
+        pass
 
 
 def ensure_hls_watchdog() -> None:

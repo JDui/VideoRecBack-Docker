@@ -5,10 +5,9 @@ const frame = document.querySelector("[data-player-frame]");
 const closePlayer = document.querySelector("[data-close-player]");
 const resizer = document.querySelector("[data-resizer]");
 const previewSize = document.querySelector("[data-preview-size]");
-const timelineLabelForm = document.querySelector("[data-timeline-label-form]");
 const libraryPane = document.querySelector(".library-pane");
-const timelineRail = document.querySelector(".timeline-rail");
-const timelineCurrent = document.querySelector("[data-timeline-current]");
+const timelineRail = document.querySelector("[data-timeline-jump]");
+const timelineDateChip = document.querySelector("[data-timeline-date-chip]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
 const scanForm = document.querySelector("[data-scan-form]");
@@ -18,7 +17,7 @@ const RETURN_STATE_KEY = "videorecback-return-state";
 let inlineFrameClearTimer = null;
 
 const currentTimelineSection = () => {
-  const sections = [...document.querySelectorAll(".asset-section[id^='timeline-']")];
+  const sections = [...document.querySelectorAll("[data-timeline-section]")];
   if (!sections.length || !libraryPane) return "";
   const paneRect = libraryPane.getBoundingClientRect();
   const anchorY = paneRect.top + Math.min(160, paneRect.height * 0.28);
@@ -188,51 +187,18 @@ if (libraryPane && shell) {
   syncScrolledState();
 }
 
-if (timelineRail && timelineCurrent && libraryPane) {
-  const marks = [...timelineRail.querySelectorAll(".timeline-mark")];
-  const visibleKinds = ["day", "month", "quarter", "half"];
-  const sections = [...document.querySelectorAll(".asset-section[id^='timeline-']")];
+if (timelineRail && libraryPane) {
+  const marks = [...timelineRail.querySelectorAll(".timeline-jump-mark")];
+  const sections = [...document.querySelectorAll("[data-timeline-section]")];
   const sectionById = new Map(sections.map((section) => [section.id, section]));
-  const markKey = (mark) => `${mark.dataset.kind}:${mark.dataset.period}`;
-  const sectionDayKey = (section) => `${section.dataset.year}-${String(section.dataset.month).padStart(2, "0")}-${String(section.dataset.day).padStart(2, "0")}`;
-  const sectionMonthKey = (section) => `${section.dataset.year}-${String(section.dataset.month).padStart(2, "0")}`;
-  const sectionQuarterKey = (section) => `${section.dataset.year}-q${section.dataset.quarter}`;
-  const sectionHalfKey = (section) => `${section.dataset.year}-h${Number(section.dataset.month || 0) >= 7 ? 2 : 1}`;
-  const markByKindPeriod = new Map(marks.map((mark) => [markKey(mark), mark]));
-  const visibleMarkForSection = (section) => {
-    for (const [kind, period] of [
-      ["day", sectionDayKey(section)],
-      ["month", sectionMonthKey(section)],
-      ["quarter", sectionQuarterKey(section)],
-      ["half", sectionHalfKey(section)],
-    ]) {
-      const mark = markByKindPeriod.get(`${kind}:${period}`);
-      if (mark && !mark.hidden) return mark;
-    }
-    return marks.find((mark) => !mark.hidden);
-  };
   const sectionForTimelineId = (id) => {
     if (sectionById.has(id)) return sectionById.get(id);
-    const dateMatch = id.match(/^timeline-(\d{4})-(\d{2})(?:-(\d{2}))?$/);
-    if (dateMatch?.[3]) return null;
-    if (dateMatch) {
-      return sections.find((section) => section.id.startsWith(id));
-    }
-    const quarterMatch = id.match(/^timeline-(\d{4})-q([1-4])$/);
-    if (quarterMatch) {
-      return sections.find((section) => (
-        section.dataset.year === quarterMatch[1] &&
-        section.dataset.quarter === quarterMatch[2]
-      ));
-    }
-    const halfMatch = id.match(/^timeline-(\d{4})-h([12])$/);
-    if (halfMatch) {
-      const half = halfMatch[2];
-      return sections.find((section) => {
-        const month = Number(section.dataset.month || 0);
-        return section.dataset.year === halfMatch[1] && (half === "2" ? month >= 7 : month <= 6);
-      });
-    }
+    const yearMatch = id.match(/^timeline-(\d{4})$/);
+    if (yearMatch) return sections.find((section) => section.dataset.year === yearMatch[1]);
+    const monthMatch = id.match(/^timeline-(\d{4})-(\d{2})$/);
+    if (monthMatch) return sections.find((section) => section.dataset.year === monthMatch[1] && String(section.dataset.month).padStart(2, "0") === monthMatch[2]);
+    const dayMatch = id.match(/^timeline-(\d{4})-(\d{2})-(\d{2})$/);
+    if (dayMatch) return sections.find((section) => section.dataset.year === dayMatch[1] && String(section.dataset.month).padStart(2, "0") === dayMatch[2] && String(section.dataset.day).padStart(2, "0") === dayMatch[3]);
     return null;
   };
   const sectionForMark = (mark) => {
@@ -255,7 +221,6 @@ if (timelineRail && timelineCurrent && libraryPane) {
     window.requestAnimationFrame(updateTimelineCurrent);
   };
 
-  const quarterIndex = (year, quarter) => Number(year) * 4 + Number(quarter);
   const dayIndex = (year, month, day) => Date.UTC(Number(year), Number(month) - 1, Number(day)) / 86400000;
   const activeSection = () => {
     const paneRect = libraryPane.getBoundingClientRect();
@@ -270,8 +235,7 @@ if (timelineRail && timelineCurrent && libraryPane) {
   const sortedMarks = (kind) => marks.filter((mark) => mark.dataset.kind === kind);
   const applyTimelineScale = (section) => {
     if (!section) return;
-    const capacity = Math.max(8, Math.floor((timelineRail.clientHeight - 28) / 22));
-    const activeQuarter = quarterIndex(section.dataset.year, section.dataset.quarter);
+    const capacity = Math.max(10, Math.floor((timelineRail.clientHeight - 36) / 24));
     const activeDay = dayIndex(section.dataset.year, section.dataset.month, section.dataset.day);
     const selected = new Set();
     const addRanked = (items, limit) => {
@@ -282,37 +246,28 @@ if (timelineRail && timelineCurrent && libraryPane) {
     };
     const dayMarks = sortedMarks("day")
       .sort((left, right) => Math.abs(dayIndex(left.dataset.year, left.dataset.month, left.dataset.day) - activeDay) - Math.abs(dayIndex(right.dataset.year, right.dataset.month, right.dataset.day) - activeDay));
-    addRanked(dayMarks.filter((mark) => Math.abs(quarterIndex(mark.dataset.year, mark.dataset.quarter) - activeQuarter) <= 1), Math.max(3, Math.floor(capacity * 0.42)));
+    addRanked(dayMarks, Math.max(3, Math.floor(capacity * 0.42)));
 
     const monthMarks = sortedMarks("month")
-      .sort((left, right) => Math.abs(quarterIndex(left.dataset.year, left.dataset.quarter) - activeQuarter) - Math.abs(quarterIndex(right.dataset.year, right.dataset.quarter) - activeQuarter));
-    addRanked(monthMarks.filter((mark) => Math.abs(quarterIndex(mark.dataset.year, mark.dataset.quarter) - activeQuarter) <= 2), Math.max(selected.size, Math.floor(capacity * 0.68)));
+      .sort((left, right) => Math.abs(dayIndex(left.dataset.year, left.dataset.month, 1) - activeDay) - Math.abs(dayIndex(right.dataset.year, right.dataset.month, 1) - activeDay));
+    addRanked(monthMarks, Math.max(selected.size, Math.floor(capacity * 0.78)));
 
-    const quarterMarks = sortedMarks("quarter")
-      .sort((left, right) => Math.abs(quarterIndex(left.dataset.year, left.dataset.quarter) - activeQuarter) - Math.abs(quarterIndex(right.dataset.year, right.dataset.quarter) - activeQuarter));
-    addRanked(quarterMarks.filter((mark) => Math.abs(quarterIndex(mark.dataset.year, mark.dataset.quarter) - activeQuarter) <= 5), Math.max(selected.size, Math.floor(capacity * 0.86)));
-
-    const halfMarks = sortedMarks("half")
-      .sort((left, right) => Math.abs(quarterIndex(left.dataset.year, left.dataset.quarter) - activeQuarter) - Math.abs(quarterIndex(right.dataset.year, right.dataset.quarter) - activeQuarter));
-    addRanked(halfMarks, capacity);
+    const yearMarks = sortedMarks("year")
+      .sort((left, right) => Math.abs(Number(left.dataset.year) - Number(section.dataset.year)) - Math.abs(Number(right.dataset.year) - Number(section.dataset.year)));
+    addRanked(yearMarks, capacity);
 
     for (const mark of marks) {
       const visible = selected.has(mark);
       mark.hidden = !visible;
-      mark.classList.toggle("is-folded", visible && mark.dataset.kind !== "day");
-      mark.classList.toggle("is-fine", visible && mark.dataset.kind === "day");
+      mark.classList.toggle("is-near", visible && mark.dataset.kind === "day");
     }
-    for (const group of timelineRail.querySelectorAll(".timeline-year-group")) {
-      group.hidden = !group.querySelector(".timeline-mark:not([hidden])");
+    for (const group of timelineRail.querySelectorAll(".timeline-jump-year")) {
+      group.hidden = !group.querySelector(".timeline-jump-mark:not([hidden])");
     }
   };
 
   for (const mark of marks) {
     mark.addEventListener("click", (event) => {
-      if (mark.classList.contains("timeline-mark--empty")) {
-        event.preventDefault();
-        return;
-      }
       const href = mark.getAttribute("href") || "";
       if (!href.startsWith("#timeline-")) return;
       const section = sectionForMark(mark);
@@ -327,19 +282,18 @@ if (timelineRail && timelineCurrent && libraryPane) {
     if (!sections.length) return;
     const currentSection = activeSection();
     applyTimelineScale(currentSection);
-    const mark = visibleMarkForSection(currentSection);
-    if (!mark) return;
+    const currentDateKey = `${currentSection.dataset.year}-${String(currentSection.dataset.month).padStart(2, "0")}-${String(currentSection.dataset.day).padStart(2, "0")}`;
+    const mark = marks.find((candidate) => !candidate.hidden && candidate.dataset.period === currentDateKey) ||
+      marks.find((candidate) => !candidate.hidden && candidate.dataset.kind === "month" && candidate.dataset.year === currentSection.dataset.year && candidate.dataset.month === currentSection.dataset.month) ||
+      marks.find((candidate) => !candidate.hidden && candidate.dataset.kind === "year" && candidate.dataset.year === currentSection.dataset.year);
     for (const candidate of marks) {
       candidate.classList.toggle("is-current", candidate === mark);
     }
-    const railRect = timelineRail.getBoundingClientRect();
-    const markRect = mark.getBoundingClientRect();
-    timelineRail.style.setProperty(
-      "--timeline-current-top",
-      `${markRect.top - railRect.top + markRect.height / 2}px`
-    );
-    timelineCurrent.classList.add("is-visible");
-    mark.scrollIntoView({ block: "nearest" });
+    if (timelineDateChip) {
+      timelineDateChip.textContent = currentSection.dataset.label || currentSection.querySelector("h2")?.textContent || "";
+      timelineDateChip.hidden = false;
+    }
+    mark?.scrollIntoView({ block: "nearest" });
   };
 
   libraryPane.addEventListener("scroll", updateTimelineCurrent, { passive: true });
@@ -350,100 +304,4 @@ if (timelineRail && timelineCurrent && libraryPane) {
     window.requestAnimationFrame(() => scrollToTimelineSection(initialSection));
   }
   updateTimelineCurrent();
-}
-
-if (timelineLabelForm) {
-  const yearInput = timelineLabelForm.querySelector("[data-label-year]");
-  const quarterInput = timelineLabelForm.querySelector("[data-label-quarter]");
-  const textInput = timelineLabelForm.querySelector("[data-label-text]");
-  const colorInput = timelineLabelForm.querySelector("[data-label-color]");
-  const titleText = timelineLabelForm.querySelector("[data-label-form-title]");
-  const saveButton = timelineLabelForm.querySelector("[data-label-save]");
-  const deleteButton = timelineLabelForm.querySelector("[data-label-delete]");
-  let editingLabelId = "";
-  const hideLabelForm = () => {
-    timelineLabelForm.hidden = true;
-  };
-  const placeLabelForm = (clientX, clientY) => {
-    const left = Math.min(clientX, window.innerWidth - 260);
-    const top = Math.min(clientY, window.innerHeight - 190);
-    timelineLabelForm.style.left = `${left}px`;
-    timelineLabelForm.style.top = `${top}px`;
-  };
-  const showCreateLabelForm = (mark, clientX, clientY) => {
-    editingLabelId = "";
-    timelineLabelForm.action = "/timeline-labels";
-    if (titleText) titleText.textContent = "时间标签";
-    if (saveButton) saveButton.textContent = "添加";
-    if (deleteButton) deleteButton.hidden = true;
-    placeLabelForm(clientX, clientY);
-    window.setTimeout(() => {
-      yearInput.value = mark.dataset.year || "";
-      quarterInput.value = mark.dataset.quarter || "";
-      textInput.value = "";
-      if (colorInput) colorInput.value = "#16a394";
-      timelineLabelForm.hidden = false;
-      textInput.focus();
-    }, 0);
-  };
-  const showEditLabelForm = (tag, clientX, clientY) => {
-    editingLabelId = tag.dataset.labelId || "";
-    if (!editingLabelId) return;
-    timelineLabelForm.action = `/timeline-labels/${editingLabelId}`;
-    if (titleText) titleText.textContent = "编辑标签";
-    if (saveButton) saveButton.textContent = "保存";
-    if (deleteButton) deleteButton.hidden = false;
-    placeLabelForm(clientX, clientY);
-    window.setTimeout(() => {
-      yearInput.value = tag.dataset.labelYear || "";
-      quarterInput.value = tag.dataset.labelQuarter || "";
-      textInput.value = tag.dataset.labelText || tag.dataset.label || "";
-      if (colorInput) colorInput.value = tag.dataset.labelColor || "#16a394";
-      timelineLabelForm.hidden = false;
-      textInput.focus();
-      textInput.select();
-    }, 0);
-  };
-
-  for (const mark of document.querySelectorAll(".timeline-mark")) {
-    mark.addEventListener("pointerdown", (event) => {
-      if (event.button !== 2) return;
-      event.preventDefault();
-      event.stopPropagation();
-      showCreateLabelForm(mark, event.clientX, event.clientY);
-    });
-    mark.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      showCreateLabelForm(mark, event.clientX, event.clientY);
-    });
-  }
-
-  for (const tag of document.querySelectorAll(".timeline-tag")) {
-    tag.addEventListener("pointerdown", (event) => {
-      if (event.button !== 2) return;
-      event.preventDefault();
-      event.stopPropagation();
-      showEditLabelForm(tag, event.clientX, event.clientY);
-    });
-    tag.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      showEditLabelForm(tag, event.clientX, event.clientY);
-    });
-  }
-
-  deleteButton?.addEventListener("click", () => {
-    if (!editingLabelId) return;
-    timelineLabelForm.action = `/timeline-labels/${editingLabelId}/delete`;
-    timelineLabelForm.submit();
-  });
-
-  document.addEventListener("click", (event) => {
-    if (timelineLabelForm.hidden || timelineLabelForm.contains(event.target)) return;
-    hideLabelForm();
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") hideLabelForm();
-  });
 }
