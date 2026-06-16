@@ -8,11 +8,11 @@
     <article class="asset-item {% if compact %}asset-item--compact{% endif %}">
       <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-video-type="{{ video.type }}" data-settings-url="/video/{{ video.id }}" aria-label="播放 {{ video.name }}">
         {% if video.type == "panorama" and video.thumb_status == "ready" %}
-          <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp" alt=""></span>
+          <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp" alt="" loading="lazy" decoding="async"></span>
         {% endif %}
         <span class="asset-thumb">
           {% if video.thumb_status == "ready" %}
-            <img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}">
+            <img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}" loading="lazy" decoding="async">
           {% else %}
             <span class="poster-empty">{% if video.thumb_status == "error" %}封面失败{% else %}生成中{% endif %}</span>
           {% endif %}
@@ -38,7 +38,7 @@
     <a class="folder-tile" href="{{ item.url if item.url is defined else '#' }}">
       <span class="folder-cover">
         {% if item.cover and item.cover.thumb_status == "ready" %}
-          <img src="/thumb/{{ item.cover.id }}.webp" alt="{{ item.label if item.label is defined else item.name }}">
+          <img src="/thumb/{{ item.cover.id }}.webp" alt="{{ item.label if item.label is defined else item.name }}" loading="lazy" decoding="async">
         {% endif %}
       </span>
       <span class="folder-info">
@@ -165,7 +165,7 @@
             {% endif %}
           </section>
         {% else %}
-          <section class="immich-timeline" data-timeline-root>
+          <section class="immich-timeline" data-timeline-root data-timeline-cache='{{ timeline_cache|tojson }}'>
             <div class="timeline-date-chip" data-timeline-date-chip hidden></div>
             <div class="timeline-stack">
               {% for group in timeline_groups %}
@@ -215,5 +215,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=1.0.0" defer></script>
+  <script src="/static/app.js?v=1.1.0" defer></script>
 {% endblock %}

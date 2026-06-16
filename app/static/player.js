@@ -118,6 +118,20 @@ const seekBy = (seconds) => {
   setLogicalCurrentTime(getLogicalCurrentTime() + seconds);
 };
 
+const changeVolumeBy = (delta) => {
+  if (!video) return;
+  const baseVolume = video.muted ? Number(video.dataset.appliedVolume || 0.2) : video.volume;
+  video.muted = false;
+  setVideoVolume(baseVolume + delta);
+  syncMuteUi();
+};
+
+const isEditableKeyTarget = (target) => {
+  if (!(target instanceof Element)) return false;
+  if (target.closest("[contenteditable='true']")) return true;
+  return ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName) && target.type !== "range";
+};
+
 const getLogicalDuration = () => {
   if (Number.isFinite(totalDuration) && totalDuration > 0) return totalDuration;
   if (Number.isFinite(video?.duration)) return mediaTimeOffset + video.duration;
@@ -424,6 +438,10 @@ if (video) {
   });
   flatPlayButton?.addEventListener("click", togglePlayback);
   centerAction?.addEventListener("click", togglePlayback);
+  stage?.addEventListener("click", (event) => {
+    if (event.target.closest("button, input, select, textarea, label, a, summary, details, [data-player-center-action]")) return;
+    togglePlayback();
+  });
   muteToggle?.addEventListener("click", toggleMute);
   for (const button of document.querySelectorAll("[data-seek-step]")) {
     button.addEventListener("click", () => seekBy(Number(button.dataset.seekStep || 0)));
@@ -438,6 +456,25 @@ if (video) {
   if (seekControl) seekControl.addEventListener("pointerup", () => {
     seekingWithControl = false;
     window.requestAnimationFrame(syncProgressUi);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isEditableKeyTarget(event.target)) return;
+    if (event.key === " " || event.key === "Spacebar") {
+      event.preventDefault();
+      togglePlayback();
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      seekBy(-10);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      seekBy(10);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      changeVolumeBy(0.05);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      changeVolumeBy(-0.05);
+    }
   });
   syncProgressUi();
   syncPlayUi();
@@ -495,6 +532,7 @@ const closePlayerPage = () => {
 
 document.querySelector("[data-player-close]")?.addEventListener("click", closePlayerPage);
 window.addEventListener("pagehide", () => stopHlsHeartbeat(true));
+window.addEventListener("beforeunload", () => stopHlsHeartbeat(true));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && video?.dataset.currentQuality !== "original") stopHlsHeartbeat(true);
 });

@@ -84,6 +84,8 @@ def create_app() -> FastAPI:
         filters = read_filters(request)
         rows = query_videos(db, filters)
         stats = summarize_videos(rows)
+        timeline_groups = build_timeline_groups(rows)
+        timeline_rail = build_timeline_rail(rows)
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -93,8 +95,9 @@ def create_app() -> FastAPI:
                 "filters": filters,
                 "stats": stats,
                 "view_urls": build_view_urls(filters),
-                "timeline_groups": build_timeline_groups(rows),
-                "timeline_rail": build_timeline_rail(rows),
+                "timeline_groups": timeline_groups,
+                "timeline_rail": timeline_rail,
+                "timeline_cache": build_timeline_cache(timeline_groups, timeline_rail, filters),
                 "folder_browser": build_folder_browser(rows, filters),
                 "calendar_model": build_calendar_model(rows, filters),
                 "scan_running": is_background_busy(app),
@@ -484,21 +487,18 @@ def summarize_videos(rows) -> dict[str, int]:
     }
 
 
-def build_timeline_groups(rows):
+def timeline_group_config(rows) -> tuple[str, str, str, str]:
     day_count = len({datetime.fromtimestamp(row["mtime"]).strftime("%Y-%m-%d") for row in rows})
     month_count = len({datetime.fromtimestamp(row["mtime"]).strftime("%Y-%m") for row in rows})
     if day_count <= 90:
-        granularity = "day"
-        key_format = "%Y-%m-%d"
-        label_format = "%Y年%m月%d日"
-    elif month_count <= 72:
-        granularity = "month"
-        key_format = "%Y-%m"
-        label_format = "%Y年%m月"
-    else:
-        granularity = "year"
-        key_format = "%Y"
-        label_format = "%Y年"
+        return "day", "%Y-%m-%d", "%Y年%m月%d日", "timeline-%Y-%m-%d"
+    if month_count <= 72:
+        return "month", "%Y-%m", "%Y年%m月", "timeline-%Y-%m"
+    return "year", "%Y", "%Y年", "timeline-%Y"
+
+
+def build_timeline_groups(rows):
+    granularity, key_format, label_format, anchor_format = timeline_group_config(rows)
 
     groups: dict[str, dict[str, object]] = {}
     for row in rows:
@@ -515,7 +515,7 @@ def build_timeline_groups(rows):
                 "quarter": (date.month - 1) // 3 + 1,
                 "month": date.month,
                 "day": date.day,
-                "anchor": f"timeline-{date:%Y-%m-%d}",
+                "anchor": date.strftime(anchor_format),
                 "videos": [],
             },
         )
@@ -528,14 +528,22 @@ def group_by_date(rows):
 
 
 def build_timeline_rail(rows) -> list[dict[str, object]]:
+    granularity = timeline_group_config(rows)[0]
     day_counts: dict[tuple[int, int, int], int] = defaultdict(int)
     month_counts: dict[tuple[int, int], int] = defaultdict(int)
     year_counts: dict[int, int] = defaultdict(int)
     target_anchors: dict[tuple[str, tuple[int, ...]], tuple[float, str]] = {}
 
+    def section_anchor(date: datetime) -> str:
+        if granularity == "year":
+            return f"#timeline-{date:%Y}"
+        if granularity == "month":
+            return f"#timeline-{date:%Y-%m}"
+        return f"#timeline-{date:%Y-%m-%d}"
+
     def set_target(kind: str, key: tuple[int, ...], timestamp: float, date: datetime) -> None:
         target_key = (kind, key)
-        anchor = f"#timeline-{date:%Y-%m-%d}"
+        anchor = section_anchor(date)
         if target_key not in target_anchors or timestamp > target_anchors[target_key][0]:
             target_anchors[target_key] = (timestamp, anchor)
 
@@ -609,6 +617,34 @@ def build_timeline_rail(rows) -> list[dict[str, object]]:
         marks.sort(key=lambda item: (item["year"], item["month"], item["day"], {"day": 3, "month": 2, "year": 1}[item["kind"]]), reverse=True)
         result.append({"year": year, "marks": marks})
     return result
+
+
+def build_timeline_cache(groups, rail, filters: dict[str, str]) -> dict[str, object]:
+    return {
+        "filters": {
+            "view": filters.get("view", "timeline"),
+            "type": filters.get("type", "all"),
+            "duration": filters.get("duration", "all"),
+            "aspect": filters.get("aspect", "all"),
+            "date_from": filters.get("date_from", ""),
+            "date_to": filters.get("date_to", ""),
+            "q": filters.get("q", ""),
+        },
+        "groups": [
+            {
+                "key": group["key"],
+                "anchor": group["anchor"],
+                "label": group["label"],
+                "granularity": group["granularity"],
+                "year": group["year"],
+                "month": group["month"],
+                "day": group["day"],
+                "count": len(group["videos"]),
+            }
+            for group in groups
+        ],
+        "rail": rail,
+    }
 
 
 def build_folder_browser(rows, filters: dict[str, str]) -> dict[str, object]:

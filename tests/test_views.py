@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from importlib import import_module
 
 from fastapi.testclient import TestClient
@@ -223,6 +223,25 @@ def test_timeline_rail_month_bucket_points_to_real_section(monkeypatch, tmp_path
     assert month["target"] == "#timeline-2026-01-10"
 
 
+def test_dense_timeline_rail_targets_existing_month_page(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    start = datetime(2026, 1, 1)
+    rows = [{"mtime": (start + timedelta(days=index)).timestamp()} for index in range(91)]
+
+    groups = main.build_timeline_groups(rows)
+    rail = main.build_timeline_rail(rows)
+
+    assert groups[0]["granularity"] == "month"
+    assert {group["anchor"] for group in groups} >= {"timeline-2026-01", "timeline-2026-02", "timeline-2026-03"}
+    january_day = next(
+        mark
+        for year in rail
+        for mark in year["marks"]
+        if mark["kind"] == "day" and mark["period"] == "2026-01-15"
+    )
+    assert january_day["target"] == "#timeline-2026-01"
+
+
 def test_timeline_rail_skips_empty_periods(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [
@@ -268,6 +287,41 @@ def test_timeline_groups_include_calendar_data(monkeypatch, tmp_path):
     assert groups[0]["year"] == 2026
     assert groups[0]["month"] == 7
     assert groups[0]["day"] == 8
+
+
+def test_timeline_cache_excludes_video_rows(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    rows = [{"mtime": datetime(2026, 7, 8).timestamp()}]
+    groups = main.build_timeline_groups(rows)
+    rail = main.build_timeline_rail(rows)
+
+    cache = main.build_timeline_cache(groups, rail, {"view": "timeline", "type": "flat"})
+
+    assert cache["filters"]["type"] == "flat"
+    assert cache["groups"][0]["anchor"] == "timeline-2026-07-08"
+    assert cache["groups"][0]["count"] == 1
+    assert "videos" not in cache["groups"][0]
+
+
+def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, thumb_status)
+            VALUES (?, 'flat.mp4', ?, 0, 'flat', 1, 'ready')
+            """,
+            (str(tmp_path / "flat.mp4"), datetime(2026, 7, 8).timestamp()),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "data-timeline-cache=" in response.text
+    assert '"anchor": "timeline-2026-07-08"' in response.text
+    assert 'loading="lazy"' in response.text
 
 
 def test_refresh_all_thumbnails_route_marks_background_pending(monkeypatch, tmp_path):
