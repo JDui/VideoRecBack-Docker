@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS videos (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     missing INTEGER NOT NULL DEFAULT 0,
+    favorite INTEGER NOT NULL DEFAULT 0,
     thumb_status TEXT NOT NULL DEFAULT 'pending',
     thumb_error TEXT,
     thumb_path TEXT,
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS scan_queue (
 INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_videos_mtime ON videos(mtime DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_missing ON videos(missing);
+CREATE INDEX IF NOT EXISTS idx_videos_favorite ON videos(favorite, mtime DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_type ON videos(type);
 CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder);
 CREATE INDEX IF NOT EXISTS idx_scan_queue_status ON scan_queue(status, created_at);
@@ -61,6 +63,7 @@ MIGRATIONS = {
     "height": "ALTER TABLE videos ADD COLUMN height INTEGER",
     "aspect_ratio": "ALTER TABLE videos ADD COLUMN aspect_ratio REAL",
     "thumb_version": "ALTER TABLE videos ADD COLUMN thumb_version INTEGER NOT NULL DEFAULT 0",
+    "favorite": "ALTER TABLE videos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
 }
 
 

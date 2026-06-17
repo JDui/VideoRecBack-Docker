@@ -375,7 +375,8 @@ textarea {
 .section-list,
 .asset-section,
 .finder-view,
-.calendar-view {
+.calendar-view,
+.favorites-view {
   display: grid;
   gap: 28px;
 }
@@ -415,7 +416,7 @@ textarea {
 .timeline-section {
   display: grid;
   gap: 18px;
-  min-height: calc(100vh - 128px);
+  min-height: 0;
   scroll-margin-top: 16px;
 }
 
@@ -608,6 +609,23 @@ textarea {
   margin: 0;
 }
 
+.asset-section-head {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+}
+
+.asset-section-head h2 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.asset-section-head span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
 .asset-grid {
   display: grid;
   gap: 14px;
@@ -733,6 +751,37 @@ textarea {
 .asset-card:hover {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
   transform: translateY(-2px);
+}
+
+.favorite-context-menu {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 4px;
+  min-width: 168px;
+  padding: 6px;
+  position: fixed;
+  z-index: 80;
+}
+
+.favorite-context-menu[hidden] {
+  display: none;
+}
+
+.favorite-context-menu button {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  justify-content: flex-start;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.favorite-context-menu button:hover {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
 }
 
 .asset-duration,
@@ -1218,6 +1267,29 @@ textarea {
   justify-content: space-between;
 }
 
+.settings-shell > .settings-action-panel {
+  grid-column: 2;
+}
+
+.connectivity-results {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.connectivity-results span {
+  background: #f5f6f4;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+  padding: 9px 10px;
+  white-space: nowrap;
+}
+
 .settings-action-panel strong {
   display: block;
   font-size: 15px;
@@ -1373,6 +1445,17 @@ textarea {
 .quality-menu-panel button.active {
   background: var(--accent-soft);
   color: var(--accent-deep);
+}
+
+.favorite-toggle {
+  align-items: center;
+  gap: 6px;
+}
+
+.favorite-toggle.active {
+  background: #fff0f2;
+  border-color: #e6b8bf;
+  color: #9d2f42;
 }
 
 .player-stage {
@@ -1901,6 +1984,10 @@ textarea {
   .detail-shell,
   .settings-shell {
     grid-template-columns: 1fr;
+  }
+
+  .settings-shell > .settings-action-panel {
+    grid-column: auto;
   }
 
   .asset-grid {

@@ -90,6 +90,18 @@
       </div>
       <button type="submit">保存设置</button>
     </form>
+    <section class="settings-action-panel connectivity-panel" data-connectivity-test>
+      <div>
+        <strong>服务器连通测试</strong>
+        <p class="muted">测试浏览器到当前服务的延迟和下载吞吐，适合排查局域网访问质量。</p>
+        <p class="settings-notice" data-connectivity-status>等待测试。</p>
+      </div>
+      <div class="connectivity-results">
+        <span data-connectivity-latency>延迟 --</span>
+        <span data-connectivity-speed>下载 --</span>
+        <button type="button" data-connectivity-start>开始测速</button>
+      </div>
+    </section>
     <form
       class="settings-action-panel"
       action="/settings/refresh-thumbnails"
@@ -127,4 +139,7 @@
       <button class="danger-button" type="submit">全景重校验</button>
     </form>
   </section>
+{% endblock %}
+{% block scripts %}
+  <script src="/static/settings.js?v=1.5.0" defer></script>
 {% endblock %}

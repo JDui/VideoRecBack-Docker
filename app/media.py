@@ -102,8 +102,8 @@ ENCODER_PROFILES = {
     "libx264_ultrafast": EncoderProfile(codec="libx264", preset="ultrafast"),
     "libx264_veryfast": EncoderProfile(codec="libx264", preset="veryfast"),
 }
-HLS_READY_TIMEOUT_SECONDS = 45.0
-HLS_IDLE_TIMEOUT_SECONDS = 8.0
+HLS_READY_TIMEOUT_SECONDS = 75.0
+HLS_IDLE_TIMEOUT_SECONDS = 90.0
 
 
 @dataclass(slots=True)
@@ -180,8 +180,11 @@ def resolve_hls_playlist(
     output_dir = hls_cache_dir(video, source, data_dir, quality, start_ms, clean_encoder)
     playlist = output_dir / "index.m3u8"
     if hls_playlist_ready(playlist):
-        touch_hls_job(str(output_dir))
-        return playlist
+        key = str(output_dir)
+        if hls_playlist_complete(playlist) or hls_job_running(key):
+            touch_hls_job(key)
+            return playlist
+        cleanup_hls_dir(output_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_stream_cache(data_dir / "cache", max_cache_mb)
@@ -252,9 +255,8 @@ def start_hls_transcode(
             job.last_seen = time.time()
             return
 
-        for stale in output_dir.glob("segment-*.ts"):
-            stale.unlink(missing_ok=True)
-        (output_dir / "index.m3u8").unlink(missing_ok=True)
+        cleanup_hls_dir(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         command = build_hls_command(source, output_dir, quality, start_at, encoder)
         process = subprocess.Popen(
@@ -346,15 +348,23 @@ def wait_for_hls_playlist(playlist: Path, output_dir: Path, timeout: float) -> P
     key = str(output_dir)
     while time.time() < deadline:
         if hls_playlist_ready(playlist):
-            touch_hls_job(key)
-            return playlist
+            if hls_playlist_complete(playlist) or hls_job_running(key):
+                touch_hls_job(key)
+                return playlist
         with _HLS_JOBS_LOCK:
             job = _HLS_JOBS.get(key)
             exited = job is not None and job.process.poll() is not None
         if exited and not hls_playlist_ready(playlist):
+            cleanup_hls_dir(output_dir)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="HLS transcode failed before producing a playable segment",
+            )
+        if exited and hls_playlist_ready(playlist) and not hls_playlist_complete(playlist):
+            cleanup_hls_dir(output_dir)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="HLS transcode stopped before finishing the playlist",
             )
         time.sleep(0.2)
     raise HTTPException(
@@ -388,6 +398,12 @@ def touch_hls_job(key: str) -> None:
             job.last_seen = time.time()
 
 
+def hls_job_running(key: str) -> bool:
+    with _HLS_JOBS_LOCK:
+        job = _HLS_JOBS.get(key)
+        return bool(job and job.process.poll() is None)
+
+
 def stop_hls_transcode(video, data_dir: Path, quality: str, start_ms: int, encoder: str = "libx264_ultrafast") -> None:
     key = hls_job_key(video, data_dir, quality, start_ms, encoder)
     if key:
@@ -397,14 +413,21 @@ def stop_hls_transcode(video, data_dir: Path, quality: str, start_ms: int, encod
 def stop_hls_job(key: str) -> None:
     with _HLS_JOBS_LOCK:
         job = _HLS_JOBS.pop(key, None)
-    if not job or job.process.poll() is not None:
+    path = Path(key)
+    if not job:
+        return
+    if job.process.poll() is not None:
+        playlist = path / "index.m3u8"
+        if not hls_playlist_complete(playlist):
+            cleanup_hls_dir(path)
         return
     job.process.terminate()
     try:
         job.process.wait(timeout=2)
     except subprocess.TimeoutExpired:
         job.process.kill()
-    cleanup_hls_dir(Path(key))
+    if not hls_playlist_complete(path / "index.m3u8"):
+        cleanup_hls_dir(path)
 
 
 def stop_related_hls_jobs(video_id: object, quality: str, except_key: str = "") -> None:
@@ -469,6 +492,15 @@ def hls_playlist_ready(playlist: Path) -> bool:
         if segment.exists() and segment.stat().st_size > 0:
             return True
     return False
+
+
+def hls_playlist_complete(playlist: Path) -> bool:
+    if not playlist.exists() or playlist.stat().st_size == 0:
+        return False
+    try:
+        return "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
 
 
 def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) -> None:

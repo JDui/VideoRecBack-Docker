@@ -13,11 +13,13 @@ const inlineSettings = document.querySelector("[data-inline-settings]");
 const scanForm = document.querySelector("[data-scan-form]");
 const scanButton = document.querySelector("[data-scan-button]");
 const scanLabel = document.querySelector("[data-scan-label]");
+const favoriteContextMenu = document.querySelector("[data-favorite-context-menu]");
 const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
 let inlineFrameClearTimer = null;
 let restoredReturnState = null;
 let pendingReturnPosition = null;
+let favoriteContextTarget = null;
 
 const timelineCache = (() => {
   try {
@@ -139,15 +141,85 @@ if (previewSize) {
   });
 }
 
+const eventPoint = (event, fallbackElement = null) => {
+  const touch = event?.touches?.[0] || event?.changedTouches?.[0];
+  if (touch) return { x: touch.clientX, y: touch.clientY };
+  if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+    return { x: event.clientX, y: event.clientY };
+  }
+  const rect = fallbackElement?.getBoundingClientRect();
+  return {
+    x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+    y: rect ? rect.top + rect.height / 2 : window.innerHeight / 2,
+  };
+};
+
+const hideFavoriteContextMenu = () => {
+  if (!favoriteContextMenu) return;
+  favoriteContextMenu.hidden = true;
+  favoriteContextTarget = null;
+};
+
+const openFavoriteContextMenu = (card, eventOrPoint) => {
+  if (!favoriteContextMenu) return;
+  const point = Number.isFinite(eventOrPoint?.x) && Number.isFinite(eventOrPoint?.y)
+    ? eventOrPoint
+    : eventPoint(eventOrPoint, card);
+  favoriteContextTarget = card;
+  favoriteContextMenu.hidden = false;
+  const rect = favoriteContextMenu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(point.x, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(point.y, window.innerHeight - rect.height - 8));
+  favoriteContextMenu.style.left = `${left}px`;
+  favoriteContextMenu.style.top = `${top}px`;
+};
+
+favoriteContextMenu?.addEventListener("click", (event) => {
+  const targetElement = event.target instanceof Element ? event.target : null;
+  const action = targetElement?.closest("[data-favorite-action]")?.dataset.favoriteAction;
+  if (!action || !favoriteContextTarget) return;
+  event.preventDefault();
+  const target = favoriteContextTarget;
+  hideFavoriteContextMenu();
+  if (action === "timeline") {
+    window.location.href = target.dataset.timelineUrl || "/?view=timeline";
+  } else if (action === "settings") {
+    window.location.href = target.dataset.settingsUrl || "#";
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (!favoriteContextMenu || favoriteContextMenu.hidden) return;
+  const targetElement = event.target instanceof Element ? event.target : null;
+  if (!targetElement) return;
+  if (favoriteContextMenu.contains(targetElement) || targetElement.closest("[data-favorite-menu]")) return;
+  hideFavoriteContextMenu();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") hideFavoriteContextMenu();
+});
+
+window.addEventListener("resize", hideFavoriteContextMenu);
+
 for (const card of document.querySelectorAll("[data-settings-url]")) {
   let timer = null;
   let longPressed = false;
+  const usesFavoriteMenu = card.dataset.favoriteMenu === "1";
   const openSettings = (event) => {
     event.preventDefault();
     window.location.href = card.dataset.settingsUrl;
   };
+  const openContextAction = (event) => {
+    event.preventDefault();
+    if (usesFavoriteMenu) {
+      openFavoriteContextMenu(card, event);
+      return;
+    }
+    openSettings(event);
+  };
 
-  card.addEventListener("contextmenu", openSettings);
+  card.addEventListener("contextmenu", openContextAction);
   card.addEventListener("pointerdown", () => {
     pendingReturnPosition = capturePanePosition();
   }, { passive: true });
@@ -177,11 +249,16 @@ for (const card of document.querySelectorAll("[data-settings-url]")) {
     }
     window.requestAnimationFrame(() => restorePanePosition(panePosition));
   });
-  card.addEventListener("touchstart", () => {
+  card.addEventListener("touchstart", (event) => {
     longPressed = false;
+    const point = eventPoint(event, card);
     timer = window.setTimeout(() => {
       longPressed = true;
-      window.location.href = card.dataset.settingsUrl;
+      if (usesFavoriteMenu) {
+        openFavoriteContextMenu(card, point);
+      } else {
+        window.location.href = card.dataset.settingsUrl;
+      }
     }, LONG_PRESS_MS);
   }, { passive: true });
   for (const eventName of ["touchend", "touchmove", "touchcancel"]) {

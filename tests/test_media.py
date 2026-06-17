@@ -9,6 +9,7 @@ from app.media import (
     build_hls_command,
     cleanup_stream_cache,
     generate_stream_cache,
+    hls_cache_dir,
     hls_job_key,
     parse_range,
     record_hls_heartbeat,
@@ -127,7 +128,7 @@ def test_resolve_hls_playlist_waits_for_first_segment(monkeypatch, tmp_path):
         segment = output_dir / "segment-00000.ts"
         segment.write_bytes(b"segment")
         (output_dir / "index.m3u8").write_text(
-            "#EXTM3U\n#EXTINF:2.0,\nsegment-00000.ts\n",
+            "#EXTM3U\n#EXTINF:2.0,\nsegment-00000.ts\n#EXT-X-ENDLIST\n",
             encoding="utf-8",
         )
 
@@ -137,6 +138,41 @@ def test_resolve_hls_playlist_waits_for_first_segment(monkeypatch, tmp_path):
 
     assert playlist.name == "index.m3u8"
     assert playlist.parent.name.startswith("hls-7-low-12345-")
+
+
+def test_resolve_hls_playlist_rebuilds_orphaned_partial_playlist(monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"source")
+    video = {"id": 7, "path": str(source)}
+    existing = hls_cache_dir(
+        video,
+        source,
+        data_dir,
+        "low",
+        12_345,
+        "libx264_ultrafast",
+    )
+    existing.mkdir(parents=True)
+    (existing / "segment-00000.ts").write_bytes(b"old")
+    (existing / "index.m3u8").write_text("#EXTM3U\n#EXTINF:2.0,\nsegment-00000.ts\n", encoding="utf-8")
+    calls = []
+
+    def start_hls(source_path, output_dir, quality, start_at, encoder="libx264_ultrafast"):
+        calls.append(output_dir)
+        segment = output_dir / "segment-00000.ts"
+        segment.write_bytes(b"new")
+        (output_dir / "index.m3u8").write_text(
+            "#EXTM3U\n#EXTINF:2.0,\nsegment-00000.ts\n#EXT-X-ENDLIST\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("app.media.start_hls_transcode", start_hls)
+
+    playlist = resolve_hls_playlist(video, data_dir, "low", start_ms=12_345, timeout=0.1)
+
+    assert calls == [existing]
+    assert (playlist.parent / "segment-00000.ts").read_bytes() == b"new"
 
 
 def test_cleanup_stream_cache_uses_rolling_size_limit(tmp_path):

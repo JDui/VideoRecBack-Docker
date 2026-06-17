@@ -4,9 +4,17 @@
 {% block chrome %}{% endblock %}
 {% block content %}
   {% set preview = videos[0] if videos else none %}
-  {% macro asset_card(video, compact=False) %}
+  {% macro asset_card(video, compact=False, favorite_context=False) %}
     <article class="asset-item {% if compact %}asset-item--compact{% endif %}">
-      <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-video-type="{{ video.type }}" data-settings-url="/video/{{ video.id }}" aria-label="播放 {{ video.name }}">
+      <a
+        class="asset-card asset-card--{{ video.type }}"
+        href="/video/{{ video.id }}/play"
+        data-video-type="{{ video.type }}"
+        data-settings-url="/video/{{ video.id }}"
+        data-timeline-url="/?view=timeline{% if video.timeline_day_anchor %}#{{ video.timeline_day_anchor }}{% endif %}"
+        {% if favorite_context %}data-favorite-menu="1"{% endif %}
+        aria-label="播放 {{ video.name }}"
+      >
         {% if video.type == "panorama" and video.thumb_status == "ready" %}
           <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp" alt="" loading="lazy" decoding="async"></span>
         {% endif %}
@@ -59,6 +67,7 @@
         <a class="{% if filters.view == 'timeline' %}active{% endif %}" href="{{ view_urls.timeline }}">时间线</a>
         <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}">文件夹</a>
         <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}">日历</a>
+        <a class="{% if filters.view == 'favorites' %}active{% endif %}" href="{{ view_urls.favorites }}">收藏</a>
       </nav>
       <label class="preview-size-control">
         预览大小
@@ -119,7 +128,21 @@
 
     <section class="library-pane">
       {% if videos %}
-        {% if filters.view == "folders" %}
+        {% if filters.view == "favorites" %}
+          <section class="favorites-view">
+            <header class="asset-section-head">
+              <h2>收藏</h2>
+              <span>{{ videos|length }} 个视频</span>
+            </header>
+            <div class="asset-grid">
+              {% for video in videos %}{{ asset_card(video, False, True) }}{% endfor %}
+            </div>
+          </section>
+          <div class="favorite-context-menu" data-favorite-context-menu hidden>
+            <button type="button" data-favorite-action="timeline">跳转到时间线位置</button>
+            <button type="button" data-favorite-action="settings">视频设置</button>
+          </div>
+        {% elif filters.view == "folders" %}
           <section class="finder-view">
             <nav class="breadcrumbs">
               {% for crumb in folder_browser.breadcrumbs %}
@@ -222,5 +245,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=1.2.0" defer></script>
+  <script src="/static/app.js?v=1.5.0" defer></script>
 {% endblock %}

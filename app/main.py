@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -175,6 +175,32 @@ def create_app() -> FastAPI:
         changed = await asyncio.to_thread(scanner.recheck_panorama_types)
         return RedirectResponse(f"/settings?panorama_recheck={changed}", status_code=303)
 
+    @app.get("/settings/connectivity-test/ping")
+    async def connectivity_ping():
+        return {"ok": True, "server_time": time.time()}
+
+    @app.get("/settings/connectivity-test/download")
+    async def connectivity_download(size: int = 16 * 1024 * 1024):
+        total = max(1024 * 1024, min(int(size), 64 * 1024 * 1024))
+        chunk = b"0" * (256 * 1024)
+
+        def generate():
+            remaining = total
+            while remaining > 0:
+                next_chunk = chunk[: min(len(chunk), remaining)]
+                remaining -= len(next_chunk)
+                yield next_chunk
+
+        return StreamingResponse(
+            generate(),
+            media_type="application/octet-stream",
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Length": str(total),
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     @app.post("/scan")
     async def trigger_scan():
         if is_background_busy(app):
@@ -234,6 +260,25 @@ def create_app() -> FastAPI:
         LOGGER.info("Video %s type changed to %s; rebuilding only this thumbnail, no full scan.", video_id, video_type)
         await asyncio.to_thread(scanner.rebuild_video_thumbnail, video_id, video_type)
         return RedirectResponse(f"/video/{video_id}", status_code=303)
+
+    @app.post("/video/{video_id}/favorite")
+    async def update_video_favorite(video_id: int, favorite: int = Form(...)):
+        try:
+            next_value = 1 if int(favorite) else 0
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid favorite value") from exc
+        with db.connect() as conn:
+            result = conn.execute(
+                """
+                UPDATE videos
+                SET favorite = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (next_value, video_id),
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Video not found")
+        return {"ok": True, "favorite": bool(next_value)}
 
     @app.get("/video/{video_id}/play", response_class=HTMLResponse)
     async def play_page(request: Request, video_id: int):
@@ -414,7 +459,11 @@ def get_video(db: Database, video_id: int):
 
 def read_filters(request: Request) -> dict[str, str]:
     params = request.query_params
-    view = params.get("view", "timeline") if params.get("view", "timeline") in {"timeline", "folders", "calendar"} else "timeline"
+    view = (
+        params.get("view", "timeline")
+        if params.get("view", "timeline") in {"timeline", "folders", "calendar", "favorites"}
+        else "timeline"
+    )
     requested_zoom = params.get("calendar_zoom")
     calendar_zoom = requested_zoom if requested_zoom in {"year", "month", "day"} else "year"
     calendar_year = params.get("calendar_year", "").strip()
@@ -454,6 +503,8 @@ def query_videos(db: Database, filters: dict[str, str]):
         clauses.append("aspect_ratio IS NOT NULL AND aspect_ratio < 0.8")
     elif filters["aspect"] == "square":
         clauses.append("aspect_ratio IS NOT NULL AND aspect_ratio >= 0.8 AND aspect_ratio < 1.4")
+    if filters["view"] == "favorites":
+        clauses.append("favorite = 1")
     if filters["q"]:
         clauses.append("(name LIKE ? OR folder LIKE ? OR relative_path LIKE ?)")
         like = f"%{filters['q']}%"
@@ -480,7 +531,8 @@ def query_videos(db: Database, filters: dict[str, str]):
             values.extend([month_start, month_end])
 
     sql = f"""
-        SELECT *
+        SELECT *,
+            strftime('timeline-%Y-%m-%d', mtime, 'unixepoch', 'localtime') AS timeline_day_anchor
         FROM videos
         WHERE {' AND '.join(clauses)}
         ORDER BY mtime DESC, id DESC
@@ -491,7 +543,7 @@ def query_videos(db: Database, filters: dict[str, str]):
 
 def build_view_urls(filters: dict[str, str]) -> dict[str, str]:
     urls: dict[str, str] = {}
-    for view in ("timeline", "folders", "calendar"):
+    for view in ("timeline", "folders", "calendar", "favorites"):
         next_filters = {
             key: value
             for key, value in filters.items()

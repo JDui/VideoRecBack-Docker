@@ -89,6 +89,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="thumbnail_resolution"' in response.text
     assert 'name="flat_hls_encoder"' in response.text
     assert 'name="panorama_hls_encoder"' in response.text
+    assert "服务器连通测试" in response.text
+    assert "/static/settings.js?v=1.5.0" in response.text
     assert '<option value="ultra"' in response.text
     assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
@@ -188,6 +190,7 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert response.status_code == 200
     assert 'data-quality-menu' in response.text
     assert 'data-quality-option="ultra">超清' in response.text
+    assert 'data-favorite-toggle' in response.text
     assert 'data-default-quality="ultra"' in response.text
     assert 'src="/media/1"' not in response.text
     assert 'preload="none"' in response.text
@@ -196,6 +199,74 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'class="progress-strip"' not in response.text
     assert 'class="flat-player-bar"' not in response.text
     assert 'data-flat-play' in response.text
+
+
+def test_favorite_route_updates_video_and_returns_json(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    video_path = tmp_path / "media" / "flat.mp4"
+    video_path.parent.mkdir()
+    video_path.write_bytes(b"video")
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes)
+            VALUES (?, 'flat.mp4', 1, 0, 'flat', 1)
+            """,
+            (str(video_path),),
+        )
+
+    with TestClient(app) as client:
+        response = client.post("/video/1/favorite", data={"favorite": "1"})
+
+    with app.state.db.connect() as conn:
+        row = conn.execute("SELECT favorite FROM videos WHERE id = 1").fetchone()
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "favorite": True}
+    assert row["favorite"] == 1
+
+
+def test_favorites_view_filters_and_exposes_context_actions(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, favorite)
+            VALUES (?, ?, ?, 0, 'flat', 1, ?)
+            """,
+            [
+                (str(tmp_path / "fav.mp4"), "fav.mp4", datetime(2026, 7, 8).timestamp(), 1),
+                (str(tmp_path / "plain.mp4"), "plain.mp4", datetime(2026, 7, 9).timestamp(), 0),
+            ],
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/?view=favorites")
+
+    assert response.status_code == 200
+    assert ">收藏</a>" in response.text
+    assert "fav.mp4" in response.text
+    assert "plain.mp4" not in response.text
+    assert 'data-favorite-menu="1"' in response.text
+    assert "跳转到时间线位置" in response.text
+    assert 'data-timeline-url="/?view=timeline#timeline-2026-07-08"' in response.text
+
+
+def test_connectivity_test_endpoints(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+
+    with TestClient(app) as client:
+        ping = client.get("/settings/connectivity-test/ping")
+        download = client.get("/settings/connectivity-test/download?size=1048576")
+
+    assert ping.status_code == 200
+    assert ping.json()["ok"] is True
+    assert download.status_code == 200
+    assert download.headers["content-length"] == "1048576"
+    assert len(download.content) == 1048576
 
 
 def test_hls_encoder_is_selected_by_video_type(monkeypatch, tmp_path):

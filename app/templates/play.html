@@ -20,6 +20,16 @@
             </div>
           </details>
           {% if not embed %}
+          <button
+            class="nav-button secondary favorite-toggle {% if video.favorite %}active{% endif %}"
+            type="button"
+            data-favorite-toggle
+            data-favorite-state="{{ 1 if video.favorite else 0 }}"
+            aria-pressed="{{ 'true' if video.favorite else 'false' }}"
+          >
+            <span aria-hidden="true">❤️</span>
+            <span data-favorite-label>{{ '已收藏' if video.favorite else '收藏' }}</span>
+          </button>
           <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
           <button class="nav-button secondary" type="button" data-player-close>关闭</button>
           {% endif %}
@@ -93,5 +103,5 @@
 {% endblock %}
 {% block scripts %}
   <script src="/static/vendor/hls.min.js"></script>
-  <script type="module" src="/static/player.js?v=1.2.0"></script>
+  <script type="module" src="/static/player.js?v=1.5.0"></script>
 {% endblock %}

@@ -12,6 +12,9 @@ let applyQualityAt = null;
 let hlsPlayer = null;
 let activeHlsSession = null;
 let hlsHeartbeatTimer = null;
+let hlsStopTimer = null;
+let stallRecoveryTimer = null;
+let bufferingStartedAt = 0;
 const qualityLabels = {
   original: "原画",
   ultra: "超清",
@@ -27,6 +30,8 @@ const centerAction = document.querySelector("[data-player-center-action]");
 const muteToggle = document.querySelector("[data-mute-toggle]");
 const fullscreenToggle = document.querySelector("[data-fullscreen-toggle]");
 const playerPoster = document.querySelector("[data-player-poster]");
+const favoriteToggle = document.querySelector("[data-favorite-toggle]");
+const favoriteLabel = document.querySelector("[data-favorite-label]");
 const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
 let mediaLoaded = false;
@@ -47,7 +52,14 @@ const sendHlsControl = (action, session = activeHlsSession) => {
   fetch(url, { method: "POST", keepalive: true }).catch(() => {});
 };
 
+const clearScheduledHlsStop = () => {
+  if (!hlsStopTimer) return;
+  window.clearTimeout(hlsStopTimer);
+  hlsStopTimer = null;
+};
+
 const stopHlsHeartbeat = (sendStop = true) => {
+  clearScheduledHlsStop();
   if (hlsHeartbeatTimer) {
     window.clearInterval(hlsHeartbeatTimer);
     hlsHeartbeatTimer = null;
@@ -56,7 +68,16 @@ const stopHlsHeartbeat = (sendStop = true) => {
   activeHlsSession = null;
 };
 
+const scheduleHlsStop = (delayMs = 60000) => {
+  if (!activeHlsSession) return;
+  clearScheduledHlsStop();
+  hlsStopTimer = window.setTimeout(() => {
+    stopHlsHeartbeat(true);
+  }, delayMs);
+};
+
 const startHlsHeartbeat = (quality, startAt) => {
+  clearScheduledHlsStop();
   const base = video?.dataset.mediaBase || video?.getAttribute("src") || "";
   const cleanBase = base.split("#")[0];
   activeHlsSession = {
@@ -67,9 +88,16 @@ const startHlsHeartbeat = (quality, startAt) => {
   sendHlsControl("heartbeat");
   if (hlsHeartbeatTimer) window.clearInterval(hlsHeartbeatTimer);
   hlsHeartbeatTimer = window.setInterval(() => {
-    if (!video || video.paused || video.ended || document.hidden) return;
+    if (!video || video.ended || document.hidden) return;
     sendHlsControl("heartbeat");
   }, 3000);
+};
+
+const clearStallRecovery = () => {
+  bufferingStartedAt = 0;
+  if (!stallRecoveryTimer) return;
+  window.clearTimeout(stallRecoveryTimer);
+  stallRecoveryTimer = null;
 };
 
 const syncVolumeUi = () => {
@@ -173,6 +201,25 @@ const hideTranscodeOverlay = () => {
   shell?.classList.remove("is-transcoding");
 };
 
+const schedulePlaybackRecovery = () => {
+  if (!video || !mediaLoaded || video.paused || video.ended) return;
+  const quality = video.dataset.currentQuality || "original";
+  if (!bufferingStartedAt) bufferingStartedAt = Date.now();
+  showTranscodeOverlay(quality === "original" ? "正在缓冲..." : "正在等待转码缓冲...");
+  if (stallRecoveryTimer) return;
+  stallRecoveryTimer = window.setTimeout(() => {
+    stallRecoveryTimer = null;
+    if (!video || !mediaLoaded || video.paused || video.ended || !bufferingStartedAt) return;
+    if (Date.now() - bufferingStartedAt < 8000) return;
+    applyQualityAt?.(quality, getLogicalCurrentTime(), true);
+  }, 9000);
+};
+
+const markPlaybackResponsive = () => {
+  clearStallRecovery();
+  hideTranscodeOverlay();
+};
+
 const formatClock = (seconds) => {
   if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
   const total = Math.floor(seconds);
@@ -250,6 +297,32 @@ if (video) {
       setExposure(Number(exposureControl.value) / 100);
     });
   }
+  if (favoriteToggle && shell?.dataset.videoId) {
+    const syncFavoriteUi = (favorite) => {
+      favoriteToggle.dataset.favoriteState = favorite ? "1" : "0";
+      favoriteToggle.classList.toggle("active", favorite);
+      favoriteToggle.setAttribute("aria-pressed", favorite ? "true" : "false");
+      if (favoriteLabel) favoriteLabel.textContent = favorite ? "已收藏" : "收藏";
+    };
+    favoriteToggle.addEventListener("click", async () => {
+      const nextFavorite = favoriteToggle.dataset.favoriteState !== "1";
+      favoriteToggle.disabled = true;
+      try {
+        const body = new URLSearchParams({ favorite: nextFavorite ? "1" : "0" });
+        const response = await fetch(`/video/${encodeURIComponent(shell.dataset.videoId)}/favorite`, {
+          method: "POST",
+          body,
+        });
+        if (!response.ok) throw new Error("Favorite request failed");
+        const payload = await response.json();
+        syncFavoriteUi(Boolean(payload.favorite));
+      } catch {
+        syncFavoriteUi(!nextFavorite);
+      } finally {
+        favoriteToggle.disabled = false;
+      }
+    });
+  }
 
   const speedSlider = document.querySelector("[data-speed-slider]");
   const speedValue = document.querySelector("[data-speed-value]");
@@ -270,6 +343,15 @@ if (video) {
       if (!hlsPlayer) return;
       hlsPlayer.destroy();
       hlsPlayer = null;
+    };
+    const prepareMediaSwitch = () => {
+      clearStallRecovery();
+      stopHlsHeartbeat(true);
+      destroyHls();
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      video.preload = "auto";
     };
     const canUseNativeHls = () => {
       return Boolean(
@@ -314,14 +396,13 @@ if (video) {
       mediaLoaded = true;
       shell?.classList.add("has-media");
       if (playerPoster) playerPoster.hidden = true;
+      prepareMediaSwitch();
       video.addEventListener("canplay", resume, { once: true });
       video.addEventListener("playing", resume, { once: true });
       video.addEventListener("seeked", resume, { once: true });
 
       if (quality === "original") {
         hideTranscodeOverlay();
-        stopHlsHeartbeat(true);
-        destroyHls();
         mediaTimeOffset = 0;
         video.addEventListener("loadedmetadata", () => {
           if (switchId !== qualitySwitchId) return;
@@ -335,7 +416,6 @@ if (video) {
       }
 
       showTranscodeOverlay();
-      stopHlsHeartbeat(true);
       mediaTimeOffset = Math.max(0, resumeAt);
       const url = qualityUrl(quality, resumeAt);
       startHlsHeartbeat(quality, resumeAt);
@@ -346,24 +426,52 @@ if (video) {
         return;
       }
       if (window.Hls?.isSupported()) {
-        destroyHls();
         hlsPlayer = new window.Hls({
-          backBufferLength: 30,
+          backBufferLength: 90,
+          fragLoadingMaxRetry: 8,
+          fragLoadingRetryDelay: 650,
+          levelLoadingMaxRetry: 8,
+          levelLoadingRetryDelay: 650,
           lowLatencyMode: false,
-          maxBufferLength: 20,
+          manifestLoadingMaxRetry: 8,
+          manifestLoadingRetryDelay: 650,
+          maxBufferLength: 60,
+          maxMaxBufferLength: 120,
+          startFragPrefetch: true,
+        });
+        hlsPlayer.on(window.Hls.Events.MEDIA_ATTACHED, () => {
+          if (switchId !== qualitySwitchId) return;
+          hlsPlayer?.loadSource(url);
+        });
+        hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED, () => {
+          if (switchId !== qualitySwitchId || !shouldPlay) return;
+          video.play().catch(() => {});
         });
         hlsPlayer.on(window.Hls.Events.ERROR, (_event, data) => {
-          if (data?.fatal && switchId === qualitySwitchId) {
-            showTranscodeOverlay("转码暂不可播放，正在重试...");
+          if (!data?.fatal || switchId !== qualitySwitchId) return;
+          showTranscodeOverlay("播放缓冲中，正在重试...");
+          if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
             hlsPlayer?.startLoad();
+          } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+            hlsPlayer?.recoverMediaError();
+          } else {
+            window.setTimeout(() => {
+              if (switchId === qualitySwitchId) applyQualityAt?.(quality, getLogicalCurrentTime(), shouldPlay);
+            }, 900);
           }
         });
-        hlsPlayer.loadSource(url);
         hlsPlayer.attachMedia(video);
         return;
       }
       hideTranscodeOverlay();
       video.dataset.currentQuality = "original";
+      mediaTimeOffset = 0;
+      video.addEventListener("loadedmetadata", () => {
+        if (switchId !== qualitySwitchId) return;
+        if (Number.isFinite(video.duration)) {
+          video.currentTime = clamp(resumeAt, 0, Math.max(0, video.duration - 0.25));
+        }
+      }, { once: true });
       video.src = qualityUrl("original", resumeAt);
       video.load();
     };
@@ -398,9 +506,20 @@ if (video) {
   video.addEventListener("timeupdate", syncProgressUi);
   video.addEventListener("durationchange", syncProgressUi);
   video.addEventListener("loadedmetadata", syncProgressUi);
+  video.addEventListener("canplay", markPlaybackResponsive);
+  video.addEventListener("playing", markPlaybackResponsive);
+  video.addEventListener("waiting", schedulePlaybackRecovery);
+  video.addEventListener("stalled", schedulePlaybackRecovery);
+  video.addEventListener("error", () => {
+    if (!mediaLoaded || video.paused || video.ended) return;
+    window.setTimeout(() => {
+      if (!video.paused && !video.ended) applyQualityAt?.(video.dataset.currentQuality || "original", getLogicalCurrentTime(), true);
+    }, 900);
+  });
   video.addEventListener("play", syncPlayUi);
   video.addEventListener("play", () => {
     syncPlayUi();
+    clearScheduledHlsStop();
     if (video.dataset.currentQuality !== "original" && !activeHlsSession) {
       applyQualityAt?.(video.dataset.currentQuality, getLogicalCurrentTime(), true);
       return;
@@ -409,7 +528,8 @@ if (video) {
   });
   video.addEventListener("pause", () => {
     syncPlayUi();
-    if (video.dataset.currentQuality !== "original") stopHlsHeartbeat(true);
+    clearStallRecovery();
+    if (video.dataset.currentQuality !== "original") scheduleHlsStop(60000);
   });
   video.addEventListener("ended", () => {
     syncPlayUi();
@@ -541,7 +661,13 @@ document.querySelector("[data-player-close]")?.addEventListener("click", closePl
 window.addEventListener("pagehide", () => stopHlsHeartbeat(true));
 window.addEventListener("beforeunload", () => stopHlsHeartbeat(true));
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && video?.dataset.currentQuality !== "original") stopHlsHeartbeat(true);
+  if (video?.dataset.currentQuality === "original") return;
+  if (document.hidden) {
+    scheduleHlsStop(30000);
+  } else {
+    clearScheduledHlsStop();
+    if (activeHlsSession) sendHlsControl("heartbeat");
+  }
 });
 
 async function initPanorama() {
