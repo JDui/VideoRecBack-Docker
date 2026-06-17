@@ -78,12 +78,8 @@
         <legend>内网维持</legend>
         <label class="check"><input type="checkbox" name="intranet_keepalive_enabled" {% if settings.intranet_keepalive_enabled %}checked{% endif %}>启用内网维持</label>
         <label>
-          探测 IP 或主机
+          内网 IP 或主机
           <input name="intranet_probe_host" type="text" value="{{ settings.intranet_probe_host }}" placeholder="192.168.31.1">
-        </label>
-        <label>
-          跳转 IP 或主机
-          <input name="intranet_redirect_host" type="text" value="{{ settings.intranet_redirect_host }}" placeholder="例如 192.168.31.20">
         </label>
         <label>
           跳转端口
@@ -157,5 +153,5 @@
   </section>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/settings.js?v=1.6.0" defer></script>
+  <script src="/static/settings.js?v=1.7.0" defer></script>
 {% endblock %}

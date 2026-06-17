@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS videos (
     width INTEGER,
     height INTEGER,
     aspect_ratio REAL,
+    bit_depth INTEGER,
+    video_codec TEXT,
     mtime REAL NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -62,6 +64,8 @@ MIGRATIONS = {
     "width": "ALTER TABLE videos ADD COLUMN width INTEGER",
     "height": "ALTER TABLE videos ADD COLUMN height INTEGER",
     "aspect_ratio": "ALTER TABLE videos ADD COLUMN aspect_ratio REAL",
+    "bit_depth": "ALTER TABLE videos ADD COLUMN bit_depth INTEGER",
+    "video_codec": "ALTER TABLE videos ADD COLUMN video_codec TEXT",
     "thumb_version": "ALTER TABLE videos ADD COLUMN thumb_version INTEGER NOT NULL DEFAULT 0",
     "favorite": "ALTER TABLE videos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
 }

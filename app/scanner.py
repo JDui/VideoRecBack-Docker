@@ -259,7 +259,12 @@ class Scanner:
                 )
                 thumb_path = row["thumb_path"]
                 thumb_missing = not thumb_path or not Path(thumb_path).exists()
-                metadata_missing = row["duration_seconds"] is None or row["width"] is None or row["height"] is None
+                metadata_missing = (
+                    row["duration_seconds"] is None
+                    or row["width"] is None
+                    or row["height"] is None
+                    or row["bit_depth"] is None
+                )
                 if metadata_missing:
                     unchanged_metadata_id = row_id
                 version_stale = row["thumb_version"] != THUMBNAIL_VERSION
@@ -282,6 +287,8 @@ class Scanner:
         duration = None
         width = None
         height = None
+        bit_depth = None
+        video_codec = None
         thumb_status = "pending"
         thumb_error = None
         try:
@@ -289,6 +296,8 @@ class Scanner:
             duration = probe.duration_seconds
             width = probe.width
             height = probe.height
+            bit_depth = probe.bit_depth
+            video_codec = probe.codec_name
         except (VideoToolError, OSError) as exc:
             thumb_status = "error"
             thumb_error = str(exc)
@@ -301,10 +310,10 @@ class Scanner:
                 """
                 INSERT INTO videos (
                     path, name, relative_path, folder, type, size_bytes, duration_seconds,
-                    width, height, aspect_ratio, mtime,
+                    width, height, aspect_ratio, bit_depth, video_codec, mtime,
                     missing, thumb_status, thumb_error, thumb_path, thumb_version, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(path) DO UPDATE SET
                     name = excluded.name,
                     relative_path = excluded.relative_path,
@@ -315,6 +324,8 @@ class Scanner:
                     width = excluded.width,
                     height = excluded.height,
                     aspect_ratio = excluded.aspect_ratio,
+                    bit_depth = excluded.bit_depth,
+                    video_codec = excluded.video_codec,
                     mtime = excluded.mtime,
                     missing = 0,
                     thumb_status = excluded.thumb_status,
@@ -334,6 +345,8 @@ class Scanner:
                     width,
                     height,
                     aspect_ratio,
+                    bit_depth,
+                    video_codec,
                     stat.st_mtime,
                     thumb_status,
                     thumb_error,
@@ -440,6 +453,8 @@ class Scanner:
                     width = ?,
                     height = ?,
                     aspect_ratio = ?,
+                    bit_depth = ?,
+                    video_codec = ?,
                     type = CASE WHEN ? = 'panorama' THEN 'panorama' ELSE type END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
@@ -449,6 +464,8 @@ class Scanner:
                     probe.width,
                     probe.height,
                     calculate_aspect_ratio(probe.width, probe.height),
+                    probe.bit_depth,
+                    probe.codec_name,
                     video_type,
                     video_id,
                 ),

@@ -61,6 +61,27 @@ def test_scan_defaults_two_to_one_video_to_panorama(monkeypatch, tmp_path):
     assert row["type"] == "panorama"
 
 
+def test_scan_records_bit_depth_and_codec(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "tenbit.mp4"
+    target.write_bytes(b"tenbit")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(10, 1920, 1080, 10, "hevc"))
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: None)
+
+    scanner._scan_file_sync(Settings(video_root=str(root)), target)
+
+    with db.connect() as conn:
+        row = conn.execute("SELECT bit_depth, video_codec FROM videos WHERE name = 'tenbit.mp4'").fetchone()
+
+    assert row["bit_depth"] == 10
+    assert row["video_codec"] == "hevc"
+
+
 def test_recheck_panorama_types_promotes_wide_videos_and_rebuilds_thumbnail(monkeypatch, tmp_path):
     root = tmp_path / "media"
     root.mkdir()

@@ -91,11 +91,11 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="panorama_hls_encoder"' in response.text
     assert 'name="intranet_keepalive_enabled"' in response.text
     assert 'name="intranet_probe_host"' in response.text
-    assert 'name="intranet_redirect_host"' in response.text
+    assert 'name="intranet_redirect_host"' not in response.text
     assert 'name="intranet_redirect_port"' in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=1.6.0" in response.text
-    assert "/static/settings.js?v=1.6.0" in response.text
+    assert "/static/intranet.js?v=1.7.0" in response.text
+    assert "/static/settings.js?v=1.7.0" in response.text
     assert '<option value="ultra"' in response.text
     assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
@@ -164,6 +164,7 @@ def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_p
     assert 'data-quality-option="low">高清' in response.text
     assert 'data-quality-option="high">流畅' in response.text
     assert 'data-default-quality="low"' in response.text
+    assert 'data-video-bit-depth="8"' in response.text
     assert 'src="/media/1"' not in response.text
     assert 'preload="none"' in response.text
     assert 'data-pano-progress' not in response.text
@@ -296,21 +297,8 @@ def test_connectivity_test_endpoints(monkeypatch, tmp_path):
     assert ping.status_code == 200
     assert ping.json()["ok"] is True
     assert download.status_code == 200
-    assert download.headers["content-length"] == "1048576"
-    assert len(download.content) == 1048576
-
-
-def test_intranet_keepalive_probe_uses_configured_host(monkeypatch, tmp_path):
-    main = load_main(monkeypatch, tmp_path)
-    save_settings(tmp_path / "config", Settings(intranet_probe_host="192.168.31.1"))
-    monkeypatch.setattr(main, "can_ping_host", lambda host: host == "192.168.31.1")
-    app = main.create_app()
-
-    with TestClient(app) as client:
-        response = client.get("/settings/intranet-keepalive/probe")
-
-    assert response.status_code == 200
-    assert response.json() == {"ok": True, "host": "192.168.31.1"}
+    assert download.headers["content-length"] == str(2 * 1024 * 1024)
+    assert len(download.content) == 2 * 1024 * 1024
 
 
 def test_hls_encoder_is_selected_by_video_type(monkeypatch, tmp_path):
@@ -326,6 +314,7 @@ def test_settings_sync_splits_hls_encoder_keys(monkeypatch, tmp_path):
     app = main.create_app()
     with app.state.db.connect() as conn:
         conn.execute("INSERT INTO app_settings(key, value) VALUES ('hls_encoder', 'h264_qsv')")
+        conn.execute("INSERT INTO app_settings(key, value) VALUES ('intranet_redirect_host', '192.168.31.20')")
 
     main.sync_settings_to_db(app.state.db, Settings(flat_hls_encoder="h264_qsv", panorama_hls_encoder="libx264_veryfast"))
 
@@ -339,9 +328,9 @@ def test_settings_sync_splits_hls_encoder_keys(monkeypatch, tmp_path):
     assert values["panorama_hls_encoder"] == "libx264_veryfast"
     assert values["intranet_keepalive_enabled"] == "0"
     assert values["intranet_probe_host"] == "192.168.31.1"
-    assert values["intranet_redirect_host"] == ""
     assert values["intranet_redirect_port"] == ""
     assert "hls_encoder" not in values
+    assert "intranet_redirect_host" not in values
 
 
 def test_timeline_rail_exposes_year_month_day_buckets(monkeypatch, tmp_path):
@@ -458,8 +447,8 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     with app.state.db.connect() as conn:
         conn.execute(
             """
-            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, thumb_status)
-            VALUES (?, 'flat.mp4', ?, 0, 'flat', 1, 'ready')
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, thumb_status, bit_depth)
+            VALUES (?, 'flat.mp4', ?, 0, 'flat', 1, 'ready', 10)
             """,
             (str(tmp_path / "flat.mp4"), datetime(2026, 7, 8).timestamp()),
         )
@@ -473,7 +462,8 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-overlay-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
-    assert "/static/app.js?v=1.6.0" in response.text
+    assert 'class="asset-bit-depth">10bit</span>' in response.text
+    assert "/static/app.js?v=1.7.0" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

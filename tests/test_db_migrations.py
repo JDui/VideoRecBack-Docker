@@ -8,7 +8,17 @@ def test_database_has_video_metadata_columns(tmp_path):
     with db.connect() as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(videos)").fetchall()}
 
-    assert {"relative_path", "folder", "width", "height", "aspect_ratio", "thumb_version", "favorite"}.issubset(columns)
+    assert {
+        "relative_path",
+        "folder",
+        "width",
+        "height",
+        "aspect_ratio",
+        "bit_depth",
+        "video_codec",
+        "thumb_version",
+        "favorite",
+    }.issubset(columns)
 
 
 def test_database_syncs_app_settings(tmp_path):

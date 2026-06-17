@@ -5,6 +5,7 @@ from PIL import Image
 from app import thumbnails
 from app.thumbnails import (
     ThumbnailValidation,
+    detect_bit_depth,
     flat_thumbnail_size,
     midpoint,
     panorama_sample_times,
@@ -32,6 +33,13 @@ def test_panorama_sample_times_try_midpoint_first():
 def test_thumbnail_sizes_are_height_based():
     assert flat_thumbnail_size(720) == (1280, 720)
     assert panorama_thumbnail_size(480) == (640, 480)
+
+
+def test_detect_bit_depth_from_probe_stream():
+    assert detect_bit_depth({"bits_per_raw_sample": "10", "pix_fmt": "yuv420p10le"}) == 10
+    assert detect_bit_depth({"bits_per_raw_sample": "0", "pix_fmt": "p010le"}) == 10
+    assert detect_bit_depth({"bits_per_raw_sample": "", "profile": "Main 10"}) == 10
+    assert detect_bit_depth({"pix_fmt": "yuv420p"}) is None
 
 
 def test_panorama_thumbnail_uses_front_fisheye(monkeypatch, tmp_path):

@@ -27,6 +27,8 @@ class ProbeResult:
     duration_seconds: float | None
     width: int | None
     height: int | None
+    bit_depth: int | None = None
+    codec_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -54,7 +56,7 @@ def probe_video(path: Path) -> ProbeResult:
             "-v",
             "error",
             "-show_entries",
-            "stream=width,height:format=duration",
+            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile:format=duration",
             "-of",
             "json",
             str(path),
@@ -73,7 +75,30 @@ def probe_video(path: Path) -> ProbeResult:
         float(raw_duration) if raw_duration else None,
         int(stream["width"]) if stream.get("width") else None,
         int(stream["height"]) if stream.get("height") else None,
+        detect_bit_depth(stream),
+        str(stream.get("codec_name") or "") or None,
     )
+
+
+def detect_bit_depth(stream: dict[str, object]) -> int | None:
+    for key in ("bits_per_raw_sample", "bits_per_sample"):
+        value = parse_positive_int(stream.get(key))
+        if value:
+            return value
+    pixel_format = str(stream.get("pix_fmt") or "").lower()
+    profile = str(stream.get("profile") or "").lower()
+    for candidate in (16, 14, 12, 10, 8):
+        if f"{candidate}" in pixel_format or f"{candidate}" in profile:
+            return candidate
+    return None
+
+
+def parse_positive_int(value: object) -> int | None:
+    try:
+        number = int(str(value or "").strip())
+    except ValueError:
+        return None
+    return number if number > 0 else None
 
 
 def flat_thumbnail_size(height: int = DEFAULT_THUMBNAIL_HEIGHT) -> tuple[int, int]:

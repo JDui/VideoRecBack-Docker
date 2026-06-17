@@ -22,6 +22,8 @@ const qualityLabels = {
   high: "流畅",
 };
 const totalDuration = Number(shell?.dataset.duration || 0);
+const videoBitDepth = Number(shell?.dataset.videoBitDepth || 8);
+const isTenBitVideo = Number.isFinite(videoBitDepth) && videoBitDepth >= 10;
 const transcodeOverlay = document.querySelector("[data-transcode-overlay]");
 const seekControl = document.querySelector("[data-seek-control]");
 const timeValue = document.querySelector("[data-time-value]");
@@ -36,6 +38,7 @@ const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
 let mediaLoaded = false;
 let seekingWithControl = false;
+let fallbackOriginalToTranscode = () => false;
 
 const hlsControlUrl = (session, action) => {
   if (!session) return "";
@@ -333,6 +336,7 @@ if (video) {
     const defaultQuality = shell?.dataset.defaultQuality || "original";
     video.dataset.currentQuality = qualityValues.includes(defaultQuality) ? defaultQuality : (qualityValues[0] || "original");
     let qualitySwitchId = 0;
+    let originalFallbackUsed = false;
     const qualityUrl = (quality, startAt = 0) => {
       const base = video.dataset.mediaBase || video.getAttribute("src") || "";
       const cleanBase = base.split("#")[0];
@@ -374,6 +378,10 @@ if (video) {
       }
       if (video.dataset.currentQuality === quality) return;
       applyQualityAt(quality, getLogicalCurrentTime(), false);
+    };
+    const fallbackQuality = () => {
+      if (qualityValues.includes("ultra")) return "ultra";
+      return qualityValues.find((item) => item !== "original") || "original";
     };
 
     applyQualityAt = (quality, resumeAt, forcePlay = false) => {
@@ -475,6 +483,17 @@ if (video) {
       video.src = qualityUrl("original", resumeAt);
       video.load();
     };
+    fallbackOriginalToTranscode = (resumeAt = 0, forcePlay = true) => {
+      const quality = fallbackQuality();
+      if (!isTenBitVideo || originalFallbackUsed || video.dataset.currentQuality !== "original" || quality === "original") {
+        return false;
+      }
+      originalFallbackUsed = true;
+      showTranscodeOverlay("当前浏览器无法直接播放 10bit 原画，正在切换转码...");
+      syncQualityUi(quality);
+      applyQualityAt(quality, resumeAt, forcePlay);
+      return true;
+    };
     syncQualityUi();
     for (const button of qualityButtons) {
       button.addEventListener("click", () => {
@@ -511,6 +530,7 @@ if (video) {
   video.addEventListener("waiting", schedulePlaybackRecovery);
   video.addEventListener("stalled", schedulePlaybackRecovery);
   video.addEventListener("error", () => {
+    if (fallbackOriginalToTranscode(getLogicalCurrentTime(), true)) return;
     if (!mediaLoaded || video.paused || video.ended) return;
     window.setTimeout(() => {
       if (!video.paused && !video.ended) applyQualityAt?.(video.dataset.currentQuality || "original", getLogicalCurrentTime(), true);

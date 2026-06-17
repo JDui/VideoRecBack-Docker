@@ -28,6 +28,7 @@
           {% endif %}
         </span>
         {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
+        {% if video.bit_depth and video.bit_depth >= 10 %}<span class="asset-bit-depth">10bit</span>{% endif %}
         <span class="asset-overlay">
           <strong>{{ video.name }}</strong>
           <span>{% if video.width and video.height %}{{ video.width }}×{{ video.height }}{% endif %}</span>
@@ -267,5 +268,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=1.6.0" defer></script>
+  <script src="/static/app.js?v=1.7.0" defer></script>
 {% endblock %}

@@ -806,7 +806,8 @@ textarea {
 }
 
 .asset-duration,
-.asset-type {
+.asset-type,
+.asset-bit-depth {
   background: rgba(19, 21, 19, 0.68);
   border-radius: 999px;
   color: #ffffff;
@@ -826,6 +827,14 @@ textarea {
 .asset-type {
   bottom: 8px;
   left: 8px;
+}
+
+.asset-bit-depth {
+  background: rgba(33, 31, 11, 0.78);
+  bottom: 8px;
+  color: #ffd84d;
+  right: 8px;
+  z-index: 5;
 }
 
 .asset-type.static {

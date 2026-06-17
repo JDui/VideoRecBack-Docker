@@ -5,7 +5,7 @@ if (panel) {
   const statusValue = panel.querySelector("[data-connectivity-status]");
   const latencyValue = panel.querySelector("[data-connectivity-latency]");
   const speedValue = panel.querySelector("[data-connectivity-speed]");
-  const downloadSize = 16 * 1024 * 1024;
+  const downloadSize = 2 * 1024 * 1024;
 
   const setStatus = (message) => {
     if (statusValue) statusValue.textContent = message;
