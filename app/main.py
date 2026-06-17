@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -24,6 +25,8 @@ from app.config import (
     normalize_ignore_patterns,
     normalize_hls_cache_max_mb,
     normalize_hls_encoder,
+    normalize_intranet_host,
+    normalize_intranet_port,
     normalize_quality,
     normalize_thumbnail_resolution,
     save_settings,
@@ -135,6 +138,10 @@ def create_app() -> FastAPI:
         video_extensions: str = Form(...),
         ignore_dotfiles: str | None = Form(None),
         ignore_name_patterns: str = Form(""),
+        intranet_keepalive_enabled: str | None = Form(None),
+        intranet_probe_host: str = Form("192.168.31.1"),
+        intranet_redirect_host: str = Form(""),
+        intranet_redirect_port: str = Form(""),
     ):
         settings = Settings(
             site_title=site_title.strip() or "视频归档",
@@ -154,6 +161,10 @@ def create_app() -> FastAPI:
             video_extensions=normalize_extensions(video_extensions),
             ignore_dotfiles=ignore_dotfiles == "on",
             ignore_name_patterns=normalize_ignore_patterns(ignore_name_patterns),
+            intranet_keepalive_enabled=intranet_keepalive_enabled == "on",
+            intranet_probe_host=normalize_intranet_host(intranet_probe_host) or "192.168.31.1",
+            intranet_redirect_host=normalize_intranet_host(intranet_redirect_host),
+            intranet_redirect_port=normalize_intranet_port(intranet_redirect_port),
         )
         save_settings(config_dir, settings)
         sync_settings_to_db(db, settings)
@@ -200,6 +211,13 @@ def create_app() -> FastAPI:
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+    @app.get("/settings/intranet-keepalive/probe")
+    async def intranet_keepalive_probe(host: str = ""):
+        settings = load_settings(config_dir)
+        target = normalize_intranet_host(host) or settings.intranet_probe_host
+        ok = await asyncio.to_thread(can_ping_host, target)
+        return {"ok": ok, "host": target}
 
     @app.post("/scan")
     async def trigger_scan():
@@ -433,6 +451,10 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "video_extensions": ",".join(settings.video_extensions),
             "ignore_dotfiles": int(settings.ignore_dotfiles),
             "ignore_name_patterns": ",".join(settings.ignore_name_patterns),
+            "intranet_keepalive_enabled": int(settings.intranet_keepalive_enabled),
+            "intranet_probe_host": settings.intranet_probe_host,
+            "intranet_redirect_host": settings.intranet_redirect_host,
+            "intranet_redirect_port": settings.intranet_redirect_port,
         }
     )
     with db.connect() as conn:
@@ -455,6 +477,23 @@ def get_video(db: Database, video_id: int):
     if row is None:
         raise HTTPException(status_code=404, detail="Video not found")
     return row
+
+
+def can_ping_host(host: str) -> bool:
+    target = normalize_intranet_host(host)
+    if not target:
+        return False
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", target],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def read_filters(request: Request) -> dict[str, str]:

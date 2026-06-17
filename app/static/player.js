@@ -561,6 +561,7 @@ if (video) {
   centerAction?.addEventListener("click", togglePlayback);
   stage?.addEventListener("click", (event) => {
     if (event.target.closest("button, input, select, textarea, label, a, summary, details, [data-player-center-action]")) return;
+    if (shell?.dataset.videoType === "panorama" && event.target.closest("#panoramaCanvas")) return;
     togglePlayback();
   });
   muteToggle?.addEventListener("click", toggleMute);
@@ -725,10 +726,12 @@ async function initPanorama() {
   let yaw = 0;
   let pitch = 0;
   let moved = false;
+  let suppressClickUntil = 0;
   let fov = 75;
   let aspect = 16 / 9;
   const pointers = new Map();
   let lastPinchDistance = 0;
+  let primaryPointerStart = null;
 
   const setFov = (next) => {
     fov = clamp(next, 35, 105);
@@ -766,6 +769,7 @@ async function initPanorama() {
 
   const pointerDown = (event) => {
     moved = false;
+    primaryPointerStart = { x: event.clientX, y: event.clientY, time: Date.now() };
     canvas.focus({ preventScroll: true });
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size === 2) {
@@ -779,10 +783,13 @@ async function initPanorama() {
     event.preventDefault();
     const dx = event.clientX - previous.x;
     const dy = event.clientY - previous.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+    const totalDx = primaryPointerStart ? event.clientX - primaryPointerStart.x : dx;
+    const totalDy = primaryPointerStart ? event.clientY - primaryPointerStart.y : dy;
+    if (Math.abs(dx) + Math.abs(dy) > 3 || Math.hypot(totalDx, totalDy) > 6) moved = true;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
     if (pointers.size >= 2) {
+      moved = true;
       const nextDistance = distanceBetweenPointers();
       if (lastPinchDistance) setFov(fov - (nextDistance - lastPinchDistance) * 0.08);
       lastPinchDistance = nextDistance;
@@ -793,6 +800,8 @@ async function initPanorama() {
   };
   const pointerUp = (event) => {
     pointers.delete(event.pointerId);
+    if (moved) suppressClickUntil = Date.now() + 420;
+    if (!pointers.size) primaryPointerStart = null;
     lastPinchDistance = pointers.size >= 2 ? distanceBetweenPointers() : 0;
   };
   const normalizeWheel = (event) => {
@@ -850,8 +859,12 @@ async function initPanorama() {
     event.preventDefault();
     toggleFullscreen();
   });
-  canvas.addEventListener("click", () => {
-    if (moved) return;
+  canvas.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (moved || Date.now() < suppressClickUntil) {
+      event.preventDefault();
+      return;
+    }
     togglePlayback();
   });
   document.addEventListener("keydown", keyDown);

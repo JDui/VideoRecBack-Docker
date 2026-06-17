@@ -89,8 +89,13 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="thumbnail_resolution"' in response.text
     assert 'name="flat_hls_encoder"' in response.text
     assert 'name="panorama_hls_encoder"' in response.text
+    assert 'name="intranet_keepalive_enabled"' in response.text
+    assert 'name="intranet_probe_host"' in response.text
+    assert 'name="intranet_redirect_host"' in response.text
+    assert 'name="intranet_redirect_port"' in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/settings.js?v=1.5.0" in response.text
+    assert "/static/intranet.js?v=1.6.0" in response.text
+    assert "/static/settings.js?v=1.6.0" in response.text
     assert '<option value="ultra"' in response.text
     assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
@@ -201,6 +206,32 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'data-flat-play' in response.text
 
 
+def test_embed_play_page_hides_inner_favorite_for_parent_chrome(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    video_path = tmp_path / "media" / "flat.mp4"
+    video_path.parent.mkdir()
+    video_path.write_bytes(b"video")
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, relative_path, folder, type, size_bytes,
+                duration_seconds, width, height, aspect_ratio, mtime,
+                missing, thumb_status, thumb_version
+            )
+            VALUES (1, ?, 'flat.mp4', 'flat.mp4', '/', 'flat', 5, 12, 640, 360, 1.7778, 1, 0, 'error', 0)
+            """,
+            (str(video_path),),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/video/1/play?embed=1")
+
+    assert response.status_code == 200
+    assert 'data-favorite-toggle' not in response.text
+
+
 def test_favorite_route_updates_video_and_returns_json(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     app = main.create_app()
@@ -269,6 +300,19 @@ def test_connectivity_test_endpoints(monkeypatch, tmp_path):
     assert len(download.content) == 1048576
 
 
+def test_intranet_keepalive_probe_uses_configured_host(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    save_settings(tmp_path / "config", Settings(intranet_probe_host="192.168.31.1"))
+    monkeypatch.setattr(main, "can_ping_host", lambda host: host == "192.168.31.1")
+    app = main.create_app()
+
+    with TestClient(app) as client:
+        response = client.get("/settings/intranet-keepalive/probe")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "host": "192.168.31.1"}
+
+
 def test_hls_encoder_is_selected_by_video_type(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     settings = Settings(flat_hls_encoder="h264_qsv", panorama_hls_encoder="libx264_veryfast")
@@ -293,6 +337,10 @@ def test_settings_sync_splits_hls_encoder_keys(monkeypatch, tmp_path):
 
     assert values["flat_hls_encoder"] == "h264_qsv"
     assert values["panorama_hls_encoder"] == "libx264_veryfast"
+    assert values["intranet_keepalive_enabled"] == "0"
+    assert values["intranet_probe_host"] == "192.168.31.1"
+    assert values["intranet_redirect_host"] == ""
+    assert values["intranet_redirect_port"] == ""
     assert "hls_encoder" not in values
 
 
@@ -421,6 +469,11 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert "data-timeline-cache=" in response.text
+    assert 'data-player-modal' in response.text
+    assert 'data-inline-favorite' in response.text
+    assert 'data-overlay-favorite' in response.text
+    assert 'data-favorite-state="0"' in response.text
+    assert "/static/app.js?v=1.6.0" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

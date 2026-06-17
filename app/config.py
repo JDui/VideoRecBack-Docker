@@ -11,6 +11,7 @@ DEFAULT_IGNORE_NAME_PATTERNS = ["Thumbs.db", "desktop.ini", "._*"]
 QUALITY_OPTIONS = ("original", "ultra", "low", "high")
 THUMBNAIL_RESOLUTION_OPTIONS = (480, 576, 720)
 HLS_ENCODER_OPTIONS = ("h264_qsv", "h264_vaapi", "libx264_ultrafast", "libx264_veryfast")
+DEFAULT_INTRANET_PROBE_HOST = "192.168.31.1"
 
 
 @dataclass(slots=True)
@@ -32,6 +33,10 @@ class Settings:
     video_extensions: list[str] = field(default_factory=lambda: DEFAULT_VIDEO_EXTENSIONS.copy())
     ignore_dotfiles: bool = True
     ignore_name_patterns: list[str] = field(default_factory=lambda: DEFAULT_IGNORE_NAME_PATTERNS.copy())
+    intranet_keepalive_enabled: bool = False
+    intranet_probe_host: str = DEFAULT_INTRANET_PROBE_HOST
+    intranet_redirect_host: str = ""
+    intranet_redirect_port: str = ""
 
     @property
     def hls_encoder(self) -> str:
@@ -76,6 +81,10 @@ def load_settings(config_dir: Path) -> Settings:
         video_extensions=normalize_extensions(raw.get("video_extensions")),
         ignore_dotfiles=bool(raw.get("ignore_dotfiles", True)),
         ignore_name_patterns=normalize_ignore_patterns(raw.get("ignore_name_patterns")),
+        intranet_keepalive_enabled=bool(raw.get("intranet_keepalive_enabled", False)),
+        intranet_probe_host=normalize_intranet_host(raw.get("intranet_probe_host", DEFAULT_INTRANET_PROBE_HOST)) or DEFAULT_INTRANET_PROBE_HOST,
+        intranet_redirect_host=normalize_intranet_host(raw.get("intranet_redirect_host", "")),
+        intranet_redirect_port=normalize_intranet_port(raw.get("intranet_redirect_port", "")),
     )
 
 
@@ -97,6 +106,10 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload["hls_cache_max_mb"] = normalize_hls_cache_max_mb(payload.get("hls_cache_max_mb", 4096))
     payload["stream_cache_retention_days"] = clamp_days(payload.get("stream_cache_retention_days", 7))
     payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))
+    payload["intranet_keepalive_enabled"] = bool(payload.get("intranet_keepalive_enabled", False))
+    payload["intranet_probe_host"] = normalize_intranet_host(payload.get("intranet_probe_host", DEFAULT_INTRANET_PROBE_HOST)) or DEFAULT_INTRANET_PROBE_HOST
+    payload["intranet_redirect_host"] = normalize_intranet_host(payload.get("intranet_redirect_host", ""))
+    payload["intranet_redirect_port"] = normalize_intranet_port(payload.get("intranet_redirect_port", ""))
     config_path(config_dir).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -178,3 +191,27 @@ def normalize_ignore_patterns(value: Any) -> list[str]:
         if item and item not in normalized:
             normalized.append(item)
     return normalized
+
+
+def normalize_intranet_host(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = text.removeprefix("http://").removeprefix("https://")
+    text = text.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if text.startswith("[") and "]" in text:
+        return text[1:text.index("]")].strip()
+    if ":" in text:
+        text = text.split(":", 1)[0]
+    return text.strip()
+
+
+def normalize_intranet_port(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        number = int(text)
+    except ValueError:
+        return ""
+    return str(number) if 1 <= number <= 65535 else ""

@@ -9,9 +9,11 @@
       <a
         class="asset-card asset-card--{{ video.type }}"
         href="/video/{{ video.id }}/play"
+        data-video-id="{{ video.id }}"
         data-video-type="{{ video.type }}"
         data-settings-url="/video/{{ video.id }}"
         data-timeline-url="/?view=timeline{% if video.timeline_day_anchor %}#{{ video.timeline_day_anchor }}{% endif %}"
+        data-favorite-state="{{ 1 if video.favorite else 0 }}"
         {% if favorite_context %}data-favorite-menu="1"{% endif %}
         aria-label="播放 {{ video.name }}"
       >
@@ -236,6 +238,10 @@
       <div class="inline-player-head">
         <strong>播放：<span data-inline-player-title></span></strong>
         <div class="inline-player-actions">
+          <button class="nav-button secondary favorite-toggle" type="button" data-inline-favorite hidden aria-pressed="false">
+            <span aria-hidden="true">❤️</span>
+            <span data-favorite-label>收藏</span>
+          </button>
           <a class="nav-button secondary" href="#" data-inline-settings hidden>视频设置</a>
           <button type="button" data-close-player>关闭</button>
         </div>
@@ -243,7 +249,23 @@
       <iframe title="内嵌播放器" data-player-frame></iframe>
     </aside>
   </div>
+  <div class="player-modal" data-player-modal hidden aria-modal="true" role="dialog" aria-label="视频播放器">
+    <div class="player-modal-shell">
+      <div class="inline-player-head">
+        <strong>播放：<span data-overlay-player-title></span></strong>
+        <div class="inline-player-actions">
+          <button class="nav-button secondary favorite-toggle" type="button" data-overlay-favorite hidden aria-pressed="false">
+            <span aria-hidden="true">❤️</span>
+            <span data-favorite-label>收藏</span>
+          </button>
+          <a class="nav-button secondary" href="#" data-overlay-settings hidden>视频设置</a>
+          <button type="button" data-close-overlay-player>关闭</button>
+        </div>
+      </div>
+      <iframe title="覆盖播放器" data-overlay-player-frame></iframe>
+    </div>
+  </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=1.5.0" defer></script>
+  <script src="/static/app.js?v=1.6.0" defer></script>
 {% endblock %}

@@ -10,6 +10,13 @@ const timelineRoot = document.querySelector("[data-timeline-root]");
 const timelineRail = document.querySelector("[data-timeline-jump]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
+const inlineFavorite = document.querySelector("[data-inline-favorite]");
+const playerModal = document.querySelector("[data-player-modal]");
+const overlayFrame = document.querySelector("[data-overlay-player-frame]");
+const overlayPlayerTitle = document.querySelector("[data-overlay-player-title]");
+const overlaySettings = document.querySelector("[data-overlay-settings]");
+const overlayFavorite = document.querySelector("[data-overlay-favorite]");
+const closeOverlayPlayer = document.querySelector("[data-close-overlay-player]");
 const scanForm = document.querySelector("[data-scan-form]");
 const scanButton = document.querySelector("[data-scan-button]");
 const scanLabel = document.querySelector("[data-scan-label]");
@@ -20,6 +27,8 @@ let inlineFrameClearTimer = null;
 let restoredReturnState = null;
 let pendingReturnPosition = null;
 let favoriteContextTarget = null;
+let inlinePlayerCard = null;
+let overlayPlayerCard = null;
 
 const timelineCache = (() => {
   try {
@@ -202,6 +211,134 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", hideFavoriteContextMenu);
 
+const favoriteLabelFor = (button) => button?.querySelector("[data-favorite-label]");
+
+const setFavoriteButtonState = (button, favorite) => {
+  if (!button) return;
+  button.dataset.favoriteState = favorite ? "1" : "0";
+  button.classList.toggle("active", favorite);
+  button.setAttribute("aria-pressed", favorite ? "true" : "false");
+  const label = favoriteLabelFor(button);
+  if (label) label.textContent = favorite ? "已收藏" : "收藏";
+};
+
+const configureFavoriteButton = (button, card) => {
+  if (!button || !card) return;
+  button.hidden = false;
+  button.dataset.videoId = card.dataset.videoId || "";
+  setFavoriteButtonState(button, card.dataset.favoriteState === "1");
+};
+
+const setCardFavoriteState = (card, favorite) => {
+  if (!card) return;
+  card.dataset.favoriteState = favorite ? "1" : "0";
+  if (card === inlinePlayerCard) setFavoriteButtonState(inlineFavorite, favorite);
+  if (card === overlayPlayerCard) setFavoriteButtonState(overlayFavorite, favorite);
+};
+
+const bindFavoriteControl = (button, currentCard) => {
+  button?.addEventListener("click", async () => {
+    const card = currentCard();
+    const videoId = button.dataset.videoId || card?.dataset.videoId;
+    if (!videoId) return;
+    const nextFavorite = button.dataset.favoriteState !== "1";
+    button.disabled = true;
+    try {
+      const body = new URLSearchParams({ favorite: nextFavorite ? "1" : "0" });
+      const response = await fetch(`/video/${encodeURIComponent(videoId)}/favorite`, {
+        method: "POST",
+        body,
+      });
+      if (!response.ok) throw new Error("Favorite request failed");
+      const payload = await response.json();
+      setCardFavoriteState(card, Boolean(payload.favorite));
+    } catch {
+      setFavoriteButtonState(button, !nextFavorite);
+    } finally {
+      button.disabled = false;
+    }
+  });
+};
+
+bindFavoriteControl(inlineFavorite, () => inlinePlayerCard);
+bindFavoriteControl(overlayFavorite, () => overlayPlayerCard);
+
+const playerUrlForCard = (card) => {
+  const url = new URL(card.href, window.location.origin);
+  url.searchParams.set("embed", "1");
+  return url.toString();
+};
+
+const titleForCard = (card) => card.getAttribute("aria-label")?.replace(/^播放\s*/, "") || "";
+
+const openInlinePlayer = (card, panePosition) => {
+  if (!shell || !frame) return;
+  if (inlineFrameClearTimer) window.clearTimeout(inlineFrameClearTimer);
+  inlinePlayerCard = card;
+  shell.classList.add("player-open");
+  restorePanePosition(panePosition);
+  frame.src = playerUrlForCard(card);
+  if (inlinePlayerTitle) inlinePlayerTitle.textContent = titleForCard(card);
+  if (inlineSettings) {
+    inlineSettings.href = card.dataset.settingsUrl || "#";
+    inlineSettings.hidden = !card.dataset.settingsUrl;
+  }
+  configureFavoriteButton(inlineFavorite, card);
+  window.requestAnimationFrame(() => restorePanePosition(panePosition));
+};
+
+const closeInlinePlayer = () => {
+  const panePosition = capturePanePosition();
+  shell?.classList.remove("player-open");
+  restorePanePosition(panePosition);
+  if (frame) {
+    inlineFrameClearTimer = window.setTimeout(() => {
+      frame.src = "about:blank";
+      inlineFrameClearTimer = null;
+    }, 180);
+  }
+  inlinePlayerCard = null;
+  if (inlinePlayerTitle) inlinePlayerTitle.textContent = "";
+  if (inlineSettings) inlineSettings.hidden = true;
+  if (inlineFavorite) inlineFavorite.hidden = true;
+  window.requestAnimationFrame(() => {
+    restorePanePosition(panePosition);
+  });
+};
+
+const openOverlayPlayer = (card, panePosition) => {
+  if (!playerModal || !overlayFrame) return;
+  overlayPlayerCard = card;
+  playerModal.hidden = false;
+  document.body.classList.add("player-modal-open");
+  restorePanePosition(panePosition);
+  overlayFrame.src = playerUrlForCard(card);
+  if (overlayPlayerTitle) overlayPlayerTitle.textContent = titleForCard(card);
+  if (overlaySettings) {
+    overlaySettings.href = card.dataset.settingsUrl || "#";
+    overlaySettings.hidden = !card.dataset.settingsUrl;
+  }
+  configureFavoriteButton(overlayFavorite, card);
+  closeOverlayPlayer?.focus({ preventScroll: true });
+};
+
+const closeOverlay = () => {
+  if (!playerModal) return;
+  const panePosition = capturePanePosition();
+  playerModal.hidden = true;
+  document.body.classList.remove("player-modal-open");
+  restorePanePosition(panePosition);
+  if (overlayFrame) {
+    window.setTimeout(() => {
+      overlayFrame.src = "about:blank";
+    }, 180);
+  }
+  overlayPlayerCard = null;
+  if (overlayPlayerTitle) overlayPlayerTitle.textContent = "";
+  if (overlaySettings) overlaySettings.hidden = true;
+  if (overlayFavorite) overlayFavorite.hidden = true;
+};
+
 for (const card of document.querySelectorAll("[data-settings-url]")) {
   let timer = null;
   let longPressed = false;
@@ -232,22 +369,12 @@ for (const card of document.querySelectorAll("[data-settings-url]")) {
     const panePosition = pendingReturnPosition || capturePanePosition();
     pendingReturnPosition = null;
     saveReturnState(panePosition);
-    if (!window.matchMedia(DESKTOP_QUERY).matches || !shell || !frame) return;
     event.preventDefault();
-    if (inlineFrameClearTimer) window.clearTimeout(inlineFrameClearTimer);
-    shell.classList.add("player-open");
-    restorePanePosition(panePosition);
-    const url = new URL(card.href, window.location.origin);
-    url.searchParams.set("embed", "1");
-    frame.src = url.toString();
-    if (inlinePlayerTitle) {
-      inlinePlayerTitle.textContent = card.getAttribute("aria-label")?.replace(/^播放\s*/, "") || "";
+    if (window.matchMedia(DESKTOP_QUERY).matches && shell && frame) {
+      openInlinePlayer(card, panePosition);
+    } else {
+      openOverlayPlayer(card, panePosition);
     }
-    if (inlineSettings) {
-      inlineSettings.href = card.dataset.settingsUrl || "#";
-      inlineSettings.hidden = !card.dataset.settingsUrl;
-    }
-    window.requestAnimationFrame(() => restorePanePosition(panePosition));
   });
   card.addEventListener("touchstart", (event) => {
     longPressed = false;
@@ -269,28 +396,40 @@ for (const card of document.querySelectorAll("[data-settings-url]")) {
   }
 }
 
-closePlayer?.addEventListener("click", () => {
-  const panePosition = capturePanePosition();
-  shell?.classList.remove("player-open");
-  restorePanePosition(panePosition);
-  if (frame) {
-    inlineFrameClearTimer = window.setTimeout(() => {
-      frame.src = "about:blank";
-      inlineFrameClearTimer = null;
-    }, 180);
-  }
-  if (inlinePlayerTitle) inlinePlayerTitle.textContent = "";
-  if (inlineSettings) inlineSettings.hidden = true;
-  window.requestAnimationFrame(() => {
-    restorePanePosition(panePosition);
-  });
-});
+closePlayer?.addEventListener("click", closeInlinePlayer);
 
 inlineSettings?.addEventListener("click", (event) => {
   const href = inlineSettings.getAttribute("href");
   if (!href || href === "#") return;
   event.preventDefault();
   window.location.href = href;
+});
+
+overlaySettings?.addEventListener("click", (event) => {
+  const href = overlaySettings.getAttribute("href");
+  if (!href || href === "#") return;
+  event.preventDefault();
+  window.location.href = href;
+});
+
+closeOverlayPlayer?.addEventListener("click", closeOverlay);
+
+playerModal?.addEventListener("wheel", (event) => {
+  if (playerModal.hidden) return;
+  event.preventDefault();
+}, { passive: false });
+
+playerModal?.addEventListener("touchmove", (event) => {
+  if (playerModal.hidden) return;
+  event.preventDefault();
+}, { passive: false });
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (playerModal && !playerModal.hidden) {
+    event.preventDefault();
+    closeOverlay();
+  }
 });
 
 if (resizer && shell) {

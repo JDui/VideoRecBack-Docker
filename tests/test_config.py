@@ -7,6 +7,8 @@ from app.config import (
     normalize_quality,
     normalize_hls_cache_max_mb,
     normalize_hls_encoder,
+    normalize_intranet_host,
+    normalize_intranet_port,
     normalize_thumbnail_resolution,
     normalize_extensions,
     normalize_ignore_patterns,
@@ -45,6 +47,14 @@ def test_normalize_hls_encoder_and_cache_limit():
     assert normalize_hls_cache_max_mb("8192") == 8192
 
 
+def test_normalize_intranet_host_and_port():
+    assert normalize_intranet_host("http://192.168.31.20:8080/path") == "192.168.31.20"
+    assert normalize_intranet_host("https://nas.local") == "nas.local"
+    assert normalize_intranet_port("8080") == "8080"
+    assert normalize_intranet_port("70000") == ""
+    assert normalize_intranet_port("bad") == ""
+
+
 def test_settings_round_trip(tmp_path: Path):
     settings = Settings(
         site_title="家庭视频",
@@ -64,6 +74,10 @@ def test_settings_round_trip(tmp_path: Path):
         video_extensions=["mp4", ".webm"],
         ignore_dotfiles=False,
         ignore_name_patterns=["Thumbs.db", "*.tmp.mp4"],
+        intranet_keepalive_enabled=True,
+        intranet_probe_host="192.168.31.1",
+        intranet_redirect_host="192.168.31.20",
+        intranet_redirect_port="8080",
     )
     save_settings(tmp_path, settings)
 
@@ -86,6 +100,10 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.video_extensions == [".mp4", ".webm"]
     assert loaded.ignore_dotfiles is False
     assert loaded.ignore_name_patterns == ["Thumbs.db", "*.tmp.mp4"]
+    assert loaded.intranet_keepalive_enabled is True
+    assert loaded.intranet_probe_host == "192.168.31.1"
+    assert loaded.intranet_redirect_host == "192.168.31.20"
+    assert loaded.intranet_redirect_port == "8080"
 
 
 def test_default_volume_is_clamped(tmp_path: Path):
