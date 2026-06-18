@@ -28,8 +28,21 @@ def format_size(size: int | None) -> str:
     return f"{value:.1f} {units[index]}"
 
 
+def format_bitrate(bits_per_second: int | None) -> str:
+    if not bits_per_second:
+        return "未知"
+    units = ["bps", "Kbps", "Mbps", "Gbps"]
+    value = float(bits_per_second)
+    index = 0
+    while value >= 1000 and index < len(units) - 1:
+        value /= 1000
+        index += 1
+    if index == 0:
+        return f"{int(value)} {units[index]}"
+    return f"{value:.1f} {units[index]}"
+
+
 def format_date(timestamp: float | None) -> str:
     if not timestamp:
         return "未知日期"
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
-

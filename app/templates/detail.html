@@ -18,6 +18,9 @@
         <div><dt>大小</dt><dd>{{ video.size_bytes|size }}</dd></div>
         <div><dt>时长</dt><dd>{{ video.duration_seconds|duration }}</dd></div>
         <div><dt>画幅</dt><dd>{% if video.width and video.height %}{{ video.width }} × {{ video.height }}{% else %}未知{% endif %}</dd></div>
+        <div><dt>位深</dt><dd>{% if video.bit_depth %}{{ video.bit_depth }}bit{% else %}未知{% endif %}</dd></div>
+        <div><dt>色度采样</dt><dd>{{ video.chroma_subsampling or "未知" }}</dd></div>
+        <div><dt>平均码率</dt><dd>{{ video.average_bitrate|bitrate }}</dd></div>
         <div><dt>文件夹</dt><dd>{{ video.folder or "/" }}</dd></div>
       </dl>
       {% if video.thumb_error %}

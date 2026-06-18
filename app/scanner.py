@@ -87,6 +87,14 @@ class Scanner:
         finally:
             self._running_count -= 1
 
+    async def recheck_all_video_metadata(self) -> ScanSummary:
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._recheck_all_video_metadata_sync)
+        finally:
+            self._running_count -= 1
+
     def _scan_sync(self, settings: Settings) -> ScanSummary:
         summary = ScanSummary()
         root = Path(settings.video_root)
@@ -264,6 +272,8 @@ class Scanner:
                     or row["width"] is None
                     or row["height"] is None
                     or row["bit_depth"] is None
+                    or row["chroma_subsampling"] is None
+                    or row["average_bitrate"] is None
                 )
                 if metadata_missing:
                     unchanged_metadata_id = row_id
@@ -289,6 +299,8 @@ class Scanner:
         height = None
         bit_depth = None
         video_codec = None
+        chroma_subsampling = None
+        average_bitrate = None
         is_10bit = None
         thumb_status = "pending"
         thumb_error = None
@@ -300,6 +312,8 @@ class Scanner:
             bit_depth = probe.bit_depth
             is_10bit = is_tenbit_depth(bit_depth)
             video_codec = probe.codec_name
+            chroma_subsampling = probe.chroma_subsampling
+            average_bitrate = probe.average_bitrate
         except (VideoToolError, OSError) as exc:
             thumb_status = "error"
             thumb_error = str(exc)
@@ -312,10 +326,11 @@ class Scanner:
                 """
                 INSERT INTO videos (
                     path, name, relative_path, folder, type, size_bytes, duration_seconds,
-                    width, height, aspect_ratio, bit_depth, is_10bit, video_codec, mtime,
+                    width, height, aspect_ratio, bit_depth, is_10bit, chroma_subsampling,
+                    average_bitrate, video_codec, mtime,
                     missing, thumb_status, thumb_error, thumb_path, thumb_version, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(path) DO UPDATE SET
                     name = excluded.name,
                     relative_path = excluded.relative_path,
@@ -328,6 +343,8 @@ class Scanner:
                     aspect_ratio = excluded.aspect_ratio,
                     bit_depth = excluded.bit_depth,
                     is_10bit = excluded.is_10bit,
+                    chroma_subsampling = excluded.chroma_subsampling,
+                    average_bitrate = excluded.average_bitrate,
                     video_codec = excluded.video_codec,
                     mtime = excluded.mtime,
                     missing = 0,
@@ -350,6 +367,8 @@ class Scanner:
                     aspect_ratio,
                     bit_depth,
                     is_10bit,
+                    chroma_subsampling,
+                    average_bitrate,
                     video_codec,
                     stat.st_mtime,
                     thumb_status,
@@ -443,11 +462,35 @@ class Scanner:
             changed += 1
         return changed
 
-    def _refresh_metadata(self, path: Path, video_id: int) -> None:
+    def _recheck_all_video_metadata_sync(self) -> ScanSummary:
+        summary = ScanSummary()
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path
+                FROM videos
+                WHERE missing = 0
+                ORDER BY id ASC
+                """
+            ).fetchall()
+
+        for row in rows:
+            summary.seen += 1
+            path = Path(row["path"])
+            if not path.exists() or not path.is_file():
+                summary.errors += 1
+                continue
+            if self._refresh_metadata(path, int(row["id"])):
+                summary.indexed += 1
+            else:
+                summary.errors += 1
+        return summary
+
+    def _refresh_metadata(self, path: Path, video_id: int) -> bool:
         try:
             probe = probe_video(path)
         except (VideoToolError, OSError):
-            return
+            return False
         video_type = detect_video_type(path, probe.width, probe.height)
         with self.db.connect() as conn:
             conn.execute(
@@ -459,6 +502,8 @@ class Scanner:
                     aspect_ratio = ?,
                     bit_depth = ?,
                     is_10bit = ?,
+                    chroma_subsampling = ?,
+                    average_bitrate = ?,
                     video_codec = ?,
                     type = CASE WHEN ? = 'panorama' THEN 'panorama' ELSE type END,
                     updated_at = CURRENT_TIMESTAMP
@@ -471,11 +516,14 @@ class Scanner:
                     calculate_aspect_ratio(probe.width, probe.height),
                     probe.bit_depth,
                     is_tenbit_depth(probe.bit_depth),
+                    probe.chroma_subsampling,
+                    probe.average_bitrate,
                     probe.codec_name,
                     video_type,
                     video_id,
                 ),
             )
+        return True
 
     def _generate_and_record_thumbnail(
         self,

@@ -6,6 +6,7 @@ from app import thumbnails
 from app.thumbnails import (
     ThumbnailValidation,
     detect_bit_depth,
+    detect_chroma_subsampling,
     flat_thumbnail_size,
     midpoint,
     panorama_sample_times,
@@ -40,6 +41,13 @@ def test_detect_bit_depth_from_probe_stream():
     assert detect_bit_depth({"bits_per_raw_sample": "0", "pix_fmt": "p010le"}) == 10
     assert detect_bit_depth({"bits_per_raw_sample": "", "profile": "Main 10"}) == 10
     assert detect_bit_depth({"pix_fmt": "yuv420p"}) is None
+
+
+def test_detect_chroma_subsampling_from_pixel_format():
+    assert detect_chroma_subsampling({"pix_fmt": "yuv420p10le"}) == "420"
+    assert detect_chroma_subsampling({"pix_fmt": "yuv422p"}) == "422"
+    assert detect_chroma_subsampling({"pix_fmt": "p010le"}) == "420"
+    assert detect_chroma_subsampling({"pix_fmt": "gbrp10le"}) == "444"
 
 
 def test_panorama_thumbnail_uses_front_fisheye(monkeypatch, tmp_path):

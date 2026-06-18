@@ -16,6 +16,8 @@ def test_database_has_video_metadata_columns(tmp_path):
         "aspect_ratio",
         "bit_depth",
         "is_10bit",
+        "chroma_subsampling",
+        "average_bitrate",
         "video_codec",
         "thumb_version",
         "favorite",

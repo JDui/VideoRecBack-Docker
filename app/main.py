@@ -33,7 +33,7 @@ from app.config import (
     save_settings,
 )
 from app.db import Database
-from app.formatting import format_date, format_duration, format_size
+from app.formatting import format_bitrate, format_date, format_duration, format_size
 from app.media import (
     build_range_response,
     record_hls_heartbeat,
@@ -66,11 +66,13 @@ def create_app() -> FastAPI:
     app.state.maintenance_task = None
     app.state.manual_scan_pending = False
     app.state.thumbnail_refresh_pending = False
+    app.state.metadata_recheck_pending = False
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.filters["duration"] = format_duration
     templates.env.filters["size"] = format_size
     templates.env.filters["date"] = format_date
+    templates.env.filters["bitrate"] = format_bitrate
 
     @app.on_event("startup")
     async def startup() -> None:
@@ -118,6 +120,7 @@ def create_app() -> FastAPI:
                 "settings": load_settings(config_dir),
                 "thumbnail_refresh": request.query_params.get("thumbnail_refresh"),
                 "panorama_recheck": request.query_params.get("panorama_recheck"),
+                "metadata_recheck": request.query_params.get("metadata_recheck"),
             },
         )
 
@@ -187,6 +190,16 @@ def create_app() -> FastAPI:
     async def recheck_panorama_types():
         changed = await asyncio.to_thread(scanner.recheck_panorama_types)
         return RedirectResponse(f"/settings?panorama_recheck={changed}", status_code=303)
+
+    @app.post("/settings/recheck-all-video-data")
+    async def recheck_all_video_data():
+        if is_background_busy(app):
+            return RedirectResponse("/settings?metadata_recheck=running", status_code=303)
+        app.state.metadata_recheck_pending = True
+        asyncio.create_task(run_metadata_recheck(app))
+        with db.connect() as conn:
+            count = conn.execute("SELECT COUNT(*) AS count FROM videos WHERE missing = 0").fetchone()["count"]
+        return RedirectResponse(f"/settings?metadata_recheck={count}", status_code=303)
 
     @app.get("/settings/connectivity-test/ping")
     async def connectivity_ping():
@@ -412,7 +425,11 @@ def is_scan_running(app: FastAPI) -> bool:
 
 
 def is_background_busy(app: FastAPI) -> bool:
-    return is_scan_running(app) or bool(getattr(app.state, "thumbnail_refresh_pending", False))
+    return (
+        is_scan_running(app)
+        or bool(getattr(app.state, "thumbnail_refresh_pending", False))
+        or bool(getattr(app.state, "metadata_recheck_pending", False))
+    )
 
 
 async def run_manual_scan(app: FastAPI, settings: Settings) -> None:
@@ -431,6 +448,15 @@ async def run_thumbnail_refresh(app: FastAPI, settings: Settings) -> None:
         LOGGER.exception("Thumbnail refresh failed.")
     finally:
         app.state.thumbnail_refresh_pending = False
+
+
+async def run_metadata_recheck(app: FastAPI) -> None:
+    try:
+        await app.state.scanner.recheck_all_video_metadata()
+    except Exception:
+        LOGGER.exception("Video metadata recheck failed.")
+    finally:
+        app.state.metadata_recheck_pending = False
 
 
 def sync_settings_to_db(db: Database, settings: Settings) -> None:

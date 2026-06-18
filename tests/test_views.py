@@ -85,6 +85,7 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert 'action="/settings/refresh-thumbnails"' in response.text
     assert 'action="/settings/recheck-panorama-types"' in response.text
+    assert 'action="/settings/recheck-all-video-data"' in response.text
     assert 'name="default_flat_quality"' in response.text
     assert 'name="default_panorama_quality"' in response.text
     assert 'name="thumbnail_resolution"' in response.text
@@ -96,11 +97,13 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_port"' in response.text
     assert "内网检测" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.0.0" in response.text
-    assert "/static/settings.js?v=2.0.0" in response.text
+    assert "/static/intranet.js?v=2.5.0" in response.text
+    assert "/static/settings.js?v=2.5.0" in response.text
     assert '<option value="ultra"' in response.text
+    assert "需要确认的操作" in response.text
     assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
+    assert "确认要重校验全部视频数据吗" in response.text
     assert "已提交刷新 2 个视频封面" in response.text
 
 
@@ -552,7 +555,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-overlay-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.0.0" in response.text
+    assert "/static/app.js?v=2.5.0" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
@@ -581,3 +584,28 @@ def test_refresh_all_thumbnails_route_marks_background_pending(monkeypatch, tmp_
     assert response.status_code == 303
     assert response.headers["location"] == "/settings?thumbnail_refresh=1"
     assert calls == [576]
+
+
+def test_recheck_all_video_data_route_marks_background_pending(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    calls = []
+    app = main.create_app()
+
+    async def recheck_all():
+        calls.append("recheck")
+
+    app.state.scanner.recheck_all_video_metadata = recheck_all
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes)
+            VALUES (?, 'flat.mp4', 1, 0, 'flat', 1)
+            """,
+            (str(tmp_path / "flat.mp4"),),
+        )
+
+    response = TestClient(app).post("/settings/recheck-all-video-data", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?metadata_recheck=1"
+    assert calls == ["recheck"]

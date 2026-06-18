@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import shutil
 import subprocess
 import tempfile
@@ -29,6 +30,8 @@ class ProbeResult:
     height: int | None
     bit_depth: int | None = None
     codec_name: str | None = None
+    chroma_subsampling: str | None = None
+    average_bitrate: int | None = None
 
 
 @dataclass(slots=True)
@@ -56,7 +59,7 @@ def probe_video(path: Path) -> ProbeResult:
             "-v",
             "error",
             "-show_entries",
-            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile:format=duration",
+            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile,bit_rate:format=duration,bit_rate",
             "-of",
             "json",
             str(path),
@@ -69,7 +72,8 @@ def probe_video(path: Path) -> ProbeResult:
     if result.returncode != 0:
         raise VideoToolError(result.stderr.strip() or "ffprobe failed")
     payload = json.loads(result.stdout or "{}")
-    raw_duration = payload.get("format", {}).get("duration")
+    format_data = payload.get("format", {})
+    raw_duration = format_data.get("duration")
     stream = next((item for item in payload.get("streams", []) if item.get("width") and item.get("height")), {})
     return ProbeResult(
         float(raw_duration) if raw_duration else None,
@@ -77,6 +81,8 @@ def probe_video(path: Path) -> ProbeResult:
         int(stream["height"]) if stream.get("height") else None,
         detect_bit_depth(stream),
         str(stream.get("codec_name") or "") or None,
+        detect_chroma_subsampling(stream),
+        parse_positive_int(format_data.get("bit_rate")) or parse_positive_int(stream.get("bit_rate")),
     )
 
 
@@ -90,6 +96,20 @@ def detect_bit_depth(stream: dict[str, object]) -> int | None:
     for candidate in (16, 14, 12, 10, 8):
         if f"{candidate}" in pixel_format or f"{candidate}" in profile:
             return candidate
+    return None
+
+
+def detect_chroma_subsampling(stream: dict[str, object]) -> str | None:
+    pixel_format = str(stream.get("pix_fmt") or "").lower()
+    match = re.search(r"yuvj?(\d{3})", pixel_format)
+    if match:
+        return match.group(1)
+    if pixel_format.startswith(("p010", "p012", "p016", "nv12", "nv21")):
+        return "420"
+    if pixel_format.startswith(("yuyv422", "uyvy422")):
+        return "422"
+    if pixel_format.startswith("gbr"):
+        return "444"
     return None
 
 

@@ -70,17 +70,25 @@ def test_scan_records_bit_depth_and_codec(monkeypatch, tmp_path):
     db.init()
     scanner = Scanner(db, tmp_path / "data")
 
-    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(10, 1920, 1080, 10, "hevc"))
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(10, 1920, 1080, 10, "hevc", "420", 8_500_000))
     monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: None)
 
     scanner._scan_file_sync(Settings(video_root=str(root)), target)
 
     with db.connect() as conn:
-        row = conn.execute("SELECT bit_depth, is_10bit, video_codec FROM videos WHERE name = 'tenbit.mp4'").fetchone()
+        row = conn.execute(
+            """
+            SELECT bit_depth, is_10bit, video_codec, chroma_subsampling, average_bitrate
+            FROM videos
+            WHERE name = 'tenbit.mp4'
+            """
+        ).fetchone()
 
     assert row["bit_depth"] == 10
     assert row["is_10bit"] == 1
     assert row["video_codec"] == "hevc"
+    assert row["chroma_subsampling"] == "420"
+    assert row["average_bitrate"] == 8_500_000
 
 
 def test_scan_does_not_backfill_only_missing_tenbit_status(monkeypatch, tmp_path):
@@ -106,9 +114,10 @@ def test_scan_does_not_backfill_only_missing_tenbit_status(monkeypatch, tmp_path
             """
             INSERT INTO videos(
                 path, name, mtime, missing, type, size_bytes, duration_seconds,
-                width, height, bit_depth, is_10bit, thumb_status, thumb_path, thumb_version
+                width, height, bit_depth, is_10bit, chroma_subsampling, average_bitrate,
+                thumb_status, thumb_path, thumb_version
             )
-            VALUES (?, 'old.mp4', ?, 0, 'flat', ?, 12, 1920, 1080, 8, NULL, 'ready', ?, ?)
+            VALUES (?, 'old.mp4', ?, 0, 'flat', ?, 12, 1920, 1080, 8, NULL, '420', 1000, 'ready', ?, ?)
             """,
             (str(target), stat.st_mtime, stat.st_size, str(thumb), THUMBNAIL_VERSION),
         )
@@ -119,6 +128,53 @@ def test_scan_does_not_backfill_only_missing_tenbit_status(monkeypatch, tmp_path
         row = conn.execute("SELECT is_10bit FROM videos WHERE name = 'old.mp4'").fetchone()
 
     assert row["is_10bit"] is None
+
+
+def test_recheck_all_video_metadata_updates_probe_fields(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "old.mp4"
+    target.write_bytes(b"old")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(12, 1280, 720, 10, "hevc", "422", 4_200_000))
+    with db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, mtime, missing, type, size_bytes, duration_seconds,
+                width, height, bit_depth, is_10bit, chroma_subsampling, average_bitrate, video_codec
+            )
+            VALUES (1, ?, 'old.mp4', 1, 0, 'flat', 1, 3, 640, 360, 8, 0, '420', 1000, 'h264')
+            """,
+            (str(target),),
+        )
+
+    summary = scanner._recheck_all_video_metadata_sync()
+
+    with db.connect() as conn:
+        row = conn.execute(
+            """
+            SELECT duration_seconds, width, height, bit_depth, is_10bit,
+                   chroma_subsampling, average_bitrate, video_codec
+            FROM videos
+            WHERE id = 1
+            """
+        ).fetchone()
+
+    assert summary.seen == 1
+    assert summary.indexed == 1
+    assert summary.errors == 0
+    assert row["duration_seconds"] == 12
+    assert row["width"] == 1280
+    assert row["height"] == 720
+    assert row["bit_depth"] == 10
+    assert row["is_10bit"] == 1
+    assert row["chroma_subsampling"] == "422"
+    assert row["average_bitrate"] == 4_200_000
+    assert row["video_codec"] == "hevc"
 
 
 def test_recheck_panorama_types_promotes_wide_videos_and_rebuilds_thumbnail(monkeypatch, tmp_path):

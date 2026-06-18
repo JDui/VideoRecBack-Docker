@@ -23,6 +23,7 @@ const scanLabel = document.querySelector("[data-scan-label]");
 const favoriteContextMenu = document.querySelector("[data-favorite-context-menu]");
 const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
+const TIMELINE_POSITION_KEY = "videorecback-timeline-position";
 let inlineFrameClearTimer = null;
 let restoredReturnState = null;
 let pendingReturnPosition = null;
@@ -65,7 +66,8 @@ const capturePanePosition = () => {
 
 const restorePanePosition = (position) => {
   if (!libraryPane || !position) return;
-  const section = position.sectionId ? document.getElementById(position.sectionId) : null;
+  const sectionId = position.sectionId || position.activeSection;
+  const section = sectionId ? document.getElementById(sectionId) : null;
   if (!section) {
     libraryPane.scrollTop = Number(position.scrollTop || 0);
   } else {
@@ -102,6 +104,41 @@ const readReturnState = () => {
     }
   }
   return null;
+};
+
+const currentPageKey = () => `${window.location.pathname}${window.location.search}`;
+
+const readTimelinePosition = () => {
+  try {
+    const state = JSON.parse(sessionStorage.getItem(TIMELINE_POSITION_KEY) || "null");
+    if (!state || state.url !== currentPageKey()) return null;
+    if (Date.now() - Number(state.savedAt || 0) > 24 * 60 * 60 * 1000) return null;
+    return state;
+  } catch {
+    sessionStorage.removeItem(TIMELINE_POSITION_KEY);
+    return null;
+  }
+};
+
+const saveTimelinePosition = (position = capturePanePosition()) => {
+  if (!libraryPane || !timelineRoot) return;
+  try {
+    sessionStorage.setItem(
+      TIMELINE_POSITION_KEY,
+      JSON.stringify({
+        url: currentPageKey(),
+        scrollTop: position.scrollTop,
+        sectionId: position.sectionId,
+        sectionOffset: position.sectionOffset,
+        savedAt: Date.now(),
+      })
+    );
+  } catch {}
+};
+
+const isReloadNavigation = () => {
+  const entry = performance.getEntriesByType?.("navigation")?.[0];
+  return entry?.type === "reload";
 };
 
 const consumeReturningFromPlayer = () => {
@@ -476,6 +513,7 @@ if (timelineRail && libraryPane) {
   let timelineJumping = false;
   let timelineJumpTimer = null;
   let timelineFrame = 0;
+  let timelineSaveTimer = null;
 
   for (const section of sections) {
     section.tabIndex = -1;
@@ -570,6 +608,7 @@ if (timelineRail && libraryPane) {
       window.requestAnimationFrame(() => {
         align();
         updateTimelineCurrent(section);
+        saveTimelinePosition();
         timelineJumpTimer = window.setTimeout(() => {
           timelineJumping = false;
           timelineRoot?.classList.remove("is-jumping");
@@ -597,11 +636,25 @@ if (timelineRail && libraryPane) {
     if (timelineJumpTimer) window.clearTimeout(timelineJumpTimer);
     timelineJumping = true;
     timelineRoot?.classList.add("is-jumping");
-    jumpToSavedOffset(Number(restoredReturnState.scrollTop || 0));
+    restorePanePosition(restoredReturnState);
     timelineJumpTimer = window.setTimeout(() => {
       timelineJumping = false;
       timelineRoot?.classList.remove("is-jumping");
       updateTimelineCurrent();
+      saveTimelinePosition();
+    }, 100);
+  };
+  const restoreReloadTimelinePosition = (position) => {
+    if (!position) return;
+    if (timelineJumpTimer) window.clearTimeout(timelineJumpTimer);
+    timelineJumping = true;
+    timelineRoot?.classList.add("is-jumping");
+    restorePanePosition(position);
+    timelineJumpTimer = window.setTimeout(() => {
+      timelineJumping = false;
+      timelineRoot?.classList.remove("is-jumping");
+      updateTimelineCurrent();
+      saveTimelinePosition();
     }, 100);
   };
   const visibleMark = (mark, meta) => {
@@ -675,6 +728,14 @@ if (timelineRail && libraryPane) {
       updateTimelineCurrent();
     });
   };
+  const scheduleTimelinePositionSave = () => {
+    if (timelineJumping) return;
+    if (timelineSaveTimer) window.clearTimeout(timelineSaveTimer);
+    timelineSaveTimer = window.setTimeout(() => {
+      timelineSaveTimer = null;
+      saveTimelinePosition();
+    }, 120);
+  };
 
   for (const mark of marks) {
     mark.addEventListener("click", (event) => {
@@ -687,7 +748,10 @@ if (timelineRail && libraryPane) {
     });
   }
 
-  libraryPane.addEventListener("scroll", requestTimelineUpdate, { passive: true });
+  libraryPane.addEventListener("scroll", () => {
+    requestTimelineUpdate();
+    scheduleTimelinePositionSave();
+  }, { passive: true });
   window.addEventListener("resize", () => updateTimelineCurrent());
   window.addEventListener("videorecback:timeline-layout", () => updateTimelineCurrent());
   window.addEventListener("hashchange", () => {
@@ -695,6 +759,7 @@ if (timelineRail && libraryPane) {
     const section = sectionForTimelineId(window.location.hash);
     if (section) jumpToSection(section, window.location.hash, true);
   });
+  const reloadTimelinePosition = !restoredReturnState && isReloadNavigation() ? readTimelinePosition() : null;
   if (restoredReturnState) {
     restoreSavedTimelinePosition();
     window.requestAnimationFrame(() => {
@@ -707,6 +772,16 @@ if (timelineRail && libraryPane) {
     window.setTimeout(() => {
       restoredReturnState = null;
     }, 820);
+  } else if (reloadTimelinePosition) {
+    if (window.location.hash) window.history.replaceState(null, "", currentPageKey());
+    restoreReloadTimelinePosition(reloadTimelinePosition);
+    window.requestAnimationFrame(() => {
+      restoreReloadTimelinePosition(reloadTimelinePosition);
+      window.requestAnimationFrame(() => restoreReloadTimelinePosition(reloadTimelinePosition));
+    });
+    window.setTimeout(() => restoreReloadTimelinePosition(reloadTimelinePosition), 180);
+    window.setTimeout(() => restoreReloadTimelinePosition(reloadTimelinePosition), 360);
+    window.setTimeout(() => restoreReloadTimelinePosition(reloadTimelinePosition), 700);
   } else {
     const initialSection = sectionForTimelineId(window.location.hash);
     if (initialSection) window.requestAnimationFrame(() => jumpToSection(initialSection, window.location.hash, true));

@@ -118,44 +118,73 @@
         <button type="button" data-connectivity-start>开始测速</button>
       </div>
     </section>
-    <form
-      class="settings-action-panel"
-      action="/settings/refresh-thumbnails"
-      method="post"
-      onsubmit="return window.confirm('确认要刷新所有封面吗？这会清理所有封面缓存、重建所有视频封面、读取视频文件，耗时取决于视频数量。不会触发全盘扫描，也不会修改视频路径、类型、时长等元数据。');"
-    >
-      <div>
-        <strong>刷新所有封面</strong>
-        <p class="muted">清理所有封面缓存，并在后台重建所有未丢失视频的封面，不会触发全盘扫描。</p>
-        {% if thumbnail_refresh is not none %}
-          <p class="settings-notice">
-            {% if thumbnail_refresh == 'running' %}
-              已有扫描或封面刷新任务正在运行。
-            {% else %}
-              已提交刷新 {{ thumbnail_refresh }} 个视频封面。
+    <section class="settings-action-panel settings-confirm-panel">
+      <div class="settings-confirm-head">
+        <strong>需要确认的操作</strong>
+        <p class="muted">这些操作会读取大量视频文件或重建缓存，提交前需要二次确认。</p>
+      </div>
+      <div class="settings-confirm-actions">
+        <form
+          class="settings-confirm-action"
+          action="/settings/refresh-thumbnails"
+          method="post"
+          onsubmit="return window.confirm('确认要刷新所有封面吗？这会清理所有封面缓存、重建所有视频封面、读取视频文件，耗时取决于视频数量。不会触发全盘扫描，也不会修改视频路径、类型、时长等元数据。');"
+        >
+          <div>
+            <strong>刷新所有封面</strong>
+            <p class="muted">清理所有封面缓存，并在后台重建所有未丢失视频的封面，不会触发全盘扫描。</p>
+            {% if thumbnail_refresh is not none %}
+              <p class="settings-notice">
+                {% if thumbnail_refresh == 'running' %}
+                  已有扫描、封面刷新或视频数据重校验任务正在运行。
+                {% else %}
+                  已提交刷新 {{ thumbnail_refresh }} 个视频封面。
+                {% endif %}
+              </p>
             {% endif %}
-          </p>
-        {% endif %}
+          </div>
+          <button class="danger-button" type="submit">刷新所有封面</button>
+        </form>
+        <form
+          class="settings-confirm-action"
+          action="/settings/recheck-panorama-types"
+          method="post"
+          onsubmit="return window.confirm('确认要对数据库中所有视频重新校验全景类型吗？识别为全景的视频会切换类型并重新生成缩略图。');"
+        >
+          <div>
+            <strong>全景重校验</strong>
+            <p class="muted">重新检查数据库中的视频宽高比例和文件名标记，把识别为全景的视频切换为全景并重建封面。</p>
+            {% if panorama_recheck is not none %}
+              <p class="settings-notice">已切换 {{ panorama_recheck }} 个视频为全景并重建封面。</p>
+            {% endif %}
+          </div>
+          <button class="danger-button" type="submit">全景重校验</button>
+        </form>
+        <form
+          class="settings-confirm-action"
+          action="/settings/recheck-all-video-data"
+          method="post"
+          onsubmit="return window.confirm('确认要重校验全部视频数据吗？这会逐个读取所有未丢失视频并重新写入位深、10bit、色度采样、平均码率、编码、时长和分辨率数据，耗时取决于视频数量。');"
+        >
+          <div>
+            <strong>重校验全部视频数据</strong>
+            <p class="muted">重新探测所有未丢失视频，更新 10bit、色度采样、平均码率、编码、时长和分辨率数据。</p>
+            {% if metadata_recheck is not none %}
+              <p class="settings-notice">
+                {% if metadata_recheck == 'running' %}
+                  已有扫描、封面刷新或视频数据重校验任务正在运行。
+                {% else %}
+                  已提交重校验 {{ metadata_recheck }} 个视频数据。
+                {% endif %}
+              </p>
+            {% endif %}
+          </div>
+          <button class="danger-button" type="submit">重校验全部视频数据</button>
+        </form>
       </div>
-      <button class="danger-button" type="submit">刷新所有封面</button>
-    </form>
-    <form
-      class="settings-action-panel"
-      action="/settings/recheck-panorama-types"
-      method="post"
-      onsubmit="return window.confirm('确认要对数据库中所有视频重新校验全景类型吗？识别为全景的视频会切换类型并重新生成缩略图。');"
-    >
-      <div>
-        <strong>全景重校验</strong>
-        <p class="muted">重新检查数据库中的视频宽高比例和文件名标记，把识别为全景的视频切换为全景并重建封面。</p>
-        {% if panorama_recheck is not none %}
-          <p class="settings-notice">已切换 {{ panorama_recheck }} 个视频为全景并重建封面。</p>
-        {% endif %}
-      </div>
-      <button class="danger-button" type="submit">全景重校验</button>
-    </form>
+    </section>
   </section>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/settings.js?v=2.0.0" defer></script>
+  <script src="/static/settings.js?v=2.5.0" defer></script>
 {% endblock %}

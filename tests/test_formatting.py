@@ -1,4 +1,4 @@
-from app.formatting import format_duration, format_size
+from app.formatting import format_bitrate, format_duration, format_size
 
 
 def test_format_duration():
@@ -11,3 +11,7 @@ def test_format_size():
     assert format_size(0) == "0 B"
     assert format_size(1024 * 1024) == "1.0 MB"
 
+
+def test_format_bitrate():
+    assert format_bitrate(None) == "未知"
+    assert format_bitrate(8_500_000) == "8.5 Mbps"

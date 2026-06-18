@@ -45,16 +45,16 @@ body::before {
 }
 
 body[data-intranet-access="local"]::before {
-  animation: intranet-rainbow-border 1.8s linear infinite;
+  animation: intranet-rainbow-border 7.2s linear infinite;
   background: linear-gradient(
     90deg,
-    rgba(255, 132, 132, 0.52),
-    rgba(255, 212, 112, 0.52),
-    rgba(119, 217, 150, 0.52),
-    rgba(110, 204, 231, 0.52),
-    rgba(158, 143, 236, 0.52),
-    rgba(255, 132, 190, 0.52),
-    rgba(255, 132, 132, 0.52)
+    rgba(255, 132, 132, 0.26),
+    rgba(255, 212, 112, 0.26),
+    rgba(119, 217, 150, 0.26),
+    rgba(110, 204, 231, 0.26),
+    rgba(158, 143, 236, 0.26),
+    rgba(255, 132, 190, 0.26),
+    rgba(255, 132, 132, 0.26)
   );
   background-size: 300% 100%;
   border: 0;
@@ -1559,6 +1559,36 @@ textarea {
   grid-column: 2;
 }
 
+.settings-confirm-panel {
+  align-items: stretch;
+  display: grid;
+  gap: 16px;
+}
+
+.settings-confirm-head {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+}
+
+.settings-confirm-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-confirm-action {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding-bottom: 12px;
+}
+
+.settings-confirm-action:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
 .connectivity-results {
   align-items: center;
   display: flex;
@@ -2362,6 +2392,11 @@ textarea {
 
   .settings-shell > .settings-action-panel {
     grid-column: auto;
+  }
+
+  .settings-confirm-action {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .asset-grid {
