@@ -96,8 +96,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_port"' in response.text
     assert "内网检测" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=1.9.0" in response.text
-    assert "/static/settings.js?v=1.9.0" in response.text
+    assert "/static/intranet.js?v=2.0.0" in response.text
+    assert "/static/settings.js?v=2.0.0" in response.text
     assert '<option value="ultra"' in response.text
     assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
@@ -207,6 +207,9 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'class="progress-strip"' not in response.text
     assert 'class="flat-player-bar"' not in response.text
     assert 'data-flat-play' in response.text
+    assert 'class="flat-play-glyph"' in response.text
+    assert 'aria-label="后退10秒"' in response.text
+    assert 'aria-label="前进10秒"' in response.text
 
 
 def test_play_page_lazily_records_tenbit_status(monkeypatch, tmp_path):
@@ -365,6 +368,19 @@ def test_connectivity_test_endpoints(monkeypatch, tmp_path):
     assert download.status_code == 200
     assert download.headers["content-length"] == str(2 * 1024 * 1024)
     assert len(download.content) == 2 * 1024 * 1024
+
+
+def test_intranet_probe_uses_configured_host(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    save_settings(tmp_path / "config", Settings(intranet_probe_host="192.168.31.1"))
+    monkeypatch.setattr(main, "ping_intranet_host", lambda host: host == "192.168.31.1")
+    app = main.create_app()
+
+    with TestClient(app) as client:
+        response = client.get("/intranet/probe")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "host": "192.168.31.1"}
 
 
 def test_hls_encoder_is_selected_by_video_type(monkeypatch, tmp_path):
@@ -536,7 +552,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-overlay-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=1.9.0" in response.text
+    assert "/static/app.js?v=2.0.0" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

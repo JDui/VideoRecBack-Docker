@@ -249,7 +249,11 @@ const syncProgressUi = () => {
 
 const syncPlayUi = () => {
   const label = video?.paused ? "播放" : "暂停";
-  if (flatPlayButton) flatPlayButton.textContent = label;
+  if (flatPlayButton) {
+    flatPlayButton.classList.toggle("is-playing", !video?.paused);
+    flatPlayButton.setAttribute("aria-label", label);
+    flatPlayButton.setAttribute("title", label);
+  }
   if (centerAction) {
     centerAction.textContent = label;
     centerAction.classList.toggle("is-hidden", !video?.paused);

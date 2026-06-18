@@ -15,6 +15,12 @@
   --shadow: 0 18px 45px rgba(21, 24, 21, 0.08);
   --player-width: min(42vw, 620px);
   --card-size: 176px;
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
+  --motion-fast: 180ms;
+  --motion-med: 320ms;
+  --motion-slow: 520ms;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -26,7 +32,7 @@ body {
   background: var(--page);
   color: var(--text);
   margin: 0;
-  transition: background-color 180ms ease, color 180ms ease;
+  transition: background-color var(--motion-med) var(--ease-smooth), color var(--motion-med) var(--ease-smooth);
 }
 
 body::before {
@@ -99,6 +105,7 @@ textarea {
   padding: 14px clamp(16px, 4vw, 44px);
   position: sticky;
   top: 0;
+  transition: background-color var(--motion-med) var(--ease-smooth), border-color var(--motion-med) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth), padding var(--motion-med) var(--ease-smooth);
   z-index: 20;
 }
 
@@ -125,6 +132,7 @@ button {
   font-weight: 750;
   line-height: 1;
   padding: 10px 13px;
+  transition: background-color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), opacity var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-smooth);
 }
 
 .nav-link {
@@ -141,6 +149,12 @@ button {
   background: #ffffff;
   border: 1px solid var(--line);
   color: var(--text);
+}
+
+.nav-link:hover,
+.nav-button:hover,
+button:hover {
+  transform: translateY(-1px);
 }
 
 .page {
@@ -166,7 +180,7 @@ button {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  transition: grid-template-columns 220ms ease, background-color 180ms ease, border-color 180ms ease;
+  transition: grid-template-columns var(--motion-slow) var(--ease-snap), background-color var(--motion-med) var(--ease-smooth), border-color var(--motion-med) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth);
 }
 
 .app-shell.player-open {
@@ -184,7 +198,7 @@ button {
   padding: 12px 16px;
   position: sticky;
   top: 0;
-  transition: padding 180ms ease, min-height 180ms ease;
+  transition: background-color var(--motion-med) var(--ease-smooth), border-color var(--motion-med) var(--ease-smooth), padding var(--motion-med) var(--ease-snap), min-height var(--motion-med) var(--ease-snap);
   z-index: 12;
 }
 
@@ -229,6 +243,7 @@ button {
   overflow-x: auto;
   padding: 4px;
   scrollbar-width: none;
+  transition: background-color var(--motion-med) var(--ease-smooth), border-color var(--motion-med) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth);
 }
 
 .view-switch::-webkit-scrollbar {
@@ -243,6 +258,7 @@ button {
   font-weight: 850;
   line-height: 1;
   padding: 9px 15px;
+  transition: background-color var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), max-width var(--motion-med) var(--ease-snap), opacity var(--motion-med) var(--ease-smooth), padding var(--motion-med) var(--ease-snap), transform var(--motion-med) var(--ease-snap);
   white-space: nowrap;
 }
 
@@ -256,10 +272,37 @@ button {
 .view-switch a.active {
   background: var(--accent);
   color: #ffffff;
+  box-shadow: 0 6px 16px rgba(22, 163, 148, 0.18);
 }
 
-.view-switch button:not([hidden]) {
+.view-switch button:not([hidden]),
+.intranet-jump-button:not([hidden]) {
   display: inline-flex;
+}
+
+.intranet-jump-button {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  transform: translateX(-8px) scale(0.92);
+}
+
+.intranet-jump-button.is-visible {
+  max-width: 112px;
+  opacity: 1;
+  padding-left: 15px !important;
+  padding-right: 15px !important;
+  transform: translateX(0) scale(1);
+}
+
+.intranet-jump-button.is-hiding {
+  max-width: 0;
+  opacity: 0;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  transform: translateX(-8px) scale(0.92);
 }
 
 .preview-size-control {
@@ -274,7 +317,13 @@ button {
   accent-color: var(--accent);
   min-height: auto;
   padding: 0;
+  transition: filter var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-smooth);
   width: 120px;
+}
+
+.preview-size-control input:hover {
+  filter: saturate(1.1);
+  transform: scale(1.02);
 }
 
 .filter-menu {
@@ -294,6 +343,7 @@ button {
   font-weight: 850;
   line-height: 1;
   padding: 10px 12px;
+  transition: background-color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-smooth);
   white-space: nowrap;
 }
 
@@ -335,6 +385,22 @@ button {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent-deep);
+}
+
+.filter-menu[open] .filterbar {
+  animation: menu-pop var(--motion-med) var(--ease-snap);
+}
+
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .library-pane {
@@ -414,6 +480,7 @@ textarea {
   color: var(--text);
   min-height: 40px;
   padding: 9px 10px;
+  transition: background-color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth), outline-color var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-smooth);
 }
 
 input:focus,
@@ -421,6 +488,12 @@ select:focus,
 textarea:focus {
   border-color: var(--accent);
   outline: 3px solid rgba(22, 163, 148, 0.16);
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--line-strong);
 }
 
 textarea {
@@ -491,6 +564,7 @@ textarea {
   gap: 18px;
   min-height: 0;
   scroll-margin-top: 16px;
+  transition: opacity var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-smooth);
 }
 
 .timeline-section.is-current-section .timeline-section-head h2 {
@@ -620,6 +694,11 @@ textarea {
   line-height: 1;
   min-height: 18px;
   padding: 4px 0 4px 7px;
+  transition: border-color var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), font-size var(--motion-med) var(--ease-snap), min-height var(--motion-med) var(--ease-snap), padding var(--motion-med) var(--ease-snap), transform var(--motion-fast) var(--ease-smooth);
+}
+
+.timeline-jump-mark:hover {
+  transform: translateX(2px);
 }
 
 .timeline-jump-mark span {
@@ -730,7 +809,7 @@ textarea {
   overflow: hidden;
   position: relative;
   transform: translateZ(0);
-  transition: box-shadow 180ms ease, transform 180ms ease;
+  transition: box-shadow var(--motion-med) var(--ease-smooth), filter var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
 }
 
 .asset-card--flat {
@@ -814,11 +893,12 @@ textarea {
 }
 
 .asset-thumb img {
-  transition: transform 180ms ease;
+  transition: filter var(--motion-med) var(--ease-smooth), transform var(--motion-slow) var(--ease-snap);
 }
 
 .asset-card:hover img {
-  transform: scale(1.035);
+  filter: saturate(1.04) contrast(1.02);
+  transform: scale(1.045);
 }
 
 .asset-card:hover {
@@ -837,6 +917,10 @@ textarea {
   padding: 6px;
   position: fixed;
   z-index: 80;
+}
+
+.favorite-context-menu:not([hidden]) {
+  animation: menu-pop var(--motion-med) var(--ease-snap);
 }
 
 .favorite-context-menu[hidden] {
@@ -910,12 +994,14 @@ textarea {
   padding: 42px 8px 30px;
   position: absolute;
   right: 0;
-  transition: opacity 160ms ease;
+  transform: translateY(8px);
+  transition: opacity var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
   z-index: 4;
 }
 
 .asset-card:hover .asset-overlay {
   opacity: 1;
+  transform: translateY(0);
 }
 
 .asset-overlay strong {
@@ -999,10 +1085,23 @@ textarea {
 }
 
 .app-shell.player-open .preview-pane {
+  animation: pane-slide-in var(--motion-slow) var(--ease-snap);
   display: grid;
   gap: 10px;
   grid-row: 1 / -1;
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+@keyframes pane-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .inline-player-head {
@@ -1065,6 +1164,10 @@ textarea {
   z-index: 100;
 }
 
+.player-modal:not([hidden]) {
+  animation: modal-fade-in var(--motion-med) var(--ease-smooth);
+}
+
 .player-modal[hidden] {
   display: none;
 }
@@ -1080,6 +1183,32 @@ textarea {
   min-height: 0;
   overflow: hidden;
   padding: 12px;
+}
+
+.player-modal:not([hidden]) .player-modal-shell {
+  animation: modal-rise-in var(--motion-slow) var(--ease-snap);
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .player-modal-shell iframe {
@@ -1215,6 +1344,13 @@ textarea {
   gap: 10px;
   overflow: hidden;
   position: relative;
+  transition: border-color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
+}
+
+.folder-tile:hover {
+  border-color: var(--accent);
+  box-shadow: 0 16px 34px rgba(21, 24, 21, 0.1);
+  transform: translateY(-2px);
 }
 
 .folder-cover {
@@ -1262,6 +1398,7 @@ textarea {
   color: var(--muted);
   font-weight: 850;
   padding: 8px 28px;
+  transition: background-color var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-smooth);
 }
 
 .calendar-zoom a.active {
@@ -1329,6 +1466,14 @@ textarea {
   border-radius: 8px;
   box-shadow: var(--shadow);
   padding: 22px;
+  transition: border-color var(--motion-med) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-smooth);
+}
+
+.detail-panel:hover,
+.settings-form:hover,
+.settings-action-panel:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 22px 52px rgba(21, 24, 21, 0.1);
 }
 
 .settings-fieldset {
@@ -1473,6 +1618,7 @@ textarea {
 .player-shell {
   display: grid;
   gap: 14px;
+  transition: opacity var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
 }
 
 .player-page {
@@ -1572,7 +1718,12 @@ textarea {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
+  transform-origin: top right;
   z-index: 20;
+}
+
+.quality-menu[open] .quality-menu-panel {
+  animation: menu-pop var(--motion-med) var(--ease-snap);
 }
 
 .quality-menu:not([open]) .quality-menu-panel {
@@ -1614,6 +1765,11 @@ textarea {
   min-height: 0;
   overflow: hidden;
   position: relative;
+  transition: box-shadow var(--motion-med) var(--ease-smooth), filter var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
+}
+
+.player-stage:hover {
+  transform: translateY(-1px);
 }
 
 .player-stage.is-panorama {
@@ -1798,7 +1954,7 @@ textarea {
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition: background-color var(--motion-fast) var(--ease-smooth), opacity var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-snap);
   z-index: 6;
 }
 
@@ -1820,7 +1976,8 @@ textarea {
   pointer-events: none;
   position: absolute;
   right: 0;
-  transition: opacity 0.18s ease;
+  transform: translateY(8px);
+  transition: opacity var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
   z-index: 7;
 }
 
@@ -1829,6 +1986,7 @@ textarea {
 .player-shell.is-paused .flat-player-overlay {
   opacity: 1;
   pointer-events: auto;
+  transform: translateY(0);
 }
 
 .flat-player-progress {
@@ -1839,6 +1997,7 @@ textarea {
   height: 5px;
   min-height: auto;
   padding: 0;
+  transition: background-size var(--motion-fast) var(--ease-smooth), height var(--motion-fast) var(--ease-smooth);
   width: 100%;
 }
 
@@ -1871,12 +2030,75 @@ textarea {
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #ffffff;
+  justify-content: center;
   min-height: 30px;
   padding: 6px 9px;
+  transition: background-color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-snap);
 }
 
 .flat-control-button:hover {
   background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px) scale(1.03);
+}
+
+.flat-control-button--icon {
+  align-items: center;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  width: 34px;
+}
+
+.flat-control-button--seek {
+  letter-spacing: 0;
+}
+
+.flat-play-glyph {
+  display: inline-block;
+  height: 16px;
+  position: relative;
+  width: 16px;
+}
+
+.flat-play-glyph::before {
+  border-bottom: 8px solid transparent;
+  border-left: 12px solid #ffffff;
+  border-top: 8px solid transparent;
+  content: "";
+  left: 3px;
+  position: absolute;
+  top: 0;
+  transition: border var(--motion-fast) var(--ease-smooth), height var(--motion-fast) var(--ease-smooth), left var(--motion-fast) var(--ease-smooth), width var(--motion-fast) var(--ease-smooth);
+}
+
+.flat-play-glyph::after {
+  content: "";
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-smooth);
+}
+
+.flat-control-button.is-playing .flat-play-glyph::before,
+.flat-control-button.is-playing .flat-play-glyph::after {
+  background: #ffffff;
+  border: 0;
+  border-radius: 1px;
+  height: 16px;
+  opacity: 1;
+  position: absolute;
+  top: 0;
+  width: 4px;
+}
+
+.flat-control-button.is-playing .flat-play-glyph::before {
+  left: 3px;
+}
+
+.flat-control-button.is-playing .flat-play-glyph::after {
+  left: 10px;
 }
 
 .flat-volume-group {
@@ -1923,6 +2145,7 @@ textarea {
   grid-template-columns: 1fr;
   overflow: hidden;
   padding: 6px;
+  transition: border-color var(--motion-med) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
 }
 
 .player-time {
@@ -1940,7 +2163,12 @@ textarea {
   gap: 8px;
   grid-template-columns: 42px minmax(110px, 1fr) 42px;
   min-height: 20px;
+  transition: background-color var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-smooth);
   width: 100%;
+}
+
+.control-row:hover {
+  transform: translateX(2px);
 }
 
 .control-label,
@@ -2148,5 +2376,16 @@ textarea {
 
   .player-controls {
     overflow: visible;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
   }
 }

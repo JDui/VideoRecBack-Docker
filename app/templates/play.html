@@ -27,7 +27,6 @@
             data-favorite-state="{{ 1 if video.favorite else 0 }}"
             aria-pressed="{{ 'true' if video.favorite else 'false' }}"
           >
-            <span aria-hidden="true">❤️</span>
             <span data-favorite-label>{{ '已收藏' if video.favorite else '收藏' }}</span>
           </button>
           <a class="nav-button secondary" href="/video/{{ video.id }}">视频设置</a>
@@ -50,9 +49,15 @@
         <div class="flat-player-overlay" data-flat-controls>
           <input class="flat-player-progress" type="range" min="0" max="1000" value="0" aria-label="播放进度" data-seek-control>
           <div class="flat-player-controls">
-            <button class="flat-control-button" type="button" data-flat-play>播放</button>
-            <button class="flat-control-button" type="button" data-seek-step="-10">后退10秒</button>
-            <button class="flat-control-button" type="button" data-seek-step="10">前进10秒</button>
+            <button class="flat-control-button flat-control-button--icon" type="button" data-flat-play aria-label="播放" title="播放">
+              <span class="flat-play-glyph" aria-hidden="true"></span>
+            </button>
+            <button class="flat-control-button flat-control-button--icon flat-control-button--seek" type="button" data-seek-step="-10" aria-label="后退10秒" title="后退10秒">
+              <span aria-hidden="true">-10</span>
+            </button>
+            <button class="flat-control-button flat-control-button--icon flat-control-button--seek" type="button" data-seek-step="10" aria-label="前进10秒" title="前进10秒">
+              <span aria-hidden="true">+10</span>
+            </button>
             <div class="flat-volume-group">
               <button class="flat-control-button" type="button" data-mute-toggle>音量</button>
               <input class="flat-volume-slider" type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" aria-label="音量" data-volume-control>
@@ -103,5 +108,5 @@
 {% endblock %}
 {% block scripts %}
   <script src="/static/vendor/hls.min.js"></script>
-  <script type="module" src="/static/player.js?v=1.9.0"></script>
+  <script type="module" src="/static/player.js?v=2.0.0"></script>
 {% endblock %}

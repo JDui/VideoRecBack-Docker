@@ -1,15 +1,10 @@
 const intranetConfig = document.body?.dataset || {};
 
 const PROBE_TIMEOUT_MS = 1600;
+const PROBE_INTERVAL_MS = 30000;
 const jumpButton = document.querySelector("[data-intranet-jump]");
 const LOCAL_ACCESS = "local";
 const EXTERNAL_ACCESS = "external";
-
-const cleanHostForUrl = (host) => {
-  const text = String(host || "").trim();
-  if (!text) return "";
-  return text.includes(":") && !text.startsWith("[") ? `[${text}]` : text;
-};
 
 const currentPort = () => window.location.port || (window.location.protocol === "https:" ? "443" : "80");
 
@@ -33,15 +28,6 @@ const markAccess = () => {
 
 const cacheKey = (host = configuredProbeHost(), port = configuredRedirectPort()) => {
   return `videorecback-intranet:${window.location.protocol}:${host}:${port || currentPort()}`;
-};
-
-const readCachedProbe = () => {
-  try {
-    return JSON.parse(sessionStorage.getItem(cacheKey()) || "null");
-  } catch {
-    sessionStorage.removeItem(cacheKey());
-    return null;
-  }
 };
 
 const writeCachedProbe = (isIntranet, host = configuredProbeHost(), port = configuredRedirectPort()) => {
@@ -69,40 +55,47 @@ const redirectToIntranet = () => {
   const redirectHost = configuredRedirectHost();
   if (!redirectHost || sameTarget()) return;
   const target = new URL(window.location.href);
+  target.protocol = "http:";
   target.hostname = redirectHost;
-  target.port = configuredRedirectPort() || window.location.port;
+  target.port = configuredRedirectPort();
   window.location.assign(target.toString());
+};
+
+const hideJumpButton = () => {
+  if (!jumpButton || jumpButton.hidden) return;
+  jumpButton.classList.remove("is-visible");
+  jumpButton.classList.add("is-hiding");
+  window.setTimeout(() => {
+    if (jumpButton.classList.contains("is-visible")) return;
+    jumpButton.hidden = true;
+    jumpButton.classList.remove("is-hiding");
+  }, 360);
 };
 
 const showJumpButton = () => {
   if (!jumpButton || isLocalAccess() || sameTarget()) return;
+  if (jumpButton.classList.contains("is-visible")) return;
   jumpButton.hidden = false;
+  jumpButton.classList.remove("is-hiding");
+  window.requestAnimationFrame(() => {
+    jumpButton.classList.add("is-visible");
+  });
   if (jumpButton.dataset.bound === "1") return;
   jumpButton.dataset.bound = "1";
   jumpButton.addEventListener("click", redirectToIntranet);
 };
 
-const probeUrl = () => {
-  const host = cleanHostForUrl(configuredProbeHost());
-  if (!host) return "";
-  const url = new URL(`${window.location.protocol}//${host}/`);
-  url.searchParams.set("_vbr_probe", String(Date.now()));
-  return url.toString();
-};
-
-const browserReachable = async () => {
-  const url = probeUrl();
-  if (!url) return false;
+const serverReachable = async () => {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    await fetch(url, {
+    const response = await fetch(`/intranet/probe?_vbr_probe=${Date.now()}`, {
       cache: "no-store",
-      credentials: "omit",
-      mode: "no-cors",
       signal: controller.signal,
     });
-    return true;
+    if (!response.ok) return false;
+    const payload = await response.json();
+    return payload.ok === true;
   } catch {
     return false;
   } finally {
@@ -112,15 +105,25 @@ const browserReachable = async () => {
 
 markAccess();
 
-if (isLocalAccess()) {
-  if (jumpButton) jumpButton.hidden = true;
-  writeCachedProbe(true);
-} else if (intranetConfig.intranetEnabled === "1") {
-  showJumpButton();
-  const cached = readCachedProbe();
-  if (!cached?.checked) {
-    browserReachable().then((isIntranet) => {
-      writeCachedProbe(isIntranet);
-    });
+const refreshJumpButton = async () => {
+  markAccess();
+  if (isLocalAccess()) {
+    hideJumpButton();
+    writeCachedProbe(true);
+    return;
   }
-}
+  if (intranetConfig.intranetEnabled !== "1" || sameTarget()) {
+    hideJumpButton();
+    return;
+  }
+  const reachable = await serverReachable();
+  writeCachedProbe(reachable);
+  if (reachable) {
+    showJumpButton();
+  } else {
+    hideJumpButton();
+  }
+};
+
+refreshJumpButton();
+window.setInterval(refreshJumpButton, PROBE_INTERVAL_MS);

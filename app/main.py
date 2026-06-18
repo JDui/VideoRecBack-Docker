@@ -4,6 +4,8 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -212,6 +214,12 @@ def create_app() -> FastAPI:
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+    @app.get("/intranet/probe")
+    async def intranet_probe():
+        settings = load_settings(config_dir)
+        ok = await asyncio.to_thread(ping_intranet_host, settings.intranet_probe_host)
+        return {"ok": ok, "host": settings.intranet_probe_host}
 
     @app.post("/scan")
     async def trigger_scan():
@@ -508,6 +516,24 @@ def ensure_tenbit_status(db: Database, video_id: int):
             ),
         )
     return get_video(db, video_id)
+
+
+def ping_intranet_host(host: str) -> bool:
+    clean_host = normalize_intranet_host(host)
+    if not clean_host:
+        return False
+    timeout_arg = "1000" if sys.platform == "darwin" else "1"
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", timeout_arg, clean_host],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def read_filters(request: Request) -> dict[str, str]:
