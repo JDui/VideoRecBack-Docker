@@ -4,6 +4,7 @@ from importlib import import_module
 from fastapi.testclient import TestClient
 
 from app.config import Settings, save_settings
+from app.thumbnails import ProbeResult
 
 
 def load_main(monkeypatch, tmp_path):
@@ -95,8 +96,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_port"' in response.text
     assert "内网检测" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=1.8.0" in response.text
-    assert "/static/settings.js?v=1.8.0" in response.text
+    assert "/static/intranet.js?v=1.9.0" in response.text
+    assert "/static/settings.js?v=1.9.0" in response.text
     assert '<option value="ultra"' in response.text
     assert "确认要刷新所有封面吗" in response.text
     assert "确认要对数据库中所有视频重新校验全景类型吗" in response.text
@@ -206,6 +207,69 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'class="progress-strip"' not in response.text
     assert 'class="flat-player-bar"' not in response.text
     assert 'data-flat-play' in response.text
+
+
+def test_play_page_lazily_records_tenbit_status(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.probe_video", lambda path: ProbeResult(12, 1920, 1080, 10, "hevc"))
+    app = main.create_app()
+    video_path = tmp_path / "media" / "tenbit.mp4"
+    video_path.parent.mkdir()
+    video_path.write_bytes(b"video")
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, relative_path, folder, type, size_bytes,
+                duration_seconds, width, height, aspect_ratio, mtime,
+                missing, thumb_status, thumb_version
+            )
+            VALUES (1, ?, 'tenbit.mp4', 'tenbit.mp4', '/', 'flat', 5, 12, 640, 360, 1.7778, 1, 0, 'error', 0)
+            """,
+            (str(video_path),),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/video/1/play")
+
+    with app.state.db.connect() as conn:
+        row = conn.execute("SELECT bit_depth, is_10bit, video_codec FROM videos WHERE id = 1").fetchone()
+
+    assert response.status_code == 200
+    assert 'data-video-bit-depth="10"' in response.text
+    assert row["bit_depth"] == 10
+    assert row["is_10bit"] == 1
+    assert row["video_codec"] == "hevc"
+
+
+def test_play_page_skips_tenbit_detection_when_status_exists(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+
+    def fail_probe(path):
+        raise AssertionError("probe should not run")
+
+    monkeypatch.setattr("app.main.probe_video", fail_probe)
+    app = main.create_app()
+    video_path = tmp_path / "media" / "flat.mp4"
+    video_path.parent.mkdir()
+    video_path.write_bytes(b"video")
+    with app.state.db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, relative_path, folder, type, size_bytes,
+                bit_depth, is_10bit, mtime, missing, thumb_status, thumb_version
+            )
+            VALUES (1, ?, 'flat.mp4', 'flat.mp4', '/', 'flat', 5, 8, 0, 1, 0, 'error', 0)
+            """,
+            (str(video_path),),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/video/1/play")
+
+    assert response.status_code == 200
+    assert 'data-video-bit-depth="8"' in response.text
 
 
 def test_embed_play_page_hides_inner_favorite_for_parent_chrome(monkeypatch, tmp_path):
@@ -472,7 +536,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-overlay-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=1.8.0" in response.text
+    assert "/static/app.js?v=1.9.0" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

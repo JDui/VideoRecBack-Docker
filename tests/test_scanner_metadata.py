@@ -4,7 +4,7 @@ from app.config import Settings
 from app.db import Database
 import pytest
 
-from app.scanner import Scanner, calculate_aspect_ratio, safe_relative_path
+from app.scanner import THUMBNAIL_VERSION, Scanner, calculate_aspect_ratio, safe_relative_path
 from app.thumbnails import VideoToolError
 from app.thumbnails import ProbeResult
 
@@ -76,10 +76,49 @@ def test_scan_records_bit_depth_and_codec(monkeypatch, tmp_path):
     scanner._scan_file_sync(Settings(video_root=str(root)), target)
 
     with db.connect() as conn:
-        row = conn.execute("SELECT bit_depth, video_codec FROM videos WHERE name = 'tenbit.mp4'").fetchone()
+        row = conn.execute("SELECT bit_depth, is_10bit, video_codec FROM videos WHERE name = 'tenbit.mp4'").fetchone()
 
     assert row["bit_depth"] == 10
+    assert row["is_10bit"] == 1
     assert row["video_codec"] == "hevc"
+
+
+def test_scan_does_not_backfill_only_missing_tenbit_status(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "old.mp4"
+    target.write_bytes(b"old")
+    thumb = tmp_path / "data" / "cache" / "thumb.webp"
+    thumb.parent.mkdir(parents=True)
+    thumb.write_bytes(b"thumb")
+    stat = target.stat()
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+
+    def fail_probe(path):
+        raise AssertionError("probe should not run")
+
+    monkeypatch.setattr("app.scanner.probe_video", fail_probe)
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: None)
+    with db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                path, name, mtime, missing, type, size_bytes, duration_seconds,
+                width, height, bit_depth, is_10bit, thumb_status, thumb_path, thumb_version
+            )
+            VALUES (?, 'old.mp4', ?, 0, 'flat', ?, 12, 1920, 1080, 8, NULL, 'ready', ?, ?)
+            """,
+            (str(target), stat.st_mtime, stat.st_size, str(thumb), THUMBNAIL_VERSION),
+        )
+
+    scanner._scan_file_sync(Settings(video_root=str(root)), target)
+
+    with db.connect() as conn:
+        row = conn.execute("SELECT is_10bit FROM videos WHERE name = 'old.mp4'").fetchone()
+
+    assert row["is_10bit"] is None
 
 
 def test_recheck_panorama_types_promotes_wide_videos_and_rebuilds_thumbnail(monkeypatch, tmp_path):

@@ -15,6 +15,7 @@ def test_database_has_video_metadata_columns(tmp_path):
         "height",
         "aspect_ratio",
         "bit_depth",
+        "is_10bit",
         "video_codec",
         "thumb_version",
         "favorite",

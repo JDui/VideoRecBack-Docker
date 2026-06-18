@@ -2,6 +2,8 @@ const intranetConfig = document.body?.dataset || {};
 
 const PROBE_TIMEOUT_MS = 1600;
 const jumpButton = document.querySelector("[data-intranet-jump]");
+const LOCAL_ACCESS = "local";
+const EXTERNAL_ACCESS = "external";
 
 const cleanHostForUrl = (host) => {
   const text = String(host || "").trim();
@@ -16,6 +18,18 @@ const configuredProbeHost = () => (intranetConfig.intranetProbeHost || "192.168.
 const configuredRedirectHost = () => (intranetConfig.intranetRedirectHost || configuredProbeHost()).trim();
 
 const configuredRedirectPort = () => (intranetConfig.intranetRedirectPort || "").trim();
+
+const isPrivateHost = (host) => {
+  const match = String(host || "").trim().match(/^192\.168\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) return false;
+  return match.slice(1).every((part) => Number(part) >= 0 && Number(part) <= 255);
+};
+
+const isLocalAccess = () => isPrivateHost(window.location.hostname);
+
+const markAccess = () => {
+  document.body.dataset.intranetAccess = isLocalAccess() ? LOCAL_ACCESS : EXTERNAL_ACCESS;
+};
 
 const cacheKey = (host = configuredProbeHost(), port = configuredRedirectPort()) => {
   return `videorecback-intranet:${window.location.protocol}:${host}:${port || currentPort()}`;
@@ -61,9 +75,11 @@ const redirectToIntranet = () => {
 };
 
 const showJumpButton = () => {
-  if (!jumpButton || sameTarget()) return;
+  if (!jumpButton || isLocalAccess() || sameTarget()) return;
   jumpButton.hidden = false;
-  jumpButton.addEventListener("click", redirectToIntranet, { once: true });
+  if (jumpButton.dataset.bound === "1") return;
+  jumpButton.dataset.bound = "1";
+  jumpButton.addEventListener("click", redirectToIntranet);
 };
 
 const probeUrl = () => {
@@ -94,16 +110,17 @@ const browserReachable = async () => {
   }
 };
 
-if (intranetConfig.intranetEnabled === "1") {
+markAccess();
+
+if (isLocalAccess()) {
+  if (jumpButton) jumpButton.hidden = true;
+  writeCachedProbe(true);
+} else if (intranetConfig.intranetEnabled === "1") {
+  showJumpButton();
   const cached = readCachedProbe();
-  if (cached?.checked) {
-    if (cached.isIntranet) showJumpButton();
-  } else if (sameTarget()) {
-    writeCachedProbe(true);
-  } else {
+  if (!cached?.checked) {
     browserReachable().then((isIntranet) => {
       writeCachedProbe(isIntranet);
-      if (isIntranet) showJumpButton();
     });
   }
 }

@@ -40,7 +40,8 @@ from app.media import (
     resolve_stream_path,
     stop_hls_transcode,
 )
-from app.scanner import Scanner
+from app.scanner import Scanner, calculate_aspect_ratio, is_tenbit_depth
+from app.thumbnails import VideoToolError, probe_video
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -293,7 +294,7 @@ def create_app() -> FastAPI:
 
     @app.get("/video/{video_id}/play", response_class=HTMLResponse)
     async def play_page(request: Request, video_id: int):
-        video = get_video(db, video_id)
+        video = await asyncio.to_thread(ensure_tenbit_status, db, video_id)
         return templates.TemplateResponse(
             request,
             "play.html",
@@ -306,14 +307,14 @@ def create_app() -> FastAPI:
 
     @app.get("/media/{video_id}")
     async def media(request: Request, video_id: int, quality: str = "original"):
-        video = get_video(db, video_id)
+        video = await asyncio.to_thread(ensure_tenbit_status, db, video_id)
         stream_path = await asyncio.to_thread(resolve_stream_path, video, data_dir, quality)
         media_type = "video/mp4" if quality != "original" else None
         return build_range_response(request, stream_path, media_type=media_type)
 
     @app.get("/media/{video_id}/hls/{quality}/{start_ms}/index.m3u8")
     async def hls_playlist(video_id: int, quality: str, start_ms: int):
-        video = get_video(db, video_id)
+        video = await asyncio.to_thread(ensure_tenbit_status, db, video_id)
         settings = load_settings(config_dir)
         playlist = await asyncio.to_thread(
             resolve_hls_playlist,
@@ -470,6 +471,43 @@ def get_video(db: Database, video_id: int):
     if row is None:
         raise HTTPException(status_code=404, detail="Video not found")
     return row
+
+
+def ensure_tenbit_status(db: Database, video_id: int):
+    video = get_video(db, video_id)
+    if video["is_10bit"] is not None:
+        return video
+    try:
+        probe = probe_video(Path(video["path"]))
+    except (VideoToolError, OSError):
+        return video
+    is_10bit = is_tenbit_depth(probe.bit_depth) or 0
+    with db.connect() as conn:
+        conn.execute(
+            """
+            UPDATE videos
+            SET duration_seconds = COALESCE(?, duration_seconds),
+                width = COALESCE(?, width),
+                height = COALESCE(?, height),
+                aspect_ratio = COALESCE(?, aspect_ratio),
+                bit_depth = ?,
+                is_10bit = ?,
+                video_codec = COALESCE(?, video_codec),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                probe.duration_seconds,
+                probe.width,
+                probe.height,
+                calculate_aspect_ratio(probe.width, probe.height),
+                probe.bit_depth,
+                is_10bit,
+                probe.codec_name,
+                video_id,
+            ),
+        )
+    return get_video(db, video_id)
 
 
 def read_filters(request: Request) -> dict[str, str]:

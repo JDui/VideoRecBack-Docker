@@ -289,6 +289,7 @@ class Scanner:
         height = None
         bit_depth = None
         video_codec = None
+        is_10bit = None
         thumb_status = "pending"
         thumb_error = None
         try:
@@ -297,6 +298,7 @@ class Scanner:
             width = probe.width
             height = probe.height
             bit_depth = probe.bit_depth
+            is_10bit = is_tenbit_depth(bit_depth)
             video_codec = probe.codec_name
         except (VideoToolError, OSError) as exc:
             thumb_status = "error"
@@ -310,10 +312,10 @@ class Scanner:
                 """
                 INSERT INTO videos (
                     path, name, relative_path, folder, type, size_bytes, duration_seconds,
-                    width, height, aspect_ratio, bit_depth, video_codec, mtime,
+                    width, height, aspect_ratio, bit_depth, is_10bit, video_codec, mtime,
                     missing, thumb_status, thumb_error, thumb_path, thumb_version, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(path) DO UPDATE SET
                     name = excluded.name,
                     relative_path = excluded.relative_path,
@@ -325,6 +327,7 @@ class Scanner:
                     height = excluded.height,
                     aspect_ratio = excluded.aspect_ratio,
                     bit_depth = excluded.bit_depth,
+                    is_10bit = excluded.is_10bit,
                     video_codec = excluded.video_codec,
                     mtime = excluded.mtime,
                     missing = 0,
@@ -346,6 +349,7 @@ class Scanner:
                     height,
                     aspect_ratio,
                     bit_depth,
+                    is_10bit,
                     video_codec,
                     stat.st_mtime,
                     thumb_status,
@@ -454,6 +458,7 @@ class Scanner:
                     height = ?,
                     aspect_ratio = ?,
                     bit_depth = ?,
+                    is_10bit = ?,
                     video_codec = ?,
                     type = CASE WHEN ? = 'panorama' THEN 'panorama' ELSE type END,
                     updated_at = CURRENT_TIMESTAMP
@@ -465,6 +470,7 @@ class Scanner:
                     probe.height,
                     calculate_aspect_ratio(probe.width, probe.height),
                     probe.bit_depth,
+                    is_tenbit_depth(probe.bit_depth),
                     probe.codec_name,
                     video_type,
                     video_id,
@@ -588,6 +594,12 @@ def calculate_aspect_ratio(width: int | None, height: int | None) -> float | Non
     if not width or not height:
         return None
     return round(width / height, 4)
+
+
+def is_tenbit_depth(bit_depth: int | None) -> int | None:
+    if bit_depth is None:
+        return None
+    return 1 if bit_depth >= 10 else 0
 
 
 def safe_relative_path(path: Path, root: Path) -> str:
