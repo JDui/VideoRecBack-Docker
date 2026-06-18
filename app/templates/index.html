@@ -71,6 +71,7 @@
         <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}">文件夹</a>
         <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}">日历</a>
         <a class="{% if filters.view == 'favorites' %}active{% endif %}" href="{{ view_urls.favorites }}">收藏</a>
+        <button class="intranet-jump-button" type="button" data-intranet-jump hidden>跳转内网</button>
       </nav>
       <label class="preview-size-control">
         预览大小
@@ -268,5 +269,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=1.7.0" defer></script>
+  <script src="/static/app.js?v=1.8.0" defer></script>
 {% endblock %}

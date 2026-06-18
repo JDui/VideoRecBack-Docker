@@ -195,7 +195,8 @@ button {
   display: none;
 }
 
-.view-switch a {
+.view-switch a,
+.view-switch button {
   border-radius: 999px;
   color: var(--muted);
   font-size: 13px;
@@ -205,9 +206,20 @@ button {
   white-space: nowrap;
 }
 
+.view-switch button {
+  background: #ffffff;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .view-switch a.active {
   background: var(--accent);
   color: #ffffff;
+}
+
+.view-switch button:not([hidden]) {
+  display: inline-flex;
 }
 
 .preview-size-control {

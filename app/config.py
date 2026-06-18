@@ -35,6 +35,7 @@ class Settings:
     ignore_name_patterns: list[str] = field(default_factory=lambda: DEFAULT_IGNORE_NAME_PATTERNS.copy())
     intranet_keepalive_enabled: bool = False
     intranet_probe_host: str = DEFAULT_INTRANET_PROBE_HOST
+    intranet_redirect_host: str = ""
     intranet_redirect_port: str = ""
 
     @property
@@ -82,6 +83,7 @@ def load_settings(config_dir: Path) -> Settings:
         ignore_name_patterns=normalize_ignore_patterns(raw.get("ignore_name_patterns")),
         intranet_keepalive_enabled=bool(raw.get("intranet_keepalive_enabled", False)),
         intranet_probe_host=normalize_intranet_host(raw.get("intranet_probe_host", DEFAULT_INTRANET_PROBE_HOST)) or DEFAULT_INTRANET_PROBE_HOST,
+        intranet_redirect_host=normalize_intranet_host(raw.get("intranet_redirect_host", "")),
         intranet_redirect_port=normalize_intranet_port(raw.get("intranet_redirect_port", "")),
     )
 
@@ -106,6 +108,7 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))
     payload["intranet_keepalive_enabled"] = bool(payload.get("intranet_keepalive_enabled", False))
     payload["intranet_probe_host"] = normalize_intranet_host(payload.get("intranet_probe_host", DEFAULT_INTRANET_PROBE_HOST)) or DEFAULT_INTRANET_PROBE_HOST
+    payload["intranet_redirect_host"] = normalize_intranet_host(payload.get("intranet_redirect_host", ""))
     payload["intranet_redirect_port"] = normalize_intranet_port(payload.get("intranet_redirect_port", ""))
     config_path(config_dir).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",

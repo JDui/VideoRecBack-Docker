@@ -4,13 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ settings.site_title if settings else "视频归档" }}{% endblock %}</title>
-    <link rel="stylesheet" href="/static/styles.css?v=1.7.0">
+    <link rel="stylesheet" href="/static/styles.css?v=1.8.0">
     {% block head %}{% endblock %}
   </head>
   <body
     class="{% block body_class %}{% endblock %}"
     data-intranet-enabled="{{ '1' if settings and settings.intranet_keepalive_enabled else '0' }}"
     data-intranet-probe-host="{{ settings.intranet_probe_host if settings else '192.168.31.1' }}"
+    data-intranet-redirect-host="{{ settings.intranet_redirect_host if settings else '' }}"
     data-intranet-redirect-port="{{ settings.intranet_redirect_port if settings else '' }}"
   >
     {% block chrome %}
@@ -28,7 +29,7 @@
     <main class="page">
       {% block content %}{% endblock %}
     </main>
-    <script src="/static/intranet.js?v=1.7.0" defer></script>
+    <script src="/static/intranet.js?v=1.8.0" defer></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

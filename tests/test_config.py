@@ -76,6 +76,7 @@ def test_settings_round_trip(tmp_path: Path):
         ignore_name_patterns=["Thumbs.db", "*.tmp.mp4"],
         intranet_keepalive_enabled=True,
         intranet_probe_host="192.168.31.1",
+        intranet_redirect_host="192.168.31.20",
         intranet_redirect_port="8080",
     )
     save_settings(tmp_path, settings)
@@ -101,6 +102,7 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.ignore_name_patterns == ["Thumbs.db", "*.tmp.mp4"]
     assert loaded.intranet_keepalive_enabled is True
     assert loaded.intranet_probe_host == "192.168.31.1"
+    assert loaded.intranet_redirect_host == "192.168.31.20"
     assert loaded.intranet_redirect_port == "8080"
 
 

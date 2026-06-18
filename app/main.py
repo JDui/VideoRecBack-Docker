@@ -139,6 +139,7 @@ def create_app() -> FastAPI:
         ignore_name_patterns: str = Form(""),
         intranet_keepalive_enabled: str | None = Form(None),
         intranet_probe_host: str = Form("192.168.31.1"),
+        intranet_redirect_host: str = Form(""),
         intranet_redirect_port: str = Form(""),
     ):
         settings = Settings(
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
             ignore_name_patterns=normalize_ignore_patterns(ignore_name_patterns),
             intranet_keepalive_enabled=intranet_keepalive_enabled == "on",
             intranet_probe_host=normalize_intranet_host(intranet_probe_host) or "192.168.31.1",
+            intranet_redirect_host=normalize_intranet_host(intranet_redirect_host),
             intranet_redirect_port=normalize_intranet_port(intranet_redirect_port),
         )
         save_settings(config_dir, settings)
@@ -444,11 +446,12 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "ignore_name_patterns": ",".join(settings.ignore_name_patterns),
             "intranet_keepalive_enabled": int(settings.intranet_keepalive_enabled),
             "intranet_probe_host": settings.intranet_probe_host,
+            "intranet_redirect_host": settings.intranet_redirect_host,
             "intranet_redirect_port": settings.intranet_redirect_port,
         }
     )
     with db.connect() as conn:
-        conn.execute("DELETE FROM app_settings WHERE key IN ('hls_encoder', 'intranet_redirect_host')")
+        conn.execute("DELETE FROM app_settings WHERE key IN ('hls_encoder')")
 
 
 def hls_encoder_for_video(settings: Settings, video) -> str:

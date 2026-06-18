@@ -1,9 +1,7 @@
 const intranetConfig = document.body?.dataset || {};
 
-const CHECKED_PARAM = "vbr_intranet_checked";
-const HOST_PARAM = "vbr_intranet_host";
-const PORT_PARAM = "vbr_intranet_port";
 const PROBE_TIMEOUT_MS = 1600;
+const jumpButton = document.querySelector("[data-intranet-jump]");
 
 const cleanHostForUrl = (host) => {
   const text = String(host || "").trim();
@@ -14,6 +12,8 @@ const cleanHostForUrl = (host) => {
 const currentPort = () => window.location.port || (window.location.protocol === "https:" ? "443" : "80");
 
 const configuredProbeHost = () => (intranetConfig.intranetProbeHost || "192.168.31.1").trim();
+
+const configuredRedirectHost = () => (intranetConfig.intranetRedirectHost || configuredProbeHost()).trim();
 
 const configuredRedirectPort = () => (intranetConfig.intranetRedirectPort || "").trim();
 
@@ -45,35 +45,25 @@ const writeCachedProbe = (isIntranet, host = configuredProbeHost(), port = confi
   } catch {}
 };
 
-const consumeTransferredProbe = () => {
-  const url = new URL(window.location.href);
-  if (url.searchParams.get(CHECKED_PARAM) !== "1") return false;
-  const host = url.searchParams.get(HOST_PARAM) || configuredProbeHost();
-  const port = url.searchParams.get(PORT_PARAM) || configuredRedirectPort();
-  writeCachedProbe(true, host, port);
-  url.searchParams.delete(CHECKED_PARAM);
-  url.searchParams.delete(HOST_PARAM);
-  url.searchParams.delete(PORT_PARAM);
-  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  return true;
-};
-
 const sameTarget = () => {
-  const probeHost = configuredProbeHost();
+  const redirectHost = configuredRedirectHost();
   const targetPort = configuredRedirectPort() || currentPort();
-  return window.location.hostname === probeHost && currentPort() === targetPort;
+  return window.location.hostname === redirectHost && currentPort() === targetPort;
 };
 
 const redirectToIntranet = () => {
-  const probeHost = configuredProbeHost();
-  if (!probeHost || sameTarget()) return;
+  const redirectHost = configuredRedirectHost();
+  if (!redirectHost || sameTarget()) return;
   const target = new URL(window.location.href);
-  target.hostname = probeHost;
+  target.hostname = redirectHost;
   target.port = configuredRedirectPort() || window.location.port;
-  target.searchParams.set(CHECKED_PARAM, "1");
-  target.searchParams.set(HOST_PARAM, probeHost);
-  target.searchParams.set(PORT_PARAM, configuredRedirectPort() || currentPort());
-  window.location.replace(target.toString());
+  window.location.assign(target.toString());
+};
+
+const showJumpButton = () => {
+  if (!jumpButton || sameTarget()) return;
+  jumpButton.hidden = false;
+  jumpButton.addEventListener("click", redirectToIntranet, { once: true });
 };
 
 const probeUrl = () => {
@@ -105,16 +95,15 @@ const browserReachable = async () => {
 };
 
 if (intranetConfig.intranetEnabled === "1") {
-  const transferred = consumeTransferredProbe();
   const cached = readCachedProbe();
-  if (transferred || cached?.checked) {
-    if ((transferred || cached?.isIntranet) && !sameTarget()) redirectToIntranet();
+  if (cached?.checked) {
+    if (cached.isIntranet) showJumpButton();
   } else if (sameTarget()) {
     writeCachedProbe(true);
   } else {
     browserReachable().then((isIntranet) => {
       writeCachedProbe(isIntranet);
-      if (isIntranet) redirectToIntranet();
+      if (isIntranet) showJumpButton();
     });
   }
 }
