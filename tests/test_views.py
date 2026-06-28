@@ -97,8 +97,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_port"' in response.text
     assert "内网检测" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.5.0" in response.text
-    assert "/static/settings.js?v=2.5.0" in response.text
+    assert "/static/intranet.js?v=2.5.1" in response.text
+    assert "/static/settings.js?v=2.5.1" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
     assert "确认要刷新所有封面吗" in response.text
@@ -555,7 +555,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-overlay-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.5.0" in response.text
+    assert "/static/app.js?v=2.5.1" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

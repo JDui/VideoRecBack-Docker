@@ -67,10 +67,10 @@
         <span>{{ stats.total }} 个视频 · {{ stats.flat }} 平面 · {{ stats.panorama }} 全景</span>
       </div>
       <nav class="view-switch" aria-label="视图">
-        <a class="{% if filters.view == 'timeline' %}active{% endif %}" href="{{ view_urls.timeline }}">时间线</a>
-        <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}">文件夹</a>
-        <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}">日历</a>
-        <a class="{% if filters.view == 'favorites' %}active{% endif %}" href="{{ view_urls.favorites }}">收藏</a>
+        <a class="{% if filters.view == 'timeline' %}active{% endif %}" href="{{ view_urls.timeline }}" {% if filters.view == 'timeline' %}aria-current="page"{% endif %}>时间线</a>
+        <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}" {% if filters.view == 'folders' %}aria-current="page"{% endif %}>文件夹</a>
+        <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}" {% if filters.view == 'calendar' %}aria-current="page"{% endif %}>日历</a>
+        <a class="{% if filters.view == 'favorites' %}active{% endif %}" href="{{ view_urls.favorites }}" {% if filters.view == 'favorites' %}aria-current="page"{% endif %}>收藏</a>
         <button class="intranet-jump-button" type="button" data-intranet-jump hidden>跳转内网</button>
       </nav>
       <label class="preview-size-control">
@@ -165,9 +165,9 @@
         {% elif filters.view == "calendar" %}
           <section class="calendar-view">
             <div class="calendar-zoom">
-              <a class="{% if calendar_model.zoom == 'year' %}active{% endif %}" href="{{ calendar_model.zoom_urls.year }}">年</a>
-              <a class="{% if calendar_model.zoom == 'month' %}active{% endif %} {% if calendar_model.zoom_urls.month == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.month }}">月</a>
-              <a class="{% if calendar_model.zoom == 'day' %}active{% endif %} {% if calendar_model.zoom_urls.day == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.day }}">日</a>
+              <a class="{% if calendar_model.zoom == 'year' %}active{% endif %}" href="{{ calendar_model.zoom_urls.year }}" {% if calendar_model.zoom == 'year' %}aria-current="page"{% endif %}>年</a>
+              <a class="{% if calendar_model.zoom == 'month' %}active{% endif %} {% if calendar_model.zoom_urls.month == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.month }}" {% if calendar_model.zoom == 'month' %}aria-current="page"{% endif %}>月</a>
+              <a class="{% if calendar_model.zoom == 'day' %}active{% endif %} {% if calendar_model.zoom_urls.day == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.day }}" {% if calendar_model.zoom == 'day' %}aria-current="page"{% endif %}>日</a>
             </div>
             {% if calendar_model.zoom == "day" %}
               {% for month in calendar_model.months %}
@@ -267,5 +267,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.5.0" defer></script>
+  <script src="/static/app.js?v=2.5.1" defer></script>
 {% endblock %}

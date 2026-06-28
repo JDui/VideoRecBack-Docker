@@ -187,6 +187,35 @@ if (previewSize) {
   });
 }
 
+const setupRevealMotion = () => {
+  if (!shell) return;
+  const targets = [...document.querySelectorAll(".asset-item, .folder-tile")];
+  if (!targets.length) return;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reducedMotion || !("IntersectionObserver" in window)) {
+    for (const target of targets) target.classList.add("is-visible");
+    return;
+  }
+  shell.classList.add("is-reveal-ready");
+  targets.forEach((target, index) => {
+    target.style.setProperty("--reveal-delay", `${Math.min(index % 10, 9) * 18}ms`);
+  });
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add("is-visible");
+      observer.unobserve(entry.target);
+    }
+  }, {
+    root: libraryPane || null,
+    rootMargin: "90px 0px",
+    threshold: 0.08,
+  });
+  for (const target of targets) observer.observe(target);
+};
+
+setupRevealMotion();
+
 const eventPoint = (event, fallbackElement = null) => {
   const touch = event?.touches?.[0] || event?.changedTouches?.[0];
   if (touch) return { x: touch.clientX, y: touch.clientY };
@@ -308,10 +337,18 @@ const playerUrlForCard = (card) => {
 
 const titleForCard = (card) => card.getAttribute("aria-label")?.replace(/^播放\s*/, "") || "";
 
+const setPlayerTargetCard = (card) => {
+  for (const activeCard of document.querySelectorAll(".asset-card.is-player-target")) {
+    activeCard.classList.remove("is-player-target");
+  }
+  card?.classList.add("is-player-target");
+};
+
 const openInlinePlayer = (card, panePosition) => {
   if (!shell || !frame) return;
   if (inlineFrameClearTimer) window.clearTimeout(inlineFrameClearTimer);
   inlinePlayerCard = card;
+  setPlayerTargetCard(card);
   shell.classList.add("player-open");
   restorePanePosition(panePosition);
   frame.src = playerUrlForCard(card);
@@ -327,6 +364,7 @@ const openInlinePlayer = (card, panePosition) => {
 const closeInlinePlayer = () => {
   const panePosition = capturePanePosition();
   shell?.classList.remove("player-open");
+  setPlayerTargetCard(null);
   restorePanePosition(panePosition);
   if (frame) {
     inlineFrameClearTimer = window.setTimeout(() => {
@@ -346,6 +384,7 @@ const closeInlinePlayer = () => {
 const openOverlayPlayer = (card, panePosition) => {
   if (!playerModal || !overlayFrame) return;
   overlayPlayerCard = card;
+  setPlayerTargetCard(card);
   playerModal.hidden = false;
   document.body.classList.add("player-modal-open");
   restorePanePosition(panePosition);
@@ -364,6 +403,7 @@ const closeOverlay = () => {
   const panePosition = capturePanePosition();
   playerModal.hidden = true;
   document.body.classList.remove("player-modal-open");
+  setPlayerTargetCard(null);
   restorePanePosition(panePosition);
   if (overlayFrame) {
     window.setTimeout(() => {
