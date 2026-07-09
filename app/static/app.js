@@ -1,5 +1,5 @@
 const LONG_PRESS_MS = 520;
-const DESKTOP_QUERY = "(orientation: landscape)";
+const WIDE_VIEWPORT_RATIO = 4 / 3;
 const shell = document.querySelector(".app-shell");
 const frame = document.querySelector("[data-player-frame]");
 const closePlayer = document.querySelector("[data-close-player]");
@@ -11,12 +11,6 @@ const timelineRail = document.querySelector("[data-timeline-jump]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
 const inlineFavorite = document.querySelector("[data-inline-favorite]");
-const playerModal = document.querySelector("[data-player-modal]");
-const overlayFrame = document.querySelector("[data-overlay-player-frame]");
-const overlayPlayerTitle = document.querySelector("[data-overlay-player-title]");
-const overlaySettings = document.querySelector("[data-overlay-settings]");
-const overlayFavorite = document.querySelector("[data-overlay-favorite]");
-const closeOverlayPlayer = document.querySelector("[data-close-overlay-player]");
 const scanForm = document.querySelector("[data-scan-form]");
 const scanButton = document.querySelector("[data-scan-button]");
 const scanLabel = document.querySelector("[data-scan-label]");
@@ -29,7 +23,6 @@ let restoredReturnState = null;
 let pendingReturnPosition = null;
 let favoriteContextTarget = null;
 let inlinePlayerCard = null;
-let overlayPlayerCard = null;
 
 const timelineCache = (() => {
   try {
@@ -141,6 +134,11 @@ const isReloadNavigation = () => {
   return entry?.type === "reload";
 };
 
+const isBackForwardNavigation = () => {
+  const entry = performance.getEntriesByType?.("navigation")?.[0];
+  return entry?.type === "back_forward";
+};
+
 const consumeReturningFromPlayer = () => {
   let returning = false;
   for (const storage of [sessionStorage, localStorage]) {
@@ -153,7 +151,7 @@ const consumeReturningFromPlayer = () => {
 };
 
 const restoreReturnState = () => {
-  if (!consumeReturningFromPlayer()) return;
+  if (!consumeReturningFromPlayer() && !isBackForwardNavigation()) return;
   const state = readReturnState();
   if (!state || !libraryPane) return;
   const expectedUrl = `${window.location.pathname}${window.location.search}`;
@@ -299,7 +297,6 @@ const setCardFavoriteState = (card, favorite) => {
   if (!card) return;
   card.dataset.favoriteState = favorite ? "1" : "0";
   if (card === inlinePlayerCard) setFavoriteButtonState(inlineFavorite, favorite);
-  if (card === overlayPlayerCard) setFavoriteButtonState(overlayFavorite, favorite);
 };
 
 const bindFavoriteControl = (button, currentCard) => {
@@ -327,13 +324,20 @@ const bindFavoriteControl = (button, currentCard) => {
 };
 
 bindFavoriteControl(inlineFavorite, () => inlinePlayerCard);
-bindFavoriteControl(overlayFavorite, () => overlayPlayerCard);
 
 const playerUrlForCard = (card) => {
   const url = new URL(card.href, window.location.origin);
   url.searchParams.set("embed", "1");
   return url.toString();
 };
+
+const playerPageUrlForCard = (card) => {
+  const url = new URL(card.href, window.location.origin);
+  url.searchParams.set("return", `${window.location.pathname}${window.location.search}${window.location.hash}`);
+  return url.toString();
+};
+
+const isWideViewport = () => window.innerWidth / Math.max(window.innerHeight, 1) > WIDE_VIEWPORT_RATIO;
 
 const titleForCard = (card) => card.getAttribute("aria-label")?.replace(/^播放\s*/, "") || "";
 
@@ -381,39 +385,8 @@ const closeInlinePlayer = () => {
   });
 };
 
-const openOverlayPlayer = (card, panePosition) => {
-  if (!playerModal || !overlayFrame) return;
-  overlayPlayerCard = card;
-  setPlayerTargetCard(card);
-  playerModal.hidden = false;
-  document.body.classList.add("player-modal-open");
-  restorePanePosition(panePosition);
-  overlayFrame.src = playerUrlForCard(card);
-  if (overlayPlayerTitle) overlayPlayerTitle.textContent = titleForCard(card);
-  if (overlaySettings) {
-    overlaySettings.href = card.dataset.settingsUrl || "#";
-    overlaySettings.hidden = !card.dataset.settingsUrl;
-  }
-  configureFavoriteButton(overlayFavorite, card);
-  closeOverlayPlayer?.focus({ preventScroll: true });
-};
-
-const closeOverlay = () => {
-  if (!playerModal) return;
-  const panePosition = capturePanePosition();
-  playerModal.hidden = true;
-  document.body.classList.remove("player-modal-open");
-  setPlayerTargetCard(null);
-  restorePanePosition(panePosition);
-  if (overlayFrame) {
-    window.setTimeout(() => {
-      overlayFrame.src = "about:blank";
-    }, 180);
-  }
-  overlayPlayerCard = null;
-  if (overlayPlayerTitle) overlayPlayerTitle.textContent = "";
-  if (overlaySettings) overlaySettings.hidden = true;
-  if (overlayFavorite) overlayFavorite.hidden = true;
+const openPlayerPage = (card) => {
+  window.location.assign(playerPageUrlForCard(card));
 };
 
 for (const card of document.querySelectorAll("[data-settings-url]")) {
@@ -447,10 +420,10 @@ for (const card of document.querySelectorAll("[data-settings-url]")) {
     pendingReturnPosition = null;
     saveReturnState(panePosition);
     event.preventDefault();
-    if (window.matchMedia(DESKTOP_QUERY).matches && shell && frame) {
+    if (isWideViewport() && shell && frame) {
       openInlinePlayer(card, panePosition);
     } else {
-      openOverlayPlayer(card, panePosition);
+      openPlayerPage(card);
     }
   });
   card.addEventListener("touchstart", (event) => {
@@ -480,33 +453,6 @@ inlineSettings?.addEventListener("click", (event) => {
   if (!href || href === "#") return;
   event.preventDefault();
   window.location.href = href;
-});
-
-overlaySettings?.addEventListener("click", (event) => {
-  const href = overlaySettings.getAttribute("href");
-  if (!href || href === "#") return;
-  event.preventDefault();
-  window.location.href = href;
-});
-
-closeOverlayPlayer?.addEventListener("click", closeOverlay);
-
-playerModal?.addEventListener("wheel", (event) => {
-  if (playerModal.hidden) return;
-  event.preventDefault();
-}, { passive: false });
-
-playerModal?.addEventListener("touchmove", (event) => {
-  if (playerModal.hidden) return;
-  event.preventDefault();
-}, { passive: false });
-
-document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-  if (playerModal && !playerModal.hidden) {
-    event.preventDefault();
-    closeOverlay();
-  }
 });
 
 if (resizer && shell) {

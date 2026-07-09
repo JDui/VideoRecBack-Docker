@@ -4,8 +4,6 @@ import asyncio
 import logging
 import os
 import re
-import subprocess
-import sys
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -13,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -28,6 +26,7 @@ from app.config import (
     normalize_hls_encoder,
     normalize_intranet_host,
     normalize_intranet_port,
+    normalize_intranet_redirect_protocol,
     normalize_quality,
     normalize_thumbnail_resolution,
     save_settings,
@@ -49,6 +48,14 @@ from app.thumbnails import VideoToolError, probe_video
 BASE_DIR = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
 TIMELINE_MIN_YEAR = 2010
+INTRANET_HEALTH_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Private-Network": "true",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+}
 
 
 def create_app() -> FastAPI:
@@ -144,9 +151,9 @@ def create_app() -> FastAPI:
         ignore_dotfiles: str | None = Form(None),
         ignore_name_patterns: str = Form(""),
         intranet_keepalive_enabled: str | None = Form(None),
-        intranet_probe_host: str = Form("192.168.31.1"),
         intranet_redirect_host: str = Form(""),
         intranet_redirect_port: str = Form(""),
+        intranet_redirect_protocol: str = Form("http"),
     ):
         settings = Settings(
             site_title=site_title.strip() or "视频归档",
@@ -167,9 +174,9 @@ def create_app() -> FastAPI:
             ignore_dotfiles=ignore_dotfiles == "on",
             ignore_name_patterns=normalize_ignore_patterns(ignore_name_patterns),
             intranet_keepalive_enabled=intranet_keepalive_enabled == "on",
-            intranet_probe_host=normalize_intranet_host(intranet_probe_host) or "192.168.31.1",
             intranet_redirect_host=normalize_intranet_host(intranet_redirect_host),
             intranet_redirect_port=normalize_intranet_port(intranet_redirect_port),
+            intranet_redirect_protocol=normalize_intranet_redirect_protocol(intranet_redirect_protocol),
         )
         save_settings(config_dir, settings)
         sync_settings_to_db(db, settings)
@@ -228,11 +235,13 @@ def create_app() -> FastAPI:
             },
         )
 
-    @app.get("/intranet/probe")
-    async def intranet_probe():
-        settings = load_settings(config_dir)
-        ok = await asyncio.to_thread(ping_intranet_host, settings.intranet_probe_host)
-        return {"ok": ok, "host": settings.intranet_probe_host}
+    @app.options("/intranet/health")
+    async def intranet_health_options():
+        return Response(status_code=204, headers=INTRANET_HEALTH_HEADERS)
+
+    @app.get("/intranet/health")
+    async def intranet_health():
+        return JSONResponse({"ok": True, "service": "videorecback"}, headers=INTRANET_HEALTH_HEADERS)
 
     @app.post("/scan")
     async def trigger_scan():
@@ -480,13 +489,13 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "ignore_dotfiles": int(settings.ignore_dotfiles),
             "ignore_name_patterns": ",".join(settings.ignore_name_patterns),
             "intranet_keepalive_enabled": int(settings.intranet_keepalive_enabled),
-            "intranet_probe_host": settings.intranet_probe_host,
             "intranet_redirect_host": settings.intranet_redirect_host,
             "intranet_redirect_port": settings.intranet_redirect_port,
+            "intranet_redirect_protocol": settings.intranet_redirect_protocol,
         }
     )
     with db.connect() as conn:
-        conn.execute("DELETE FROM app_settings WHERE key IN ('hls_encoder')")
+        conn.execute("DELETE FROM app_settings WHERE key IN ('hls_encoder', 'intranet_probe_host')")
 
 
 def hls_encoder_for_video(settings: Settings, video) -> str:
@@ -542,24 +551,6 @@ def ensure_tenbit_status(db: Database, video_id: int):
             ),
         )
     return get_video(db, video_id)
-
-
-def ping_intranet_host(host: str) -> bool:
-    clean_host = normalize_intranet_host(host)
-    if not clean_host:
-        return False
-    timeout_arg = "1000" if sys.platform == "darwin" else "1"
-    try:
-        result = subprocess.run(
-            ["ping", "-c", "1", "-W", timeout_arg, clean_host],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=2,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0
 
 
 def read_filters(request: Request) -> dict[str, str]:

@@ -75,20 +75,24 @@
         <input name="stream_cache_retention_days" type="hidden" value="{{ settings.stream_cache_retention_days }}">
       </label>
       <fieldset class="settings-fieldset">
-        <legend>内网检测</legend>
-        <label class="check"><input type="checkbox" name="intranet_keepalive_enabled" {% if settings.intranet_keepalive_enabled %}checked{% endif %}>启用内网检测</label>
+        <legend>内网直连</legend>
+        <label class="check"><input type="checkbox" name="intranet_keepalive_enabled" {% if settings.intranet_keepalive_enabled %}checked{% endif %}>启用内网直连检测</label>
         <label>
-          内网检测 IP 或主机
-          <input name="intranet_probe_host" type="text" value="{{ settings.intranet_probe_host }}" placeholder="192.168.31.1">
+          内网服务 IP 或主机
+          <input name="intranet_redirect_host" type="text" value="{{ settings.intranet_redirect_host }}" placeholder="192.168.31.20">
         </label>
         <label>
-          跳转 IP 或主机
-          <input name="intranet_redirect_host" type="text" value="{{ settings.intranet_redirect_host }}" placeholder="192.168.31.20">
+          内网服务协议
+          <select name="intranet_redirect_protocol">
+            <option value="http" {% if settings.intranet_redirect_protocol == 'http' %}selected{% endif %}>HTTP</option>
+            <option value="https" {% if settings.intranet_redirect_protocol == 'https' %}selected{% endif %}>HTTPS</option>
+          </select>
         </label>
         <label>
           跳转端口
           <input name="intranet_redirect_port" type="number" min="1" max="65535" value="{{ settings.intranet_redirect_port }}" placeholder="8080">
         </label>
+        <p class="settings-help">页面会从当前浏览器直接请求内网服务，只有直连成功才显示跳转按钮。若外网页面使用 HTTPS，内网服务也应使用 HTTPS，否则浏览器会阻止检测。</p>
       </fieldset>
       <label>
         视频扩展名
@@ -186,5 +190,5 @@
   </section>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/settings.js?v=2.5.1" defer></script>
+  <script src="/static/settings.js?v=2.5.2" defer></script>
 {% endblock %}

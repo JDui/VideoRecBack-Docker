@@ -6,13 +6,13 @@ const jumpButton = document.querySelector("[data-intranet-jump]");
 const LOCAL_ACCESS = "local";
 const EXTERNAL_ACCESS = "external";
 
-const currentPort = () => window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-
-const configuredProbeHost = () => (intranetConfig.intranetProbeHost || "192.168.31.1").trim();
-
-const configuredRedirectHost = () => (intranetConfig.intranetRedirectHost || configuredProbeHost()).trim();
+const configuredRedirectHost = () => (intranetConfig.intranetRedirectHost || "").trim();
 
 const configuredRedirectPort = () => (intranetConfig.intranetRedirectPort || "").trim();
+
+const configuredRedirectProtocol = () => {
+  return intranetConfig.intranetRedirectProtocol === "https" ? "https:" : "http:";
+};
 
 const isPrivateHost = (host) => {
   const match = String(host || "").trim().match(/^192\.168\.(\d{1,3})\.(\d{1,3})$/);
@@ -26,38 +26,32 @@ const markAccess = () => {
   document.body.dataset.intranetAccess = isLocalAccess() ? LOCAL_ACCESS : EXTERNAL_ACCESS;
 };
 
-const cacheKey = (host = configuredProbeHost(), port = configuredRedirectPort()) => {
-  return `videorecback-intranet:${window.location.protocol}:${host}:${port || currentPort()}`;
-};
-
-const writeCachedProbe = (isIntranet, host = configuredProbeHost(), port = configuredRedirectPort()) => {
+const intranetOrigin = () => {
+  const redirectHost = configuredRedirectHost();
+  if (!redirectHost) return null;
   try {
-    sessionStorage.setItem(
-      cacheKey(host, port),
-      JSON.stringify({
-        checked: true,
-        isIntranet: Boolean(isIntranet),
-        host,
-        port: port || currentPort(),
-        checkedAt: Date.now(),
-      })
-    );
-  } catch {}
+    const host = redirectHost.includes(":") && !redirectHost.startsWith("[")
+      ? `[${redirectHost}]`
+      : redirectHost;
+    const target = new URL(`${configuredRedirectProtocol()}//${host}`);
+    target.port = configuredRedirectPort();
+    return target;
+  } catch {
+    return null;
+  }
 };
 
 const sameTarget = () => {
-  const redirectHost = configuredRedirectHost();
-  const targetPort = configuredRedirectPort() || currentPort();
-  return window.location.hostname === redirectHost && currentPort() === targetPort;
+  const target = intranetOrigin();
+  return target?.origin === window.location.origin;
 };
 
 const redirectToIntranet = () => {
-  const redirectHost = configuredRedirectHost();
-  if (!redirectHost || sameTarget()) return;
-  const target = new URL(window.location.href);
-  target.protocol = "http:";
-  target.hostname = redirectHost;
-  target.port = configuredRedirectPort();
+  const target = intranetOrigin();
+  if (!target || sameTarget()) return;
+  target.pathname = window.location.pathname;
+  target.search = window.location.search;
+  target.hash = window.location.hash;
   window.location.assign(target.toString());
 };
 
@@ -85,17 +79,22 @@ const showJumpButton = () => {
   jumpButton.addEventListener("click", redirectToIntranet);
 };
 
-const serverReachable = async () => {
+const browserCanReachIntranet = async () => {
+  const target = intranetOrigin();
+  if (!target) return false;
+  target.pathname = "/intranet/health";
+  target.searchParams.set("_vbr_probe", String(Date.now()));
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const response = await fetch(`/intranet/probe?_vbr_probe=${Date.now()}`, {
+    const response = await fetch(target.toString(), {
       cache: "no-store",
+      mode: "cors",
       signal: controller.signal,
     });
     if (!response.ok) return false;
     const payload = await response.json();
-    return payload.ok === true;
+    return payload.ok === true && payload.service === "videorecback";
   } catch {
     return false;
   } finally {
@@ -109,15 +108,13 @@ const refreshJumpButton = async () => {
   markAccess();
   if (isLocalAccess()) {
     hideJumpButton();
-    writeCachedProbe(true);
     return;
   }
   if (intranetConfig.intranetEnabled !== "1" || sameTarget()) {
     hideJumpButton();
     return;
   }
-  const reachable = await serverReachable();
-  writeCachedProbe(reachable);
+  const reachable = await browserCanReachIntranet();
   if (reachable) {
     showJumpButton();
   } else {
@@ -127,3 +124,7 @@ const refreshJumpButton = async () => {
 
 refreshJumpButton();
 window.setInterval(refreshJumpButton, PROBE_INTERVAL_MS);
+window.addEventListener("online", refreshJumpButton);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshJumpButton();
+});

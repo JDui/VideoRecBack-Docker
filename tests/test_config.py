@@ -9,6 +9,7 @@ from app.config import (
     normalize_hls_encoder,
     normalize_intranet_host,
     normalize_intranet_port,
+    normalize_intranet_redirect_protocol,
     normalize_thumbnail_resolution,
     normalize_extensions,
     normalize_ignore_patterns,
@@ -53,6 +54,9 @@ def test_normalize_intranet_host_and_port():
     assert normalize_intranet_port("8080") == "8080"
     assert normalize_intranet_port("70000") == ""
     assert normalize_intranet_port("bad") == ""
+    assert normalize_intranet_redirect_protocol("https") == "https"
+    assert normalize_intranet_redirect_protocol("HTTPS://") == "https"
+    assert normalize_intranet_redirect_protocol("ftp") == "http"
 
 
 def test_settings_round_trip(tmp_path: Path):
@@ -75,9 +79,9 @@ def test_settings_round_trip(tmp_path: Path):
         ignore_dotfiles=False,
         ignore_name_patterns=["Thumbs.db", "*.tmp.mp4"],
         intranet_keepalive_enabled=True,
-        intranet_probe_host="192.168.31.1",
         intranet_redirect_host="192.168.31.20",
         intranet_redirect_port="8080",
+        intranet_redirect_protocol="https",
     )
     save_settings(tmp_path, settings)
 
@@ -101,9 +105,9 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.ignore_dotfiles is False
     assert loaded.ignore_name_patterns == ["Thumbs.db", "*.tmp.mp4"]
     assert loaded.intranet_keepalive_enabled is True
-    assert loaded.intranet_probe_host == "192.168.31.1"
     assert loaded.intranet_redirect_host == "192.168.31.20"
     assert loaded.intranet_redirect_port == "8080"
+    assert loaded.intranet_redirect_protocol == "https"
 
 
 def test_default_volume_is_clamped(tmp_path: Path):
