@@ -1,6 +1,7 @@
 const intranetConfig = document.body?.dataset || {};
 
-const PROBE_TIMEOUT_MS = 900;
+const FETCH_PROBE_TIMEOUT_MS = 8000;
+const IMAGE_PROBE_TIMEOUT_MS = 1200;
 const PROBE_INTERVAL_MS = 15000;
 const PROBE_RETRY_DELAYS_MS = [350, 1200, 3000];
 const REACHABLE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -18,7 +19,7 @@ const configuredRedirectProtocol = () => {
 
 const isPrivateHost = (host) => {
   const value = String(host || "").trim().toLowerCase();
-  if (value === "localhost" || value === "::1") return true;
+  if (value === "localhost" || value === "::1" || value.endsWith(".local")) return true;
   const parts = value.split(".").map(Number);
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
   return parts[0] === 10 || parts[0] === 127 ||
@@ -50,11 +51,6 @@ const intranetOrigin = () => {
 const sameTarget = () => {
   const target = intranetOrigin();
   return target?.origin === window.location.origin;
-};
-
-const mixedContentProbeBlocked = () => {
-  const target = intranetOrigin();
-  return window.location.protocol === "https:" && target?.protocol === "http:";
 };
 
 const reachabilityCacheKey = () => `videorecback-intranet-reachable:${intranetOrigin()?.origin || ""}`;
@@ -113,12 +109,13 @@ const fetchHealthProbe = async () => {
   target.pathname = "/intranet/health";
   target.searchParams.set("_vbr_probe", String(Date.now()));
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), FETCH_PROBE_TIMEOUT_MS);
   try {
     const response = await fetch(target.toString(), {
       cache: "no-store",
       mode: "cors",
       signal: controller.signal,
+      targetAddressSpace: "local",
     });
     if (!response.ok) return false;
     const payload = await response.json();
@@ -140,7 +137,7 @@ const imageHealthProbe = () => {
     const timeout = window.setTimeout(() => {
       image.src = "";
       resolve(false);
-    }, PROBE_TIMEOUT_MS);
+    }, IMAGE_PROBE_TIMEOUT_MS);
     image.onload = () => {
       window.clearTimeout(timeout);
       resolve(true);
@@ -195,10 +192,8 @@ const refreshJumpButton = async () => {
     hideJumpButton();
     return;
   }
-  if (mixedContentProbeBlocked() || hasRecentReachability()) {
-    showJumpButton();
-    if (mixedContentProbeBlocked()) return;
-  }
+  showJumpButton();
+  if (hasRecentReachability()) return;
   if (activeProbe) return;
   activeProbe = browserCanReachIntranet();
   const reachable = await activeProbe;
@@ -208,7 +203,6 @@ const refreshJumpButton = async () => {
     rememberReachability();
     showJumpButton();
   } else {
-    if (!hasRecentReachability()) hideJumpButton();
     scheduleFastRetry();
   }
 };
