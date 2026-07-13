@@ -33,16 +33,7 @@ const timelineCache = (() => {
 })();
 
 const currentTimelineSection = () => {
-  const points = [...document.querySelectorAll("[data-timeline-point]")];
-  if (!points.length || !libraryPane) return "";
-  const paneRect = libraryPane.getBoundingClientRect();
-  const anchorY = paneRect.top + Math.min(320, paneRect.height * 0.36);
-  let active = points[0];
-  for (const point of points) {
-    if (point.getBoundingClientRect().top <= anchorY) active = point;
-    else break;
-  }
-  return active.id;
+  return timelineRoot?.dataset.currentPage || document.querySelector("[data-timeline-point]")?.id || "";
 };
 
 const capturePanePosition = () => {
@@ -175,6 +166,25 @@ scanForm?.addEventListener("submit", () => {
   if (scanLabel) scanLabel.textContent = "更新中";
 });
 
+if (scanForm?.dataset.scanRunning === "1") {
+  const pollScanStatus = async () => {
+    try {
+      const response = await fetch("/scan/status", { cache: "no-store" });
+      if (!response.ok) throw new Error("Scan status request failed");
+      const status = await response.json();
+      if (!status.scanning) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("scan");
+        window.location.replace(url.toString());
+        return;
+      }
+      if (scanLabel) scanLabel.textContent = "建立索引中";
+    } catch {}
+    window.setTimeout(pollScanStatus, 750);
+  };
+  window.setTimeout(pollScanStatus, 300);
+}
+
 if (previewSize) {
   const savedSize = localStorage.getItem("videorecback-card-size") || previewSize.value;
   previewSize.value = savedSize;
@@ -185,9 +195,11 @@ if (previewSize) {
   });
 }
 
-const setupRevealMotion = () => {
+let revealObserver = null;
+
+const registerRevealTargets = (root = document) => {
   if (!shell) return;
-  const targets = [...document.querySelectorAll(".asset-item, .folder-tile")];
+  const targets = [...root.querySelectorAll(".asset-item:not(.is-visible), .folder-tile:not(.is-visible)")];
   if (!targets.length) return;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (reducedMotion || !("IntersectionObserver" in window)) {
@@ -198,21 +210,23 @@ const setupRevealMotion = () => {
   targets.forEach((target, index) => {
     target.style.setProperty("--reveal-delay", `${Math.min(index % 10, 9) * 18}ms`);
   });
-  const observer = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      entry.target.classList.add("is-visible");
-      observer.unobserve(entry.target);
-    }
-  }, {
-    root: libraryPane || null,
-    rootMargin: "90px 0px",
-    threshold: 0.08,
-  });
-  for (const target of targets) observer.observe(target);
+  if (!revealObserver) {
+    revealObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-visible");
+        revealObserver.unobserve(entry.target);
+      }
+    }, {
+      root: libraryPane || null,
+      rootMargin: "90px 0px",
+      threshold: 0.08,
+    });
+  }
+  for (const target of targets) revealObserver.observe(target);
 };
 
-setupRevealMotion();
+registerRevealTargets();
 
 const eventPoint = (event, fallbackElement = null) => {
   const touch = event?.touches?.[0] || event?.changedTouches?.[0];
@@ -389,61 +403,62 @@ const openPlayerPage = (card) => {
   window.location.assign(playerPageUrlForCard(card));
 };
 
-for (const card of document.querySelectorAll("[data-settings-url]")) {
-  let timer = null;
-  let longPressed = false;
-  const usesFavoriteMenu = card.dataset.favoriteMenu === "1";
-  const openSettings = (event) => {
-    event.preventDefault();
-    window.location.href = card.dataset.settingsUrl;
-  };
-  const openContextAction = (event) => {
-    event.preventDefault();
-    if (usesFavoriteMenu) {
-      openFavoriteContextMenu(card, event);
-      return;
-    }
-    openSettings(event);
-  };
+let longPressTimer = null;
+let longPressCard = null;
+let longPressTriggered = false;
 
-  card.addEventListener("contextmenu", openContextAction);
-  card.addEventListener("pointerdown", () => {
-    pendingReturnPosition = capturePanePosition();
-  }, { passive: true });
-  card.addEventListener("click", (event) => {
-    if (longPressed) {
-      event.preventDefault();
-      longPressed = false;
-      return;
-    }
-    const panePosition = pendingReturnPosition || capturePanePosition();
-    pendingReturnPosition = null;
-    saveReturnState(panePosition);
+const eventCard = (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  return target?.closest("[data-settings-url]") || null;
+};
+
+document.addEventListener("contextmenu", (event) => {
+  const card = eventCard(event);
+  if (!card) return;
+  event.preventDefault();
+  if (card.dataset.favoriteMenu === "1") openFavoriteContextMenu(card, event);
+  else window.location.href = card.dataset.settingsUrl;
+});
+
+document.addEventListener("pointerdown", (event) => {
+  if (!eventCard(event)) return;
+  pendingReturnPosition = capturePanePosition();
+}, { passive: true });
+
+document.addEventListener("click", (event) => {
+  const card = eventCard(event);
+  if (!card) return;
+  if (longPressTriggered && card === longPressCard) {
     event.preventDefault();
-    if (isWideViewport() && shell && frame) {
-      openInlinePlayer(card, panePosition);
-    } else {
-      openPlayerPage(card);
-    }
-  });
-  card.addEventListener("touchstart", (event) => {
-    longPressed = false;
-    const point = eventPoint(event, card);
-    timer = window.setTimeout(() => {
-      longPressed = true;
-      if (usesFavoriteMenu) {
-        openFavoriteContextMenu(card, point);
-      } else {
-        window.location.href = card.dataset.settingsUrl;
-      }
-    }, LONG_PRESS_MS);
-  }, { passive: true });
-  for (const eventName of ["touchend", "touchmove", "touchcancel"]) {
-    card.addEventListener(eventName, () => {
-      if (timer) window.clearTimeout(timer);
-      timer = null;
-    }, { passive: true });
+    longPressTriggered = false;
+    return;
   }
+  const panePosition = pendingReturnPosition || capturePanePosition();
+  pendingReturnPosition = null;
+  saveReturnState(panePosition);
+  event.preventDefault();
+  if (isWideViewport() && shell && frame) openInlinePlayer(card, panePosition);
+  else openPlayerPage(card);
+});
+
+document.addEventListener("touchstart", (event) => {
+  const card = eventCard(event);
+  if (!card) return;
+  longPressCard = card;
+  longPressTriggered = false;
+  const point = eventPoint(event, card);
+  longPressTimer = window.setTimeout(() => {
+    longPressTriggered = true;
+    if (card.dataset.favoriteMenu === "1") openFavoriteContextMenu(card, point);
+    else window.location.href = card.dataset.settingsUrl;
+  }, LONG_PRESS_MS);
+}, { passive: true });
+
+for (const eventName of ["touchend", "touchmove", "touchcancel"]) {
+  document.addEventListener(eventName, () => {
+    if (longPressTimer) window.clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }, { passive: true });
 }
 
 closePlayer?.addEventListener("click", closeInlinePlayer);
@@ -484,11 +499,99 @@ if (libraryPane && shell) {
   syncScrolledState();
 }
 
+const timelineStack = document.querySelector("[data-timeline-stack]");
+const timelineLoadSentinel = document.querySelector("[data-timeline-load]");
+let timelineBatchPromise = null;
+
+const refreshTimelineCounts = (section) => {
+  for (const day of section.querySelectorAll(":scope > [data-timeline-day]")) {
+    const dayCount = day.querySelectorAll(".asset-item").length;
+    const label = day.querySelector(".timeline-day-divider small");
+    if (label) label.textContent = `${dayCount} 个视频`;
+  }
+  const sectionCount = section.querySelectorAll(".asset-item").length;
+  const label = section.querySelector(".timeline-section-head span");
+  if (label) label.textContent = `${sectionCount} 个视频`;
+};
+
+const mergeTimelineSection = (incomingSection) => {
+  const existingSection = document.getElementById(incomingSection.id);
+  if (!existingSection) {
+    timelineStack?.append(incomingSection);
+    return incomingSection;
+  }
+  for (const incomingDay of [...incomingSection.querySelectorAll(":scope > [data-timeline-day]")]) {
+    const existingDay = document.getElementById(incomingDay.id);
+    if (!existingDay) {
+      existingSection.append(incomingDay);
+      continue;
+    }
+    const existingGrid = existingDay.querySelector(".timeline-asset-grid");
+    const incomingItems = incomingDay.querySelectorAll(".asset-item");
+    existingGrid?.append(...incomingItems);
+  }
+  refreshTimelineCounts(existingSection);
+  return existingSection;
+};
+
+const loadNextTimelineBatch = () => {
+  if (timelineBatchPromise) return timelineBatchPromise;
+  if (!timelineRoot || !timelineStack || !timelineLoadSentinel) return Promise.resolve(false);
+  if (timelineRoot.dataset.hasMore !== "1") return Promise.resolve(false);
+  const nextMtime = timelineRoot.dataset.nextMtime;
+  const nextId = timelineRoot.dataset.nextId;
+  if (!nextMtime || !nextId) return Promise.resolve(false);
+  timelineBatchPromise = (async () => {
+    timelineLoadSentinel.textContent = "正在加载";
+    try {
+      const url = new URL(timelineRoot.dataset.batchUrl || "/timeline-batch", window.location.origin);
+      url.searchParams.set("cursor_mtime", nextMtime);
+      url.searchParams.set("cursor_id", nextId);
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error("Timeline batch request failed");
+      const payload = await response.json();
+      const container = document.createElement("div");
+      container.innerHTML = payload.html || "";
+      const changedSections = [];
+      for (const section of [...container.querySelectorAll(":scope > [data-timeline-section]")]) {
+        changedSections.push(mergeTimelineSection(section));
+      }
+      for (const section of changedSections) registerRevealTargets(section);
+      timelineRoot.dataset.hasMore = payload.has_more ? "1" : "0";
+      if (payload.next_cursor) {
+        timelineRoot.dataset.nextMtime = String(payload.next_cursor.mtime);
+        timelineRoot.dataset.nextId = String(payload.next_cursor.id);
+      }
+      timelineLoadSentinel.hidden = !payload.has_more;
+      timelineLoadSentinel.textContent = payload.has_more ? "继续加载" : "";
+      window.dispatchEvent(new CustomEvent("videorecback:timeline-batch"));
+      return true;
+    } catch {
+      timelineLoadSentinel.textContent = "加载失败，滚动后重试";
+      return false;
+    }
+  })();
+  timelineBatchPromise.finally(() => {
+    timelineBatchPromise = null;
+  });
+  return timelineBatchPromise;
+};
+
+if (timelineLoadSentinel && "IntersectionObserver" in window) {
+  const timelineLoader = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) loadNextTimelineBatch();
+  }, { root: libraryPane || null, rootMargin: "800px 0px" });
+  timelineLoader.observe(timelineLoadSentinel);
+}
+
 if (timelineRail && libraryPane) {
   const marks = [...timelineRail.querySelectorAll(".timeline-jump-mark")];
-  const sections = [...document.querySelectorAll("[data-timeline-section]")];
-  const points = [...document.querySelectorAll("[data-timeline-point]")];
-  const pointById = new Map(points.map((point) => [point.id, point]));
+  let sections = [...document.querySelectorAll("[data-timeline-section]")];
+  let points = [...document.querySelectorAll("[data-timeline-point]")];
+  let pointById = new Map(points.map((point) => [point.id, point]));
+  let sectionByMonth = new Map();
+  let pointOffsets = [];
+  const markByPeriod = new Map(marks.map((mark) => [mark.dataset.period, mark]));
   const groupMetaByAnchor = new Map();
   for (const group of Array.isArray(timelineCache.groups) ? timelineCache.groups : []) {
     groupMetaByAnchor.set(group.anchor, group);
@@ -500,6 +603,10 @@ if (timelineRail && libraryPane) {
   let timelineJumpTimer = null;
   let timelineFrame = 0;
   let timelineSaveTimer = null;
+  let currentPoint = null;
+  let currentMonthSection = null;
+  let currentRailMark = null;
+  let scaledMonth = "";
 
   for (const section of sections) {
     section.tabIndex = -1;
@@ -558,15 +665,34 @@ if (timelineRail && libraryPane) {
   const topForSection = (section) => {
     return Math.max(0, offsetTopInPane(section) - 12);
   };
+  const refreshTimelineCollections = () => {
+    sections = [...document.querySelectorAll("[data-timeline-section]")];
+    points = [...document.querySelectorAll("[data-timeline-point]")];
+    pointById = new Map(points.map((point) => [point.id, point]));
+    sectionByMonth = new Map(sections.map((section) => [
+      `${section.dataset.year}-${String(section.dataset.month).padStart(2, "0")}`,
+      section,
+    ]));
+    pointOffsets = points.map((point) => topForSection(point));
+    for (const point of points) point.tabIndex = -1;
+  };
+  refreshTimelineCollections();
   const activeSection = () => {
-    const paneRect = libraryPane.getBoundingClientRect();
-    const anchorY = paneRect.top + Math.min(320, paneRect.height * 0.36);
-    let active = points[0];
-    for (const point of points) {
-      if (point.getBoundingClientRect().top <= anchorY) active = point;
-      else break;
+    if (!points.length) return null;
+    const anchor = libraryPane.scrollTop + Math.min(320, libraryPane.clientHeight * 0.36);
+    let low = 0;
+    let high = pointOffsets.length - 1;
+    let match = 0;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      if (pointOffsets[middle] <= anchor) {
+        match = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
     }
-    return active;
+    return points[match];
   };
   const jumpToSection = (section, hash, replace = false) => {
     if (!section) return;
@@ -658,6 +784,9 @@ if (timelineRail && libraryPane) {
   const applyTimelineScale = (section) => {
     if (!section) return;
     const meta = sectionMeta(section);
+    const scaleKey = `${meta.year}-${two(meta.month)}`;
+    if (scaleKey === scaledMonth) return;
+    scaledMonth = scaleKey;
     for (const mark of marks) {
       const visible = visibleMark(mark, meta);
       mark.hidden = !visible;
@@ -674,9 +803,8 @@ if (timelineRail && libraryPane) {
     const dateKey = `${meta.year}-${two(meta.month)}-${two(meta.day)}`;
     const monthKey = `${meta.year}-${two(meta.month)}`;
     const yearKey = `${meta.year}`;
-    return marks.find((mark) => !mark.hidden && mark.dataset.period === dateKey) ||
-      marks.find((mark) => !mark.hidden && mark.dataset.period === monthKey) ||
-      marks.find((mark) => !mark.hidden && mark.dataset.period === yearKey);
+    const candidates = [markByPeriod.get(dateKey), markByPeriod.get(monthKey), markByPeriod.get(yearKey)];
+    return candidates.find((mark) => mark && !mark.hidden) || null;
   };
   const keepMarkVisible = (mark) => {
     if (!mark) return;
@@ -691,20 +819,21 @@ if (timelineRail && libraryPane) {
   const updateTimelineCurrent = (forcedSection = null) => {
     if (!sections.length) return;
     const currentSection = forcedSection || activeSection();
+    if (!currentSection) return;
     const meta = sectionMeta(currentSection);
     applyTimelineScale(currentSection);
     const mark = currentMarkForSection(currentSection);
     timelineRoot?.setAttribute("data-current-page", currentSection.id);
-    for (const section of sections) {
-      const isCurrentMonth = String(section.dataset.year) === String(meta.year) && two(section.dataset.month) === two(meta.month);
-      section.classList.toggle("is-current-section", isCurrentMonth);
-    }
-    for (const point of points) {
-      point.classList.toggle("is-current-point", point === currentSection);
-    }
-    for (const candidate of marks) {
-      candidate.classList.toggle("is-current", candidate === mark);
-    }
+    const monthSection = sectionByMonth.get(`${meta.year}-${two(meta.month)}`) || null;
+    if (currentMonthSection !== monthSection) currentMonthSection?.classList.remove("is-current-section");
+    monthSection?.classList.add("is-current-section");
+    currentMonthSection = monthSection;
+    if (currentPoint !== currentSection) currentPoint?.classList.remove("is-current-point");
+    currentSection.classList.add("is-current-point");
+    currentPoint = currentSection;
+    if (currentRailMark !== mark) currentRailMark?.classList.remove("is-current");
+    mark?.classList.add("is-current");
+    currentRailMark = mark;
     keepMarkVisible(mark);
   };
   const requestTimelineUpdate = () => {
@@ -724,12 +853,21 @@ if (timelineRail && libraryPane) {
   };
 
   for (const mark of marks) {
-    mark.addEventListener("click", (event) => {
+    mark.addEventListener("click", async (event) => {
       const href = mark.getAttribute("href") || "";
       if (!href.startsWith("#timeline-")) return;
-      const section = sectionForMark(mark);
-      if (!section) return;
       event.preventDefault();
+      const targetId = String(mark.dataset.targetAnchor || href).replace(/^#/, "");
+      let section = document.getElementById(targetId);
+      let remainingLoads = 100;
+      while (!section && timelineRoot?.dataset.hasMore === "1" && remainingLoads > 0) {
+        const loaded = await loadNextTimelineBatch();
+        if (!loaded) break;
+        section = document.getElementById(targetId);
+        remainingLoads -= 1;
+      }
+      section ||= sectionForMark(mark);
+      if (!section) return;
       jumpToSection(section, mark.dataset.targetAnchor || href);
     });
   }
@@ -738,8 +876,14 @@ if (timelineRail && libraryPane) {
     requestTimelineUpdate();
     scheduleTimelinePositionSave();
   }, { passive: true });
-  window.addEventListener("resize", () => updateTimelineCurrent());
-  window.addEventListener("videorecback:timeline-layout", () => updateTimelineCurrent());
+  const refreshTimelineLayout = () => {
+    refreshTimelineCollections();
+    scaledMonth = "";
+    updateTimelineCurrent();
+  };
+  window.addEventListener("resize", refreshTimelineLayout);
+  window.addEventListener("videorecback:timeline-layout", refreshTimelineLayout);
+  window.addEventListener("videorecback:timeline-batch", refreshTimelineLayout);
   window.addEventListener("hashchange", () => {
     if (restoredReturnState) return;
     const section = sectionForTimelineId(window.location.hash);

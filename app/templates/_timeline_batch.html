@@ -1,0 +1,20 @@
+{% from "_video_macros.html" import asset_card with context %}
+{% for group in timeline_groups %}
+  <section class="timeline-section" id="{{ group.anchor }}" data-timeline-section data-timeline-point data-year="{{ group.year }}" data-month="{{ group.month }}" data-day="{{ group.day }}" data-label="{{ group.label }}" data-granularity="{{ group.granularity }}">
+    <header class="timeline-section-head">
+      <h2>{{ group.label }}</h2>
+      <span>{{ group.videos|length }} 个视频</span>
+    </header>
+    {% for day in group.day_groups %}
+      <div class="timeline-day-block" id="{{ day.anchor }}" data-timeline-day data-timeline-point data-year="{{ day.year }}" data-month="{{ day.month }}" data-day="{{ day.day }}" data-label="{{ day.label }}">
+        <div class="timeline-day-divider">
+          <span>{{ day.label }}</span>
+          <small>{{ day.videos|length }} 个视频</small>
+        </div>
+        <div class="asset-grid timeline-asset-grid">
+          {% for video in day.videos %}{{ asset_card(video) }}{% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </section>
+{% endfor %}

@@ -16,7 +16,9 @@ from app.video_types import detect_video_type
 
 DEFAULT_THUMBNAIL_HEIGHT = 576
 WEBP_QUALITY = "60"
-WEBP_COMPRESSION_LEVEL = "6"
+WEBP_COMPRESSION_LEVEL = "4"
+FFMPEG_THUMBNAIL_THREADS = "1"
+PREVIEW_MAX_SIZE = (512, 384)
 
 
 class VideoToolError(RuntimeError):
@@ -162,6 +164,27 @@ def generate_thumbnail(
         generate_panorama_thumbnail(video_path, output_path, duration, height)
     else:
         generate_flat_thumbnail(video_path, output_path, duration, height)
+
+
+def generate_preview_thumbnail(source_path: Path, output_path: Path) -> Path:
+    if output_path.exists() and output_path.stat().st_mtime_ns >= source_path.stat().st_mtime_ns:
+        return output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = output_path.with_suffix(".tmp.webp")
+    try:
+        with Image.open(source_path) as source:
+            preview = source.convert("RGB")
+            preview.thumbnail(PREVIEW_MAX_SIZE, Image.Resampling.LANCZOS)
+            preview.save(
+                temporary_path,
+                format="WEBP",
+                quality=int(WEBP_QUALITY),
+                method=int(WEBP_COMPRESSION_LEVEL),
+            )
+        temporary_path.replace(output_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    return output_path
 
 
 def generate_flat_thumbnail(
@@ -334,7 +357,12 @@ def render_panorama_thumbnail(
 
     ball = rasterize_fisheye_ball(frame, ball_size)
     background.alpha_composite(ball, ((canvas_size[0] - ball_size) // 2, (canvas_size[1] - ball_size) // 2))
-    background.convert("RGB").save(output_path, format="WEBP", quality=int(WEBP_QUALITY), method=6)
+    background.convert("RGB").save(
+        output_path,
+        format="WEBP",
+        quality=int(WEBP_QUALITY),
+        method=int(WEBP_COMPRESSION_LEVEL),
+    )
 
 
 def validate_thumbnail(
@@ -475,7 +503,18 @@ def midpoint(duration: float | None) -> float:
 
 
 def run_ffmpeg(command: list[str]) -> None:
-    result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=180)
+    limited_command = [
+        command[0],
+        "-threads",
+        FFMPEG_THUMBNAIL_THREADS,
+        "-filter_threads",
+        FFMPEG_THUMBNAIL_THREADS,
+        *command[1:-1],
+        "-threads",
+        FFMPEG_THUMBNAIL_THREADS,
+        command[-1],
+    ]
+    result = subprocess.run(limited_command, check=False, capture_output=True, text=True, timeout=180)
     if result.returncode != 0:
         raise VideoToolError(result.stderr.strip() or "ffmpeg failed")
 

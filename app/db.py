@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS videos (
     average_bitrate INTEGER,
     video_codec TEXT,
     mtime REAL NOT NULL DEFAULT 0,
+    mtime_ns INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     missing INTEGER NOT NULL DEFAULT 0,
@@ -50,15 +51,30 @@ CREATE TABLE IF NOT EXISTS scan_queue (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS media_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id INTEGER NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+);
 """
 
 INDEXES = """
-CREATE INDEX IF NOT EXISTS idx_videos_mtime ON videos(mtime DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_visible_timeline ON videos(missing, mtime DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_visible_type_timeline ON videos(missing, type, mtime DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_visible_favorite_timeline ON videos(missing, favorite, mtime DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_missing ON videos(missing);
 CREATE INDEX IF NOT EXISTS idx_videos_favorite ON videos(favorite, mtime DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_type ON videos(type);
 CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder);
 CREATE INDEX IF NOT EXISTS idx_scan_queue_status ON scan_queue(status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scan_queue_path ON scan_queue(path);
+CREATE INDEX IF NOT EXISTS idx_media_jobs_pending ON media_jobs(status, created_at, id);
 """
 
 MIGRATIONS = {
@@ -72,6 +88,7 @@ MIGRATIONS = {
     "chroma_subsampling": "ALTER TABLE videos ADD COLUMN chroma_subsampling TEXT",
     "average_bitrate": "ALTER TABLE videos ADD COLUMN average_bitrate INTEGER",
     "video_codec": "ALTER TABLE videos ADD COLUMN video_codec TEXT",
+    "mtime_ns": "ALTER TABLE videos ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0",
     "thumb_version": "ALTER TABLE videos ADD COLUMN thumb_version INTEGER NOT NULL DEFAULT 0",
     "favorite": "ALTER TABLE videos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
 }
@@ -90,6 +107,16 @@ class Database:
             for column, statement in MIGRATIONS.items():
                 if column not in existing:
                     conn.execute(statement)
+            conn.execute("DELETE FROM scan_queue WHERE status = 'done'")
+            conn.execute(
+                """
+                DELETE FROM scan_queue
+                WHERE id NOT IN (SELECT MAX(id) FROM scan_queue GROUP BY path)
+                """
+            )
+            conn.execute(
+                "UPDATE media_jobs SET status = 'pending' WHERE status = 'running'"
+            )
             conn.executescript(INDEXES)
 
     def sync_settings(self, values: dict[str, object]) -> None:

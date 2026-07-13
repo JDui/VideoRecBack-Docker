@@ -328,6 +328,122 @@ def test_scan_file_rejects_path_outside_root(tmp_path):
         scanner._scan_file_sync(Settings(video_root=str(root)), outside)
 
 
+def test_full_scan_defers_changed_media_work(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "new.mp4"
+    target.write_bytes(b"video")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: (_ for _ in ()).throw(AssertionError("probe must be deferred")))
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: (_ for _ in ()).throw(AssertionError("thumbnail must be deferred")))
+
+    summary = scanner._scan_sync(Settings(video_root=str(root)))
+
+    with db.connect() as conn:
+        video = conn.execute("SELECT id, thumb_status FROM videos WHERE path = ?", (str(target),)).fetchone()
+        job = conn.execute("SELECT video_id, status FROM media_jobs").fetchone()
+
+    assert summary.indexed == 1
+    assert video["thumb_status"] == "pending"
+    assert job["video_id"] == video["id"]
+    assert job["status"] == "pending"
+
+
+def test_full_scan_skips_unchanged_database_writes(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "existing.mp4"
+    target.write_bytes(b"video")
+    thumb = tmp_path / "data" / "cache" / "1.webp"
+    thumb.parent.mkdir(parents=True)
+    thumb.write_bytes(b"thumb")
+    stat = target.stat()
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+    with db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, relative_path, folder, size_bytes, duration_seconds,
+                width, height, bit_depth, chroma_subsampling, average_bitrate,
+                mtime, mtime_ns, thumb_status, thumb_path, thumb_version, updated_at
+            ) VALUES(1, ?, 'existing.mp4', 'existing.mp4', '/', ?, 10, 1920, 1080, 8, '420', 1000, ?, ?, 'ready', ?, ?, '2000-01-01')
+            """,
+            (str(target), stat.st_size, stat.st_mtime, stat.st_mtime_ns, str(thumb), THUMBNAIL_VERSION),
+        )
+
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: (_ for _ in ()).throw(AssertionError("probe must not run")))
+    summary = scanner._scan_sync(Settings(video_root=str(root)))
+
+    with db.connect() as conn:
+        row = conn.execute("SELECT updated_at FROM videos WHERE id = 1").fetchone()
+        jobs = conn.execute("SELECT COUNT(*) AS count FROM media_jobs").fetchone()["count"]
+
+    assert summary.indexed == 0
+    assert row["updated_at"] == "2000-01-01"
+    assert jobs == 0
+
+
+def test_scan_queue_coalesces_same_path(tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+
+    import asyncio
+
+    asyncio.run(scanner.enqueue(root / "one.mp4", "upsert"))
+    asyncio.run(scanner.enqueue(root / "one.mp4", "delete"))
+
+    with db.connect() as conn:
+        rows = conn.execute("SELECT path, action, status FROM scan_queue").fetchall()
+
+    assert len(rows) == 1
+    assert rows[0]["action"] == "delete"
+    assert rows[0]["status"] == "pending"
+
+
+def test_media_worker_completes_deferred_metadata_and_thumbnail(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "new.mp4"
+    target.write_bytes(b"video")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+    scanner.cache_dir.mkdir(parents=True, exist_ok=True)
+    scanner._scan_sync(Settings(video_root=str(root)))
+
+    monkeypatch.setattr(
+        "app.scanner.probe_video",
+        lambda path: ProbeResult(12, 1920, 1080, 10, "hevc", "420", 8_000_000),
+    )
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda path, output, *args: output.write_bytes(b"thumb"))
+    monkeypatch.setattr("app.scanner.generate_preview_thumbnail", lambda source, output: output)
+
+    summary = scanner._process_media_jobs_sync(Settings(video_root=str(root)), limit=1)
+
+    with db.connect() as conn:
+        video = conn.execute(
+            "SELECT duration_seconds, bit_depth, is_10bit, thumb_status FROM videos WHERE path = ?",
+            (str(target),),
+        ).fetchone()
+        jobs = conn.execute("SELECT COUNT(*) AS count FROM media_jobs").fetchone()["count"]
+
+    assert summary.indexed == 1
+    assert summary.thumbnails == 1
+    assert video["duration_seconds"] == 12
+    assert video["bit_depth"] == 10
+    assert video["is_10bit"] == 1
+    assert video["thumb_status"] == "ready"
+    assert jobs == 0
+
+
 def test_scan_folder_deletes_only_missing_folder_records(monkeypatch, tmp_path):
     root = tmp_path / "media"
     target = root / "target"

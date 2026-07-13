@@ -1,0 +1,40 @@
+{% macro asset_card(video, compact=False, favorite_context=False) %}
+  <article class="asset-item {% if compact %}asset-item--compact{% endif %}">
+    <a
+      class="asset-card asset-card--{{ video.type }}"
+      href="/video/{{ video.id }}/play"
+      data-video-id="{{ video.id }}"
+      data-video-type="{{ video.type }}"
+      data-settings-url="/video/{{ video.id }}"
+      data-timeline-url="/?view=timeline{% if video.timeline_day_anchor %}#{{ video.timeline_day_anchor }}{% endif %}"
+      data-favorite-state="{{ 1 if video.favorite else 0 }}"
+      {% if favorite_context %}data-favorite-menu="1"{% endif %}
+      aria-label="播放 {{ video.name }}"
+    >
+      {% if video.type == "panorama" and video.thumb_status == "ready" %}
+        <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="" loading="lazy" decoding="async"></span>
+      {% endif %}
+      <span class="asset-thumb">
+        {% if video.thumb_status == "ready" %}
+          <img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="{{ video.name }}" loading="lazy" decoding="async">
+        {% else %}
+          <span class="poster-empty">{% if video.thumb_status == "error" %}封面失败{% else %}生成中{% endif %}</span>
+        {% endif %}
+      </span>
+      {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
+      {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
+      <span class="asset-overlay">
+        <strong>{{ video.name }}</strong>
+        <span>{% if video.width and video.height %}{{ video.width }}×{{ video.height }}{% endif %}</span>
+      </span>
+    </a>
+    <div class="asset-caption">
+      <strong title="{{ video.name }}">{{ video.name }}</strong>
+      <span>
+        {% if settings.show_date %}{{ video.mtime|date }}{% endif %}
+        {% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}
+        {% if settings.show_duration %}{% if settings.show_date or settings.show_size %} · {% endif %}{{ video.duration_seconds|duration }}{% endif %}
+      </span>
+    </div>
+  </article>
+{% endmacro %}

@@ -42,12 +42,14 @@ from app.media import (
     stop_hls_transcode,
 )
 from app.scanner import Scanner, calculate_aspect_ratio, is_tenbit_depth
-from app.thumbnails import VideoToolError, probe_video
+from app.thumbnails import VideoToolError, generate_preview_thumbnail, probe_video
 
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
 TIMELINE_MIN_YEAR = 2010
+TIMELINE_PAGE_SIZE = 180
+INTRANET_HEALTH_GIF = bytes.fromhex("47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b")
 INTRANET_HEALTH_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -71,6 +73,8 @@ def create_app() -> FastAPI:
     app.state.db = db
     app.state.scanner = scanner
     app.state.maintenance_task = None
+    app.state.media_task = None
+    app.state.preview_thumbnail_lock = asyncio.Lock()
     app.state.manual_scan_pending = False
     app.state.thumbnail_refresh_pending = False
     app.state.metadata_recheck_pending = False
@@ -85,21 +89,29 @@ def create_app() -> FastAPI:
     async def startup() -> None:
         sync_settings_to_db(db, load_settings(config_dir))
         app.state.maintenance_task = asyncio.create_task(background_maintenance(app))
+        app.state.media_task = asyncio.create_task(background_media_worker(app))
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
-        task = app.state.maintenance_task
-        if task:
-            task.cancel()
+        for task in (app.state.maintenance_task, app.state.media_task):
+            if task:
+                task.cancel()
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
         settings = load_settings(config_dir)
         filters = read_filters(request)
-        rows = query_videos(db, filters)
-        stats = summarize_videos(rows)
+        all_rows = query_videos(db, filters)
+        rows = all_rows
+        timeline_has_more = False
+        timeline_next_cursor = None
+        if filters["view"] == "timeline" and len(all_rows) > TIMELINE_PAGE_SIZE:
+            rows = all_rows[:TIMELINE_PAGE_SIZE]
+            timeline_has_more = True
+            timeline_next_cursor = timeline_cursor(rows[-1])
+        stats = summarize_videos(all_rows)
         timeline_groups = build_timeline_groups(rows)
-        timeline_rail = build_timeline_rail(rows)
+        timeline_rail = build_timeline_rail(all_rows)
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -112,11 +124,39 @@ def create_app() -> FastAPI:
                 "timeline_groups": timeline_groups,
                 "timeline_rail": timeline_rail,
                 "timeline_cache": build_timeline_cache(timeline_groups, timeline_rail, filters),
-                "folder_browser": build_folder_browser(rows, filters),
-                "calendar_model": build_calendar_model(rows, filters),
-                "scan_running": is_background_busy(app),
+                "timeline_has_more": timeline_has_more,
+                "timeline_next_cursor": timeline_next_cursor,
+                "timeline_batch_url": build_timeline_batch_url(filters),
+                "folder_browser": build_folder_browser(all_rows, filters),
+                "calendar_model": build_calendar_model(all_rows, filters),
+                "scan_running": is_scan_running(app),
             },
         )
+
+    @app.get("/timeline-batch")
+    async def timeline_batch(request: Request):
+        settings = load_settings(config_dir)
+        filters = read_filters(request)
+        filters["view"] = "timeline"
+        try:
+            cursor = (
+                float(request.query_params["cursor_mtime"]),
+                int(request.query_params["cursor_id"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid timeline cursor")
+        rows = query_videos(db, filters, cursor=cursor, limit=TIMELINE_PAGE_SIZE + 1)
+        has_more = len(rows) > TIMELINE_PAGE_SIZE
+        page_rows = rows[:TIMELINE_PAGE_SIZE]
+        html = templates.get_template("_timeline_batch.html").render(
+            settings=settings,
+            timeline_groups=build_timeline_groups(page_rows),
+        )
+        return {
+            "html": html,
+            "has_more": has_more,
+            "next_cursor": timeline_cursor(page_rows[-1]) if has_more and page_rows else None,
+        }
 
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
@@ -243,14 +283,30 @@ def create_app() -> FastAPI:
     async def intranet_health():
         return JSONResponse({"ok": True, "service": "videorecback"}, headers=INTRANET_HEALTH_HEADERS)
 
+    @app.get("/intranet/health.gif")
+    async def intranet_health_gif():
+        return Response(INTRANET_HEALTH_GIF, media_type="image/gif", headers=INTRANET_HEALTH_HEADERS)
+
     @app.post("/scan")
     async def trigger_scan():
-        if is_background_busy(app):
+        if (
+            is_scan_running(app)
+            or bool(getattr(app.state, "thumbnail_refresh_pending", False))
+            or bool(getattr(app.state, "metadata_recheck_pending", False))
+        ):
             return RedirectResponse("/?scan=running", status_code=303)
         settings = load_settings(config_dir)
         app.state.manual_scan_pending = True
         asyncio.create_task(run_manual_scan(app, settings))
         return RedirectResponse("/?scan=running", status_code=303)
+
+    @app.get("/scan/status")
+    async def scan_status():
+        return {
+            "scanning": is_scan_running(app),
+            "processing_media": scanner.is_processing_media,
+            "pending_media": scanner.pending_media_jobs(),
+        }
 
     @app.post("/scan-queue")
     async def queue_incremental_scan(
@@ -391,12 +447,28 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/thumb/{video_id}.webp")
-    async def thumb(video_id: int):
+    async def thumb(video_id: int, preview: int = 0):
         video = get_video(db, video_id)
         thumb_path = video["thumb_path"]
         if video["thumb_status"] != "ready" or not thumb_path or not Path(thumb_path).exists():
             raise HTTPException(status_code=404, detail="Thumbnail is not ready")
-        return FileResponse(thumb_path, media_type="image/webp")
+        selected_path = Path(thumb_path)
+        if preview:
+            preview_path = data_dir / "cache" / f"{video_id}-preview.webp"
+            if not preview_path.exists():
+                async with app.state.preview_thumbnail_lock:
+                    if not preview_path.exists():
+                        try:
+                            await asyncio.to_thread(generate_preview_thumbnail, selected_path, preview_path)
+                        except OSError:
+                            LOGGER.exception("Preview thumbnail generation failed for video %s.", video_id)
+            if preview_path.exists():
+                selected_path = preview_path
+        return FileResponse(
+            selected_path,
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
 
     return app
 
@@ -428,14 +500,32 @@ async def background_maintenance(app: FastAPI) -> None:
         await app.state.scanner.scan(settings)
 
 
+async def background_media_worker(app: FastAPI) -> None:
+    while True:
+        if getattr(app.state, "manual_scan_pending", False):
+            await asyncio.sleep(0.25)
+            continue
+        settings = load_settings(app.state.config_dir)
+        try:
+            summary = await app.state.scanner.process_media_jobs(settings, limit=1)
+        except Exception:
+            LOGGER.exception("Background media job failed unexpectedly.")
+            await asyncio.sleep(2.0)
+            continue
+        await asyncio.sleep(0.1 if summary.seen else 2.0)
+
+
 def is_scan_running(app: FastAPI) -> bool:
     scanner = app.state.scanner
     return bool(getattr(app.state, "manual_scan_pending", False) or getattr(scanner, "is_running", False))
 
 
 def is_background_busy(app: FastAPI) -> bool:
+    scanner = app.state.scanner
     return (
         is_scan_running(app)
+        or bool(getattr(scanner, "is_processing_media", False))
+        or scanner.pending_media_jobs() > 0
         or bool(getattr(app.state, "thumbnail_refresh_pending", False))
         or bool(getattr(app.state, "metadata_recheck_pending", False))
     )
@@ -581,7 +671,12 @@ def read_filters(request: Request) -> dict[str, str]:
     }
 
 
-def query_videos(db: Database, filters: dict[str, str]):
+def query_videos(
+    db: Database,
+    filters: dict[str, str],
+    cursor: tuple[float, int] | None = None,
+    limit: int | None = None,
+):
     clauses = ["missing = 0"]
     values: list[object] = []
     if filters["type"] != "all":
@@ -625,6 +720,9 @@ def query_videos(db: Database, filters: dict[str, str]):
             month_end = datetime(next_year, next_month, 1).timestamp()
             clauses.append("mtime >= ? AND mtime < ?")
             values.extend([month_start, month_end])
+    if cursor is not None:
+        clauses.append("(mtime < ? OR (mtime = ? AND id < ?))")
+        values.extend([cursor[0], cursor[0], cursor[1]])
 
     sql = f"""
         SELECT *,
@@ -633,8 +731,25 @@ def query_videos(db: Database, filters: dict[str, str]):
         WHERE {' AND '.join(clauses)}
         ORDER BY mtime DESC, id DESC
     """
+    if limit is not None:
+        sql += " LIMIT ?"
+        values.append(max(1, int(limit)))
     with db.connect() as conn:
         return conn.execute(sql, values).fetchall()
+
+
+def timeline_cursor(row) -> dict[str, int | float]:
+    return {"mtime": float(row["mtime"]), "id": int(row["id"])}
+
+
+def build_timeline_batch_url(filters: dict[str, str]) -> str:
+    values = {
+        key: value
+        for key, value in filters.items()
+        if value and value != "all" and key not in {"folder", "calendar_zoom", "calendar_year", "calendar_month"}
+    }
+    values["view"] = "timeline"
+    return "/timeline-batch?" + urlencode(values)
 
 
 def build_view_urls(filters: dict[str, str]) -> dict[str, str]:
@@ -800,6 +915,7 @@ def build_timeline_rail(rows) -> list[dict[str, object]]:
 
 
 def build_timeline_cache(groups, rail, filters: dict[str, str]) -> dict[str, object]:
+    del rail
     return {
         "filters": {
             "view": filters.get("view", "timeline"),
@@ -834,7 +950,6 @@ def build_timeline_cache(groups, rail, filters: dict[str, str]) -> dict[str, obj
             }
             for group in groups
         ],
-        "rail": rail,
     }
 
 

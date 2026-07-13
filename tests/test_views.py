@@ -97,8 +97,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_protocol"' in response.text
     assert "内网直连" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.5.2" in response.text
-    assert "/static/settings.js?v=2.5.2" in response.text
+    assert "/static/intranet.js?v=2.6.0" in response.text
+    assert "/static/settings.js?v=2.6.0" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
     assert "确认要刷新所有封面吗" in response.text
@@ -559,10 +559,56 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.5.2" in response.text
+    assert "/static/app.js?v=2.6.0" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
+
+
+def test_timeline_uses_batched_rendering(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    now = datetime(2026, 7, 8).timestamp()
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes)
+            VALUES (?, ?, ?, 0, 'flat', 1)
+            """,
+            [
+                (str(tmp_path / f"video-{index}.mp4"), f"video-{index}.mp4", now - index)
+                for index in range(400)
+            ],
+        )
+
+    with TestClient(app) as client:
+        first = client.get("/")
+        cursor_mtime = first.text.split('data-next-mtime="', 1)[1].split('"', 1)[0]
+        cursor_id = first.text.split('data-next-id="', 1)[1].split('"', 1)[0]
+        second = client.get(
+            "/timeline-batch",
+            params={"view": "timeline", "cursor_mtime": cursor_mtime, "cursor_id": cursor_id},
+        )
+
+    assert first.status_code == 200
+    assert first.text.count("data-video-id=") == main.TIMELINE_PAGE_SIZE
+    assert 'data-has-more="1"' in first.text
+    assert second.status_code == 200
+    assert second.json()["html"].count("data-video-id=") == main.TIMELINE_PAGE_SIZE
+    assert second.json()["has_more"] is True
+
+
+def test_intranet_health_gif_is_fast_probe_target(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+
+    with TestClient(app) as client:
+        response = client.get("/intranet/health.gif")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/gif"
+    assert response.headers["access-control-allow-origin"] == "*"
+    assert response.content.startswith(b"GIF89a")
 
 
 def test_refresh_all_thumbnails_route_marks_background_pending(monkeypatch, tmp_path):

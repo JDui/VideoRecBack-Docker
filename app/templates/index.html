@@ -4,52 +4,13 @@
 {% block chrome %}{% endblock %}
 {% block content %}
   {% set preview = videos[0] if videos else none %}
-  {% macro asset_card(video, compact=False, favorite_context=False) %}
-    <article class="asset-item {% if compact %}asset-item--compact{% endif %}">
-      <a
-        class="asset-card asset-card--{{ video.type }}"
-        href="/video/{{ video.id }}/play"
-        data-video-id="{{ video.id }}"
-        data-video-type="{{ video.type }}"
-        data-settings-url="/video/{{ video.id }}"
-        data-timeline-url="/?view=timeline{% if video.timeline_day_anchor %}#{{ video.timeline_day_anchor }}{% endif %}"
-        data-favorite-state="{{ 1 if video.favorite else 0 }}"
-        {% if favorite_context %}data-favorite-menu="1"{% endif %}
-        aria-label="播放 {{ video.name }}"
-      >
-        {% if video.type == "panorama" and video.thumb_status == "ready" %}
-          <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp" alt="" loading="lazy" decoding="async"></span>
-        {% endif %}
-        <span class="asset-thumb">
-          {% if video.thumb_status == "ready" %}
-            <img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}" loading="lazy" decoding="async">
-          {% else %}
-            <span class="poster-empty">{% if video.thumb_status == "error" %}封面失败{% else %}生成中{% endif %}</span>
-          {% endif %}
-        </span>
-        {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
-        {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
-        <span class="asset-overlay">
-          <strong>{{ video.name }}</strong>
-          <span>{% if video.width and video.height %}{{ video.width }}×{{ video.height }}{% endif %}</span>
-        </span>
-      </a>
-      <div class="asset-caption">
-        <strong title="{{ video.name }}">{{ video.name }}</strong>
-        <span>
-          {% if settings.show_date %}{{ video.mtime|date }}{% endif %}
-          {% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}
-          {% if settings.show_duration %}{% if settings.show_date or settings.show_size %} · {% endif %}{{ video.duration_seconds|duration }}{% endif %}
-        </span>
-      </div>
-    </article>
-  {% endmacro %}
+  {% from "_video_macros.html" import asset_card with context %}
 
   {% macro cover_tile(item, kind) %}
     <a class="folder-tile" href="{{ item.url if item.url is defined else '#' }}">
       <span class="folder-cover">
         {% if item.cover and item.cover.thumb_status == "ready" %}
-          <img src="/thumb/{{ item.cover.id }}.webp" alt="{{ item.label if item.label is defined else item.name }}" loading="lazy" decoding="async">
+          <img src="/thumb/{{ item.cover.id }}.webp?v={{ item.cover.thumb_version }}&amp;preview=1" alt="{{ item.label if item.label is defined else item.name }}" loading="lazy" decoding="async">
         {% endif %}
       </span>
       <span class="folder-info">
@@ -192,28 +153,18 @@
             {% endif %}
           </section>
         {% else %}
-          <section class="immich-timeline" data-timeline-root data-timeline-cache='{{ timeline_cache|tojson }}'>
-            <div class="timeline-stack">
-              {% for group in timeline_groups %}
-                <section class="timeline-section" id="{{ group.anchor }}" data-timeline-section data-timeline-point data-year="{{ group.year }}" data-month="{{ group.month }}" data-day="{{ group.day }}" data-label="{{ group.label }}" data-granularity="{{ group.granularity }}">
-                  <header class="timeline-section-head">
-                    <h2>{{ group.label }}</h2>
-                    <span>{{ group.videos|length }} 个视频</span>
-                  </header>
-                  {% for day in group.day_groups %}
-                    <div class="timeline-day-block" id="{{ day.anchor }}" data-timeline-day data-timeline-point data-year="{{ day.year }}" data-month="{{ day.month }}" data-day="{{ day.day }}" data-label="{{ day.label }}">
-                      <div class="timeline-day-divider">
-                        <span>{{ day.label }}</span>
-                        <small>{{ day.videos|length }} 个视频</small>
-                      </div>
-                      <div class="asset-grid timeline-asset-grid">
-                        {% for video in day.videos %}{{ asset_card(video) }}{% endfor %}
-                      </div>
-                    </div>
-                  {% endfor %}
-                </section>
-              {% endfor %}
+          <section
+            class="immich-timeline"
+            data-timeline-root
+            data-timeline-cache='{{ timeline_cache|tojson }}'
+            data-batch-url="{{ timeline_batch_url }}"
+            data-has-more="{{ '1' if timeline_has_more else '0' }}"
+            {% if timeline_next_cursor %}data-next-mtime="{{ timeline_next_cursor.mtime }}" data-next-id="{{ timeline_next_cursor.id }}"{% endif %}
+          >
+            <div class="timeline-stack" data-timeline-stack>
+              {% include "_timeline_batch.html" %}
             </div>
+            <div class="timeline-load-sentinel" data-timeline-load {% if not timeline_has_more %}hidden{% endif %}>继续加载</div>
             <aside class="timeline-jump-rail" aria-label="快速跳转时间线" data-timeline-jump>
               {% for year in timeline_rail %}
                 <div class="timeline-jump-year">
@@ -252,5 +203,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.5.2" defer></script>
+  <script src="/static/app.js?v=2.6.0" defer></script>
 {% endblock %}

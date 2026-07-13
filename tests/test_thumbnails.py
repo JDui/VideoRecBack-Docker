@@ -8,6 +8,7 @@ from app.thumbnails import (
     detect_bit_depth,
     detect_chroma_subsampling,
     flat_thumbnail_size,
+    generate_preview_thumbnail,
     midpoint,
     panorama_sample_times,
     panorama_thumbnail_size,
@@ -80,6 +81,37 @@ def test_flat_thumbnail_uses_configured_resolution_and_quality(monkeypatch, tmp_
     quality_index = commands[0].index("-quality") + 1
     assert commands[0][vf_index] == "scale=640:360:force_original_aspect_ratio=increase,crop=640:360"
     assert commands[0][quality_index] == "60"
+
+
+def test_preview_thumbnail_is_resized_and_cached(tmp_path):
+    source = tmp_path / "source.webp"
+    output = tmp_path / "preview.webp"
+    Image.new("RGB", (1280, 720), "red").save(source, format="WEBP")
+
+    generate_preview_thumbnail(source, output)
+    first_mtime = output.stat().st_mtime_ns
+    generate_preview_thumbnail(source, output)
+
+    with Image.open(output) as image:
+        assert image.size == (512, 288)
+    assert output.stat().st_mtime_ns == first_mtime
+
+
+def test_run_ffmpeg_limits_decoder_and_encoder_threads(monkeypatch):
+    captured = []
+
+    class Result:
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr(thumbnails.subprocess, "run", lambda command, **kwargs: captured.append(command) or Result())
+
+    thumbnails.run_ffmpeg(["ffmpeg", "-i", "input.mp4", "output.webp"])
+
+    command = captured[0]
+    assert command.count("-threads") == 2
+    assert all(command[index + 1] == "1" for index, value in enumerate(command) if value == "-threads")
+    assert command[command.index("-filter_threads") + 1] == "1"
 
 
 def test_panorama_thumbnail_retries_invalid_frame(monkeypatch, tmp_path):

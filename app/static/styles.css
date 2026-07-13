@@ -851,10 +851,10 @@ textarea {
 }
 
 .asset-item {
+  contain: layout style;
   display: grid;
   gap: 7px;
   min-width: 0;
-  transform: translateZ(0);
 }
 
 .app-shell.is-reveal-ready .asset-item,
@@ -880,8 +880,19 @@ textarea {
   display: block;
   overflow: hidden;
   position: relative;
-  transform: translateZ(0);
   transition: border-color var(--motion-med) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth), filter var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
+}
+
+.timeline-load-sentinel {
+  color: var(--muted);
+  font-size: 13px;
+  min-height: 48px;
+  padding: 16px;
+  text-align: center;
+}
+
+.timeline-load-sentinel[hidden] {
+  display: none;
 }
 
 .asset-card::after {

@@ -1,7 +1,9 @@
 const intranetConfig = document.body?.dataset || {};
 
-const PROBE_TIMEOUT_MS = 1600;
-const PROBE_INTERVAL_MS = 30000;
+const PROBE_TIMEOUT_MS = 900;
+const PROBE_INTERVAL_MS = 15000;
+const PROBE_RETRY_DELAYS_MS = [350, 1200, 3000];
+const REACHABLE_CACHE_TTL_MS = 10 * 60 * 1000;
 const jumpButton = document.querySelector("[data-intranet-jump]");
 const LOCAL_ACCESS = "local";
 const EXTERNAL_ACCESS = "external";
@@ -15,9 +17,13 @@ const configuredRedirectProtocol = () => {
 };
 
 const isPrivateHost = (host) => {
-  const match = String(host || "").trim().match(/^192\.168\.(\d{1,3})\.(\d{1,3})$/);
-  if (!match) return false;
-  return match.slice(1).every((part) => Number(part) >= 0 && Number(part) <= 255);
+  const value = String(host || "").trim().toLowerCase();
+  if (value === "localhost" || value === "::1") return true;
+  const parts = value.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  return parts[0] === 10 || parts[0] === 127 ||
+    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+    (parts[0] === 192 && parts[1] === 168);
 };
 
 const isLocalAccess = () => isPrivateHost(window.location.hostname);
@@ -44,6 +50,28 @@ const intranetOrigin = () => {
 const sameTarget = () => {
   const target = intranetOrigin();
   return target?.origin === window.location.origin;
+};
+
+const mixedContentProbeBlocked = () => {
+  const target = intranetOrigin();
+  return window.location.protocol === "https:" && target?.protocol === "http:";
+};
+
+const reachabilityCacheKey = () => `videorecback-intranet-reachable:${intranetOrigin()?.origin || ""}`;
+
+const hasRecentReachability = () => {
+  try {
+    const checkedAt = Number(localStorage.getItem(reachabilityCacheKey()) || 0);
+    return checkedAt > 0 && Date.now() - checkedAt < REACHABLE_CACHE_TTL_MS;
+  } catch {
+    return false;
+  }
+};
+
+const rememberReachability = () => {
+  try {
+    localStorage.setItem(reachabilityCacheKey(), String(Date.now()));
+  } catch {}
 };
 
 const redirectToIntranet = () => {
@@ -79,7 +107,7 @@ const showJumpButton = () => {
   jumpButton.addEventListener("click", redirectToIntranet);
 };
 
-const browserCanReachIntranet = async () => {
+const fetchHealthProbe = async () => {
   const target = intranetOrigin();
   if (!target) return false;
   target.pathname = "/intranet/health";
@@ -102,7 +130,60 @@ const browserCanReachIntranet = async () => {
   }
 };
 
+const imageHealthProbe = () => {
+  const target = intranetOrigin();
+  if (!target) return Promise.resolve(false);
+  target.pathname = "/intranet/health.gif";
+  target.searchParams.set("_vbr_probe", String(Date.now()));
+  return new Promise((resolve) => {
+    const image = new Image();
+    const timeout = window.setTimeout(() => {
+      image.src = "";
+      resolve(false);
+    }, PROBE_TIMEOUT_MS);
+    image.onload = () => {
+      window.clearTimeout(timeout);
+      resolve(true);
+    };
+    image.onerror = () => {
+      window.clearTimeout(timeout);
+      resolve(false);
+    };
+    image.src = target.toString();
+  });
+};
+
+const browserCanReachIntranet = async () => {
+  const probes = [fetchHealthProbe(), imageHealthProbe()];
+  return new Promise((resolve) => {
+    let remaining = probes.length;
+    for (const probe of probes) {
+      probe.then((reachable) => {
+        if (reachable) {
+          resolve(true);
+          return;
+        }
+        remaining -= 1;
+        if (remaining === 0) resolve(false);
+      });
+    }
+  });
+};
+
 markAccess();
+
+let activeProbe = null;
+let retryIndex = 0;
+let retryTimer = null;
+
+const scheduleFastRetry = () => {
+  if (retryTimer || retryIndex >= PROBE_RETRY_DELAYS_MS.length) return;
+  retryTimer = window.setTimeout(() => {
+    retryTimer = null;
+    retryIndex += 1;
+    refreshJumpButton();
+  }, PROBE_RETRY_DELAYS_MS[retryIndex]);
+};
 
 const refreshJumpButton = async () => {
   markAccess();
@@ -114,11 +195,21 @@ const refreshJumpButton = async () => {
     hideJumpButton();
     return;
   }
-  const reachable = await browserCanReachIntranet();
+  if (mixedContentProbeBlocked() || hasRecentReachability()) {
+    showJumpButton();
+    if (mixedContentProbeBlocked()) return;
+  }
+  if (activeProbe) return;
+  activeProbe = browserCanReachIntranet();
+  const reachable = await activeProbe;
+  activeProbe = null;
   if (reachable) {
+    retryIndex = 0;
+    rememberReachability();
     showJumpButton();
   } else {
-    hideJumpButton();
+    if (!hasRecentReachability()) hideJumpButton();
+    scheduleFastRetry();
   }
 };
 
