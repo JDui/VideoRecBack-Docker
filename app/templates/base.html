@@ -4,7 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ settings.site_title if settings else "视频归档" }}{% endblock %}</title>
-    <link rel="stylesheet" href="/static/styles.css?v=2.6.2">
+    <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/static/styles.css?v=2.7">
     {% block head %}{% endblock %}
   </head>
   <body
@@ -15,21 +16,81 @@
     data-intranet-redirect-protocol="{{ settings.intranet_redirect_protocol if settings else 'http' }}"
   >
     {% block chrome %}
-      <header class="topbar">
-        <a class="brand" href="/">{{ settings.site_title if settings else "视频归档" }}</a>
-        <nav class="nav">
-          <a class="nav-link" href="/">时间线</a>
-          <form action="/scan" method="post">
-            <button class="nav-button" type="submit">扫描</button>
-          </form>
-          <a class="nav-button secondary" href="/settings">设置</a>
+      <header class="topbar global-topbar">
+        <a class="brand" href="/" aria-label="返回视频库">
+          <img src="/static/brand-logo.png" alt="VideoRecBack">
+        </a>
+        <nav class="global-view-switch" aria-label="视图">
+          <a class="{% if filters is defined and filters.view == 'timeline' %}active{% endif %}" href="/">时间线</a>
+          <a class="{% if filters is defined and filters.view == 'folders' %}active{% endif %}" href="/?view=folders">文件夹</a>
+          <a class="{% if filters is defined and filters.view == 'calendar' %}active{% endif %}" href="/?view=calendar">日历</a>
+          <a class="{% if filters is defined and filters.view == 'favorites' %}active{% endif %}" href="/?view=favorites">收藏</a>
+          <button class="intranet-jump-button" type="button" data-intranet-jump hidden>跳转内网</button>
         </nav>
+        <div class="global-actions">
+          {% if filters is defined %}
+            <details class="filter-menu">
+              <summary><i class="bi bi-funnel" aria-hidden="true"></i>筛选<i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+              <form class="filterbar" method="get" action="/">
+                <input type="hidden" name="view" value="{{ filters.view }}">
+                {% if filters.view == "folders" and filters.folder %}<input type="hidden" name="folder" value="{{ filters.folder }}">{% endif %}
+                {% if filters.view == "calendar" %}<input type="hidden" name="calendar_zoom" value="{{ filters.calendar_zoom }}">{% endif %}
+                {% if filters.view == "calendar" and filters.calendar_year %}<input type="hidden" name="calendar_year" value="{{ filters.calendar_year }}">{% endif %}
+                {% if filters.view == "calendar" and filters.calendar_month %}<input type="hidden" name="calendar_month" value="{{ filters.calendar_month }}">{% endif %}
+                <label>
+                  视频类型
+                  <select name="type">
+                    <option value="all" {% if filters.type == 'all' %}selected{% endif %}>全部</option>
+                    <option value="flat" {% if filters.type == 'flat' %}selected{% endif %}>平面</option>
+                    <option value="panorama" {% if filters.type == 'panorama' %}selected{% endif %}>全景</option>
+                  </select>
+                </label>
+                <label>
+                  视频时长
+                  <select name="duration">
+                    <option value="all" {% if filters.duration == 'all' %}selected{% endif %}>任意时长</option>
+                    <option value="short" {% if filters.duration == 'short' %}selected{% endif %}>短于 1 分钟</option>
+                    <option value="medium" {% if filters.duration == 'medium' %}selected{% endif %}>1 到 10 分钟</option>
+                    <option value="long" {% if filters.duration == 'long' %}selected{% endif %}>长于 10 分钟</option>
+                  </select>
+                </label>
+                <label>
+                  宽高比
+                  <select name="aspect">
+                    <option value="all" {% if filters.aspect == 'all' %}selected{% endif %}>全部</option>
+                    <option value="wide" {% if filters.aspect == 'wide' %}selected{% endif %}>横向</option>
+                    <option value="vertical" {% if filters.aspect == 'vertical' %}selected{% endif %}>竖向</option>
+                    <option value="square" {% if filters.aspect == 'square' %}selected{% endif %}>方形</option>
+                  </select>
+                </label>
+                <label>
+                  开始日期
+                  <input name="date_from" type="date" value="{{ filters.date_from }}">
+                </label>
+                <label>
+                  结束日期
+                  <input name="date_to" type="date" value="{{ filters.date_to }}">
+                </label>
+                <button type="submit">应用筛选</button>
+              </form>
+            </details>
+            <form class="global-search" method="get" action="/" role="search">
+              <i class="bi bi-search" aria-hidden="true"></i>
+              <input type="hidden" name="view" value="{{ filters.view }}">
+              <input name="q" value="{{ filters.q }}" placeholder="搜索视频" aria-label="搜索视频">
+              <span>⌘ K</span>
+            </form>
+          {% else %}
+            <div class="global-search global-search--static"><i class="bi bi-search" aria-hidden="true"></i><span>搜索视频</span><span>⌘ K</span></div>
+          {% endif %}
+          <a class="topbar-link {% if request.url.path == '/settings' %}active{% endif %}" href="/settings"><i class="bi bi-gear" aria-hidden="true"></i>设置</a>
+        </div>
       </header>
     {% endblock %}
     <main class="page">
       {% block content %}{% endblock %}
     </main>
-    <script src="/static/intranet.js?v=2.6.1" defer></script>
+    <script src="/static/intranet.js?v=2.7" defer></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

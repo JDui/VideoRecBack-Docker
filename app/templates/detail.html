@@ -1,42 +1,54 @@
 {% extends "base.html" %}
 {% block title %}{{ video.name }} - {{ settings.site_title }}{% endblock %}
+{% block body_class %}detail-page{% endblock %}
 {% block content %}
-  <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
-  <section class="detail-shell">
-    <a class="detail-poster asset-card--{{ video.type }}" href="/video/{{ video.id }}/play">
-      {% if video.thumb_status == "ready" %}
-        <img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}">
-      {% else %}
-        <span class="poster-empty">{% if video.thumb_status == "error" %}封面生成失败{% else %}等待封面{% endif %}</span>
-      {% endif %}
-    </a>
-    <div class="detail-panel">
-      <span class="asset-type static">{% if video.type == "panorama" %}全景{% else %}平面{% endif %}</span>
-      <h1>{{ video.name }}</h1>
-      <dl class="meta-table">
-        <div><dt>日期</dt><dd>{{ video.mtime|date }}</dd></div>
-        <div><dt>大小</dt><dd>{{ video.size_bytes|size }}</dd></div>
-        <div><dt>时长</dt><dd>{{ video.duration_seconds|duration }}</dd></div>
-        <div><dt>画幅</dt><dd>{% if video.width and video.height %}{{ video.width }} × {{ video.height }}{% else %}未知{% endif %}</dd></div>
-        <div><dt>位深</dt><dd>{% if video.bit_depth %}{{ video.bit_depth }}bit{% else %}未知{% endif %}</dd></div>
-        <div><dt>色度采样</dt><dd>{{ video.chroma_subsampling or "未知" }}</dd></div>
-        <div><dt>平均码率</dt><dd>{{ video.average_bitrate|bitrate }}</dd></div>
-        <div><dt>文件夹</dt><dd>{{ video.folder or "/" }}</dd></div>
-      </dl>
-      {% if video.thumb_error %}
-        <p class="error">{{ video.thumb_error }}</p>
-      {% endif %}
-      <p class="path-text">{{ video.path }}</p>
-      <form action="/video/{{ video.id }}/type" method="post" class="form">
-        <label>
-          视频类型
-          <select name="video_type">
-            <option value="flat" {% if video.type == "flat" %}selected{% endif %}>平面</option>
-            <option value="panorama" {% if video.type == "panorama" %}selected{% endif %}>全景</option>
-          </select>
-        </label>
-        <button type="submit">保存视频设置</button>
-      </form>
-    </div>
+  <section class="detail-layout">
+    <aside class="detail-sidebar" aria-label="媒体库导航">
+      <a class="detail-sidebar-item" href="/"><i class="bi bi-grid" aria-hidden="true"></i><span>概览</span></a>
+      <a class="detail-sidebar-item active" href="/?view=timeline"><i class="bi bi-clock-history" aria-hidden="true"></i><span>时间线</span></a>
+      <a class="detail-sidebar-item" href="/?view=folders"><i class="bi bi-folder2" aria-hidden="true"></i><span>文件</span></a>
+      <a class="detail-sidebar-item" href="/?view=calendar"><i class="bi bi-calendar3" aria-hidden="true"></i><span>日历</span></a>
+      <div class="sidebar-bottom"><section class="library-summary-card"><div class="library-summary-card__head"><strong>媒体库</strong><a href="/settings">更多</a></div><p>视频归档浏览器</p><div class="library-summary-bar"><span style="width: 68%"></span></div><small>保持索引最新</small></section></div>
+    </aside>
+    <main class="detail-content">
+      <header class="detail-toolbar">
+        <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i>返回时间线</a>
+        <div class="detail-neighbors"><button class="icon-button" type="button" aria-label="上一条"><i class="bi bi-chevron-left" aria-hidden="true"></i></button><span>上一条</span><span>下一条</span><button class="icon-button" type="button" aria-label="下一条"><i class="bi bi-chevron-right" aria-hidden="true"></i></button></div>
+      </header>
+      <section class="detail-shell">
+        <div class="detail-media-column">
+          <a class="detail-poster asset-card--{{ video.type }}" href="/video/{{ video.id }}/play">
+            {% if video.thumb_status == "ready" %}<img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}">{% else %}<span class="poster-empty">{% if video.thumb_status == "error" %}封面生成失败{% else %}等待封面{% endif %}</span>{% endif %}
+            <span class="detail-poster-duration">{{ video.duration_seconds|duration }}</span>
+          </a>
+          <div class="detail-thumb-strip"><a class="active" href="/video/{{ video.id }}/play">{% if video.thumb_status == "ready" %}<img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}">{% endif %}</a></div>
+        </div>
+        <div class="detail-panel">
+          <header class="detail-panel-head"><h1>{{ video.name }}</h1><div><button class="icon-button" type="button" aria-label="收藏"><i class="bi bi-star" aria-hidden="true"></i></button><button class="icon-button" type="button" aria-label="更多操作"><i class="bi bi-three-dots" aria-hidden="true"></i></button></div></header>
+          <dl class="meta-table">
+            <div><dt>文件路径</dt><dd>{{ video.path }}</dd></div>
+            <div><dt>文件大小</dt><dd>{{ video.size_bytes|size }}</dd></div>
+            <div><dt>时长</dt><dd>{{ video.duration_seconds|duration }}</dd></div>
+            <div><dt>分辨率</dt><dd>{% if video.width and video.height %}{{ video.width }} × {{ video.height }}{% else %}未知{% endif %}</dd></div>
+            <div><dt>编码格式</dt><dd>{{ video.video_codec or "未知" }}</dd></div>
+            <div><dt>色深</dt><dd>{% if video.bit_depth %}{{ video.bit_depth }}bit{% else %}未知{% endif %}</dd></div>
+            <div><dt>帧率</dt><dd>{{ video.frame_rate or "未知" }}</dd></div>
+            <div><dt>码率</dt><dd>{{ video.average_bitrate|bitrate }}</dd></div>
+            <div><dt>创建时间</dt><dd>{{ video.mtime|date }}</dd></div>
+            <div><dt>修改时间</dt><dd>{{ video.mtime|date }}</dd></div>
+          </dl>
+          <div class="detail-tags"><strong>标签</strong><div><span>旅行</span><span>日落</span><span>湖泊</span><span>山脉</span><button class="icon-button" type="button" aria-label="添加标签"><i class="bi bi-plus-lg" aria-hidden="true"></i></button></div></div>
+          {% if video.thumb_error %}<p class="error">{{ video.thumb_error }}</p>{% endif %}
+          <form action="/video/{{ video.id }}/type" method="post" class="form detail-type-form">
+            <label>视频类型<select name="video_type"><option value="flat" {% if video.type == "flat" %}selected{% endif %}>平面</option><option value="panorama" {% if video.type == "panorama" %}selected{% endif %}>全景</option></select></label>
+            <button type="submit">保存视频设置</button>
+          </form>
+        </div>
+        <aside class="detail-actions-panel">
+          <section class="detail-action-card"><h2>快速操作</h2><a class="detail-action-button active" href="#type"><i class="bi bi-pencil-square" aria-hidden="true"></i>修改类型</a><form action="/video/{{ video.id }}/favorite" method="post"><input type="hidden" name="favorite" value="{{ 0 if video.favorite else 1 }}"><button class="detail-action-button" type="submit"><i class="bi bi-star" aria-hidden="true"></i>{{ "取消收藏" if video.favorite else "添加/取消收藏" }}</button></form><a class="detail-action-button" href="/video/{{ video.id }}/play"><i class="bi bi-image" aria-hidden="true"></i>重新生成封面</a><a class="detail-action-button" href="/video/{{ video.id }}/play"><i class="bi bi-download" aria-hidden="true"></i>打开播放页</a><a class="detail-action-button" href="{{ video.path }}"><i class="bi bi-folder2-open" aria-hidden="true"></i>在文件夹中查看</a></section>
+          <section class="detail-action-card detail-note-card"><h2>备注</h2><textarea placeholder="点击添加备注…" maxlength="500"></textarea><div><span>0 / 500</span><button type="button" disabled>保存</button></div></section>
+        </aside>
+      </section>
+    </main>
   </section>
 {% endblock %}

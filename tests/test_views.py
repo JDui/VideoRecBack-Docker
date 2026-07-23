@@ -97,8 +97,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_protocol"' in response.text
     assert "内网直连" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.6.1" in response.text
-    assert "/static/settings.js?v=2.6.1" in response.text
+    assert "/static/intranet.js?v=2.7" in response.text
+    assert "/static/settings.js?v=2.7" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
     assert "确认要刷新所有封面吗" in response.text
@@ -561,7 +561,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.6.2" in response.text
+    assert "/static/app.js?v=2.7" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
@@ -606,11 +606,14 @@ def test_intranet_health_gif_is_fast_probe_target(monkeypatch, tmp_path):
 
     with TestClient(app) as client:
         response = client.get("/intranet/health.gif")
+        preflight = client.options("/intranet/health.gif")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/gif"
     assert response.headers["access-control-allow-origin"] == "*"
     assert response.content.startswith(b"GIF89a")
+    assert preflight.status_code == 204
+    assert preflight.headers["access-control-allow-private-network"] == "true"
 
 
 def test_refresh_all_thumbnails_route_marks_background_pending(monkeypatch, tmp_path):

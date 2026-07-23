@@ -381,6 +381,7 @@ const openInlinePlayer = (card, panePosition) => {
   }
   configureFavoriteButton(inlineFavorite, card);
   window.requestAnimationFrame(() => restorePanePosition(panePosition));
+  window.setTimeout(() => restorePanePosition(panePosition), 0);
 };
 
 const closeInlinePlayer = () => {

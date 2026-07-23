@@ -1,13 +1,23 @@
 {% extends "base.html" %}
 {% block title %}设置 - {{ settings.site_title }}{% endblock %}
+{% block body_class %}settings-page{% endblock %}
 {% block content %}
-  <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
   <section class="settings-shell">
-    <div>
-      <p class="eyebrow">Preferences</p>
-      <h1>设置</h1>
-      <p class="muted">配置页面标题、扫描策略和时间线下方的元数据展示。</p>
-    </div>
+    <aside class="settings-sidebar" aria-label="设置导航">
+      <a class="settings-side-item active" href="#general"><i class="bi bi-gear" aria-hidden="true"></i><span>常规</span></a>
+      <a class="settings-side-item" href="#library"><i class="bi bi-collection" aria-hidden="true"></i><span>媒体库</span></a>
+      <a class="settings-side-item" href="#playback"><i class="bi bi-play-circle" aria-hidden="true"></i><span>播放</span></a>
+      <a class="settings-side-item" href="#thumbnail"><i class="bi bi-image" aria-hidden="true"></i><span>缩略图</span></a>
+      <a class="settings-side-item" href="#transcode"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>转码</span></a>
+      <a class="settings-side-item" href="#cache"><i class="bi bi-safe" aria-hidden="true"></i><span>缓存</span></a>
+      <a class="settings-side-item" href="#network"><i class="bi bi-globe2" aria-hidden="true"></i><span>网络</span></a>
+      <a class="settings-side-item" href="#about"><i class="bi bi-info-circle" aria-hidden="true"></i><span>关于</span></a>
+    </aside>
+    <div class="settings-content">
+      <header class="settings-heading" id="general">
+        <div><p class="eyebrow">Preferences</p><h1>设置</h1></div>
+        <p class="muted">配置页面标题、扫描策略和时间线下方的元数据展示。</p>
+      </header>
     <form class="form settings-form" action="/settings" method="post">
       <label>
         页面标题
@@ -92,7 +102,7 @@
           跳转端口
           <input name="intranet_redirect_port" type="number" min="1" max="65535" value="{{ settings.intranet_redirect_port }}" placeholder="8080">
         </label>
-        <p class="settings-help">从公网入口访问时会立即提供内网跳转按钮，并在后台验证直连状态。新版浏览器可能在首次访问时询问本地网络权限。</p>
+        <p class="settings-help">浏览器确认当前网址不是内网地址，并能直接访问上述内网服务后，才会显示跳转按钮。新版浏览器可能在首次探测时询问本地网络权限。</p>
       </fieldset>
       <label>
         视频扩展名
@@ -187,8 +197,9 @@
         </form>
       </div>
     </section>
+    </div>
   </section>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/settings.js?v=2.6.1" defer></script>
+  <script src="/static/settings.js?v=2.7" defer></script>
 {% endblock %}

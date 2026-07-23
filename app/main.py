@@ -6,7 +6,7 @@ import os
 import re
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -128,6 +128,7 @@ def create_app() -> FastAPI:
                 "timeline_next_cursor": timeline_next_cursor,
                 "timeline_batch_url": build_timeline_batch_url(filters),
                 "folder_browser": build_folder_browser(all_rows, filters),
+                "folder_tree": build_folder_tree(all_rows, filters),
                 "calendar_model": build_calendar_model(all_rows, filters),
                 "scan_running": is_scan_running(app),
             },
@@ -279,6 +280,10 @@ def create_app() -> FastAPI:
     async def intranet_health_options():
         return Response(status_code=204, headers=INTRANET_HEALTH_HEADERS)
 
+    @app.options("/intranet/health.gif")
+    async def intranet_health_gif_options():
+        return Response(status_code=204, headers=INTRANET_HEALTH_HEADERS)
+
     @app.get("/intranet/health")
     async def intranet_health():
         return JSONResponse({"ok": True, "service": "videorecback"}, headers=INTRANET_HEALTH_HEADERS)
@@ -364,7 +369,7 @@ def create_app() -> FastAPI:
         return RedirectResponse(f"/video/{video_id}", status_code=303)
 
     @app.post("/video/{video_id}/favorite")
-    async def update_video_favorite(video_id: int, favorite: int = Form(...)):
+    async def update_video_favorite(request: Request, video_id: int, favorite: int = Form(...)):
         try:
             next_value = 1 if int(favorite) else 0
         except (TypeError, ValueError) as exc:
@@ -380,6 +385,8 @@ def create_app() -> FastAPI:
             )
             if result.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Video not found")
+        if "text/html" in request.headers.get("accept", ""):
+            return RedirectResponse(f"/video/{video_id}", status_code=303)
         return {"ok": True, "favorite": bool(next_value)}
 
     @app.get("/video/{video_id}/play", response_class=HTMLResponse)
@@ -1004,6 +1011,46 @@ def build_folder_browser(rows, filters: dict[str, str]) -> dict[str, object]:
     }
 
 
+def build_folder_tree(rows, filters: dict[str, str]) -> dict[str, object]:
+    root = {
+        "name": "全部视频",
+        "path": "",
+        "count": len(rows),
+        "url": folder_url(filters, ""),
+        "children": {},
+    }
+    for row in rows:
+        folder = (row["folder"] or "").strip("/")
+        node = root
+        current_path = ""
+        for part in filter(None, folder.split("/")):
+            current_path = f"{current_path}/{part}".strip("/")
+            children = node["children"]
+            child = children.setdefault(
+                part,
+                {
+                    "name": part,
+                    "path": current_path,
+                    "count": 0,
+                    "url": folder_url(filters, current_path),
+                    "children": {},
+                },
+            )
+            child["count"] = int(child["count"]) + 1
+            node = child
+
+    def normalize(node: dict[str, object]) -> dict[str, object]:
+        children = node.pop("children")
+        node["children"] = [
+            normalize(child)
+            for child in sorted(children.values(), key=lambda value: str(value["name"]).lower())
+        ]
+        return node
+
+    normalized_root = normalize(root)
+    return {"root": normalized_root, "total": len(rows)}
+
+
 def folder_url(filters: dict[str, str], folder: str) -> str:
     values = {
         key: value
@@ -1061,22 +1108,43 @@ def build_calendar_model(rows, filters: dict[str, str]) -> dict[str, object]:
             ],
         }
 
-    months: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    if not selected_year and rows:
+        selected_year = datetime.fromtimestamp(rows[0]["mtime"]).strftime("%Y")
+    if not selected_month and rows:
+        selected_month = datetime.fromtimestamp(rows[0]["mtime"]).strftime("%m")
+    year = int(selected_year) if selected_year.isdigit() else datetime.now().year
+    month = int(selected_month) if selected_month.isdigit() and 1 <= int(selected_month) <= 12 else datetime.now().month
+    first_day = datetime(year, month, 1)
+    next_month = datetime(year + (month == 12), 1 if month == 12 else month + 1, 1)
+    leading_days = (first_day.weekday() + 1) % 7
+    days_in_month = (next_month - first_day).days
+    videos_by_day: dict[int, list] = defaultdict(list)
     for row in rows:
         date = datetime.fromtimestamp(row["mtime"])
-        months[date.strftime("%Y年%m月")][date.strftime("%d日")].append(row)
+        if date.year == year and date.month == month:
+            videos_by_day[date.day].append(row)
+    calendar_cells = []
+    for offset in range(leading_days + days_in_month):
+        day = offset - leading_days + 1
+        if day < 1:
+            previous = first_day - timedelta(days=leading_days - offset)
+            calendar_cells.append({"day": previous.day, "date": previous.strftime("%Y-%m-%d"), "in_month": False, "videos": [], "count": 0})
+        else:
+            videos = videos_by_day.get(day, [])
+            calendar_cells.append({"day": day, "date": f"{year:04d}-{month:02d}-{day:02d}", "in_month": True, "videos": videos[:4], "count": len(videos)})
+    while len(calendar_cells) % 7:
+        next_day = next_month + timedelta(days=len(calendar_cells) - (leading_days + days_in_month))
+        calendar_cells.append({"day": next_day.day, "date": next_day.strftime("%Y-%m-%d"), "in_month": False, "videos": [], "count": 0})
+    weeks = [calendar_cells[index:index + 7] for index in range(0, len(calendar_cells), 7)]
     return {
         "zoom": zoom,
         "zoom_urls": calendar_zoom_urls(filters),
-        "selected_year": selected_year,
-        "selected_month": selected_month,
-        "months": [
-            {
-                "label": month,
-                "days": [{"label": day, "videos": videos} for day, videos in days.items()],
-            }
-            for month, days in months.items()
-        ],
+        "selected_year": str(year),
+        "selected_month": str(month),
+        "month_label": f"{year}年{month}月",
+        "month_prev_url": calendar_url(filters, "day", year=str(year if month > 1 else year - 1), month=str(month - 1 if month > 1 else 12)),
+        "month_next_url": calendar_url(filters, "day", year=str(year if month < 12 else year + 1), month=str(month + 1 if month < 12 else 1)),
+        "weeks": weeks,
     }
 
 
