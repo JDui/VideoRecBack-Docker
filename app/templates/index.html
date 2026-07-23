@@ -41,7 +41,6 @@
       {% if filters.view == "folders" %}
         <header class="sidebar-head">
           <h1>文件夹</h1>
-          <button class="icon-button" type="button" aria-label="收起文件夹导航"><i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i></button>
         </header>
         <nav class="folder-tree" aria-label="文件夹导航">
           {{ folder_node(folder_tree.root, folder_browser.current) }}
@@ -49,17 +48,15 @@
       {% elif filters.view == "favorites" %}
         <header class="sidebar-head">
           <h1>收藏</h1>
-          <button class="icon-button" type="button" aria-label="收藏视图选项"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
         </header>
         <nav class="sidebar-nav" aria-label="收藏筛选">
-          <a class="sidebar-nav-item active" href="/?view=favorites"><i class="bi bi-clock-history" aria-hidden="true"></i><span>全部收藏</span><em>{{ stats.total }}</em></a>
-          <a class="sidebar-nav-item" href="/?view=favorites&amp;type=flat"><i class="bi bi-play-btn" aria-hidden="true"></i><span>平面视频</span><em>{{ stats.flat }}</em></a>
-          <a class="sidebar-nav-item" href="/?view=favorites&amp;type=panorama"><i class="bi bi-badge-vr" aria-hidden="true"></i><span>全景视频</span><em>{{ stats.panorama }}</em></a>
+          <a class="sidebar-nav-item {% if filters.type in ['', 'all'] %}active{% endif %}" href="/?view=favorites"><i class="bi bi-clock-history" aria-hidden="true"></i><span>全部收藏</span><em>{{ stats.total }}</em></a>
+          <a class="sidebar-nav-item {% if filters.type == 'flat' %}active{% endif %}" href="/?view=favorites&amp;type=flat"><i class="bi bi-play-btn" aria-hidden="true"></i><span>平面视频</span><em>{{ stats.flat }}</em></a>
+          <a class="sidebar-nav-item {% if filters.type == 'panorama' %}active{% endif %}" href="/?view=favorites&amp;type=panorama"><i class="bi bi-badge-vr" aria-hidden="true"></i><span>全景视频</span><em>{{ stats.panorama }}</em></a>
         </nav>
       {% else %}
         <header class="sidebar-head">
           <h1>时间线</h1>
-          <button class="icon-button" type="button" aria-label="时间线选项"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
         </header>
         <a class="sidebar-summary {% if filters.view == 'timeline' and not filters.type %}active{% endif %}" href="{{ view_urls.timeline }}">
           <i class="bi bi-collection-play" aria-hidden="true"></i><span>全部视频</span><em>{{ stats.total }}</em>
@@ -105,9 +102,12 @@
           <section class="favorites-view">
             <header class="content-heading">
               <div><h2>全部收藏</h2><span>{{ videos|length }} 个视频</span></div>
-              <div class="content-heading-actions"><select aria-label="收藏排序"><option>按收藏时间</option><option>按拍摄时间</option></select><button class="icon-button" type="button" aria-label="切换列表视图"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button><button class="icon-button" type="button" aria-label="切换紧凑视图"><i class="bi bi-list" aria-hidden="true"></i></button></div>
+              <div class="content-heading-actions" role="group" aria-label="收藏布局">
+                <button class="icon-button active" type="button" data-asset-layout="grid" aria-label="网格视图" aria-pressed="true"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button>
+                <button class="icon-button" type="button" data-asset-layout="list" aria-label="列表视图" aria-pressed="false"><i class="bi bi-list" aria-hidden="true"></i></button>
+              </div>
             </header>
-            <div class="asset-grid">{% for video in videos %}{{ asset_card(video, False, True) }}{% endfor %}</div>
+            <div class="asset-grid" data-asset-layout-grid>{% for video in videos %}{{ asset_card(video, False, True) }}{% endfor %}</div>
           </section>
           <div class="favorite-context-menu" data-favorite-context-menu hidden>
             <button type="button" data-favorite-action="timeline">跳转到时间线位置</button>
@@ -119,7 +119,7 @@
               <div class="breadcrumbs">
                 {% for crumb in folder_browser.breadcrumbs %}<a href="{{ crumb.url }}">{{ crumb.label }}</a>{% endfor %}
               </div>
-              <span>共 {{ folder_browser.files|length }} 个视频</span>
+              <span>共 {{ folder_browser.total_count }} 个视频</span>
             </header>
             {% if folder_browser.folders %}
               <div class="folder-grid">{% for folder in folder_browser.folders %}{{ cover_tile(folder, "文件夹") }}{% endfor %}</div>
@@ -132,7 +132,7 @@
               <div class="calendar-header">
                 <div class="calendar-pager"><a class="icon-button" href="{{ calendar_model.month_prev_url }}" aria-label="上个月"><i class="bi bi-chevron-left" aria-hidden="true"></i></a><a class="today-button" href="{{ calendar_model.zoom_urls.day }}">今天</a><a class="icon-button" href="{{ calendar_model.month_next_url }}" aria-label="下个月"><i class="bi bi-chevron-right" aria-hidden="true"></i></a></div>
                 <h2>{{ calendar_model.month_label }}<i class="bi bi-chevron-down" aria-hidden="true"></i></h2>
-                <div class="calendar-zoom"><a class="active" href="{{ calendar_model.zoom_urls.day }}">月</a><a class="disabled" href="#">周</a><a class="disabled" href="#">日</a></div>
+                <div class="calendar-zoom"><a class="active" href="{{ calendar_model.zoom_urls.day }}">月</a><button type="button" disabled aria-label="周视图暂不可用">周</button><button type="button" disabled aria-label="日视图暂不可用">日</button></div>
               </div>
               <div class="calendar-grid" role="grid">
                 {% for label in ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] %}<div class="calendar-weekday" role="columnheader">{{ label }}</div>{% endfor %}
@@ -151,7 +151,19 @@
                 <div class="asset-grid compact-grid">{% for week in calendar_model.weeks %}{% for cell in week %}{% for video in cell.videos %}{{ asset_card(video, True) }}{% endfor %}{% endfor %}{% endfor %}</div>
               </section>
             {% else %}
-              <header class="content-heading"><div><h2>日历</h2><span>选择年份和月份查看视频</span></div><div class="calendar-zoom">{% for level in ["year", "month", "day"] %}<a class="{% if calendar_model.zoom == level %}active{% endif %} {% if calendar_model.zoom_urls[level] == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls[level] }}">{{ "年" if level == "year" else "月" if level == "month" else "日" }}</a>{% endfor %}</div></header>
+              <header class="content-heading">
+                <div><h2>日历</h2><span>选择年份和月份查看视频</span></div>
+                <div class="calendar-zoom">
+                  {% for level in ["year", "month", "day"] %}
+                    {% set level_label = "年" if level == "year" else "月" if level == "month" else "日" %}
+                    {% if calendar_model.zoom_urls[level] == "#" %}
+                      <button type="button" disabled aria-label="{{ level_label }}视图需要先选择对应日期">{{ level_label }}</button>
+                    {% else %}
+                      <a class="{% if calendar_model.zoom == level %}active{% endif %}" href="{{ calendar_model.zoom_urls[level] }}">{{ level_label }}</a>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </header>
               <div class="calendar-aggregate-grid">{% for item in calendar_model.groups %}{{ cover_tile(item, "日" if calendar_model.zoom == "month" else "月") }}{% endfor %}</div>
             {% endif %}
           </section>
@@ -172,7 +184,7 @@
         <strong>播放：<span data-inline-player-title></span></strong>
         <div class="inline-player-actions">
           <button class="icon-button favorite-toggle" type="button" data-inline-favorite hidden aria-pressed="false" aria-label="收藏"><i class="bi bi-star" aria-hidden="true"></i><span data-favorite-label>收藏</span></button>
-          <a class="icon-button" href="#" data-inline-settings hidden aria-label="视频设置"><i class="bi bi-pencil-square" aria-hidden="true"></i></a>
+          <a class="icon-button" href="/settings" data-inline-settings hidden aria-label="视频设置"><i class="bi bi-pencil-square" aria-hidden="true"></i></a>
           <button class="icon-button" type="button" data-close-player aria-label="关闭播放器"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -181,5 +193,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.7" defer></script>
+  <script src="/static/app.js?v=2.7-r1" defer></script>
 {% endblock %}

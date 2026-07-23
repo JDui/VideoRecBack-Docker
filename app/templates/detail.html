@@ -12,8 +12,12 @@
     </aside>
     <main class="detail-content">
       <header class="detail-toolbar">
-        <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i>返回时间线</a>
-        <div class="detail-neighbors"><button class="icon-button" type="button" aria-label="上一条"><i class="bi bi-chevron-left" aria-hidden="true"></i></button><span>上一条</span><span>下一条</span><button class="icon-button" type="button" aria-label="下一条"><i class="bi bi-chevron-right" aria-hidden="true"></i></button></div>
+        <a class="back-link" href="/"><i class="bi bi-arrow-left" aria-hidden="true"></i>返回时间线</a>
+        <nav class="detail-neighbors" aria-label="相邻视频">
+          {% if previous_id %}<a class="detail-neighbor" href="/video/{{ previous_id }}"><i class="bi bi-chevron-left" aria-hidden="true"></i>上一条</a>{% else %}<span class="detail-neighbor disabled" aria-disabled="true"><i class="bi bi-chevron-left" aria-hidden="true"></i>上一条</span>{% endif %}
+          <span class="detail-neighbor-divider" aria-hidden="true"></span>
+          {% if next_id %}<a class="detail-neighbor" href="/video/{{ next_id }}">下一条<i class="bi bi-chevron-right" aria-hidden="true"></i></a>{% else %}<span class="detail-neighbor disabled" aria-disabled="true">下一条<i class="bi bi-chevron-right" aria-hidden="true"></i></span>{% endif %}
+        </nav>
       </header>
       <section class="detail-shell">
         <div class="detail-media-column">
@@ -24,7 +28,13 @@
           <div class="detail-thumb-strip"><a class="active" href="/video/{{ video.id }}/play">{% if video.thumb_status == "ready" %}<img src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}">{% endif %}</a></div>
         </div>
         <div class="detail-panel">
-          <header class="detail-panel-head"><h1>{{ video.name }}</h1><div><button class="icon-button" type="button" aria-label="收藏"><i class="bi bi-star" aria-hidden="true"></i></button><button class="icon-button" type="button" aria-label="更多操作"><i class="bi bi-three-dots" aria-hidden="true"></i></button></div></header>
+          <header class="detail-panel-head">
+            <h1>{{ video.name }}</h1>
+            <form class="detail-favorite-form" action="/video/{{ video.id }}/favorite" method="post">
+              <input type="hidden" name="favorite" value="{{ 0 if video.favorite else 1 }}">
+              <button class="icon-button {% if video.favorite %}active{% endif %}" type="submit" aria-label="{{ '取消收藏' if video.favorite else '收藏' }}"><i class="bi {{ 'bi-star-fill' if video.favorite else 'bi-star' }}" aria-hidden="true"></i></button>
+            </form>
+          </header>
           <dl class="meta-table">
             <div><dt>文件路径</dt><dd>{{ video.path }}</dd></div>
             <div><dt>文件大小</dt><dd>{{ video.size_bytes|size }}</dd></div>
@@ -37,16 +47,21 @@
             <div><dt>创建时间</dt><dd>{{ video.mtime|date }}</dd></div>
             <div><dt>修改时间</dt><dd>{{ video.mtime|date }}</dd></div>
           </dl>
-          <div class="detail-tags"><strong>标签</strong><div><span>旅行</span><span>日落</span><span>湖泊</span><span>山脉</span><button class="icon-button" type="button" aria-label="添加标签"><i class="bi bi-plus-lg" aria-hidden="true"></i></button></div></div>
           {% if video.thumb_error %}<p class="error">{{ video.thumb_error }}</p>{% endif %}
-          <form action="/video/{{ video.id }}/type" method="post" class="form detail-type-form">
+          <form id="video-type" action="/video/{{ video.id }}/type" method="post" class="form detail-type-form">
             <label>视频类型<select name="video_type"><option value="flat" {% if video.type == "flat" %}selected{% endif %}>平面</option><option value="panorama" {% if video.type == "panorama" %}selected{% endif %}>全景</option></select></label>
             <button type="submit">保存视频设置</button>
           </form>
         </div>
         <aside class="detail-actions-panel">
-          <section class="detail-action-card"><h2>快速操作</h2><a class="detail-action-button active" href="#type"><i class="bi bi-pencil-square" aria-hidden="true"></i>修改类型</a><form action="/video/{{ video.id }}/favorite" method="post"><input type="hidden" name="favorite" value="{{ 0 if video.favorite else 1 }}"><button class="detail-action-button" type="submit"><i class="bi bi-star" aria-hidden="true"></i>{{ "取消收藏" if video.favorite else "添加/取消收藏" }}</button></form><a class="detail-action-button" href="/video/{{ video.id }}/play"><i class="bi bi-image" aria-hidden="true"></i>重新生成封面</a><a class="detail-action-button" href="/video/{{ video.id }}/play"><i class="bi bi-download" aria-hidden="true"></i>打开播放页</a><a class="detail-action-button" href="{{ video.path }}"><i class="bi bi-folder2-open" aria-hidden="true"></i>在文件夹中查看</a></section>
-          <section class="detail-action-card detail-note-card"><h2>备注</h2><textarea placeholder="点击添加备注…" maxlength="500"></textarea><div><span>0 / 500</span><button type="button" disabled>保存</button></div></section>
+          <section class="detail-action-card">
+            <h2>快速操作</h2>
+            <a class="detail-action-button active" href="#video-type"><i class="bi bi-pencil-square" aria-hidden="true"></i>修改类型</a>
+            <form action="/video/{{ video.id }}/favorite" method="post"><input type="hidden" name="favorite" value="{{ 0 if video.favorite else 1 }}"><button class="detail-action-button" type="submit"><i class="bi {{ 'bi-star-fill' if video.favorite else 'bi-star' }}" aria-hidden="true"></i>{{ "取消收藏" if video.favorite else "添加收藏" }}</button></form>
+            <form action="/video/{{ video.id }}/refresh-thumbnail" method="post" onsubmit="return window.confirm('确认要重新生成当前视频封面吗？');"><button class="detail-action-button" type="submit"><i class="bi bi-image" aria-hidden="true"></i>重新生成封面</button></form>
+            <a class="detail-action-button" href="/video/{{ video.id }}/play"><i class="bi bi-play-circle" aria-hidden="true"></i>打开播放页</a>
+            <a class="detail-action-button" href="{{ folder_link }}"><i class="bi bi-folder2-open" aria-hidden="true"></i>在文件夹中查看</a>
+          </section>
         </aside>
       </section>
     </main>

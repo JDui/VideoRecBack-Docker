@@ -15,9 +15,12 @@ const scanForm = document.querySelector("[data-scan-form]");
 const scanButton = document.querySelector("[data-scan-button]");
 const scanLabel = document.querySelector("[data-scan-label]");
 const favoriteContextMenu = document.querySelector("[data-favorite-context-menu]");
+const assetLayoutGrid = document.querySelector("[data-asset-layout-grid]");
+const assetLayoutButtons = [...document.querySelectorAll("[data-asset-layout]")];
 const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
 const TIMELINE_POSITION_KEY = "videorecback-timeline-position";
+const ASSET_LAYOUT_KEY = "videorecback-favorites-layout";
 let inlineFrameClearTimer = null;
 let restoredReturnState = null;
 let pendingReturnPosition = null;
@@ -199,35 +202,35 @@ if (previewSize) {
   });
 }
 
-let revealObserver = null;
+const applyAssetLayout = (layout) => {
+  if (!assetLayoutGrid) return;
+  const normalized = layout === "list" ? "list" : "grid";
+  assetLayoutGrid.classList.toggle("is-list-view", normalized === "list");
+  for (const button of assetLayoutButtons) {
+    const active = button.dataset.assetLayout === normalized;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+  try {
+    localStorage.setItem(ASSET_LAYOUT_KEY, normalized);
+  } catch {}
+};
+
+if (assetLayoutGrid && assetLayoutButtons.length) {
+  let savedLayout = "grid";
+  try {
+    savedLayout = localStorage.getItem(ASSET_LAYOUT_KEY) || "grid";
+  } catch {}
+  applyAssetLayout(savedLayout);
+  for (const button of assetLayoutButtons) {
+    button.addEventListener("click", () => applyAssetLayout(button.dataset.assetLayout));
+  }
+}
 
 const registerRevealTargets = (root = document) => {
-  if (!shell) return;
-  const targets = [...root.querySelectorAll(".asset-item:not(.is-visible), .folder-tile:not(.is-visible)")];
-  if (!targets.length) return;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reducedMotion || !("IntersectionObserver" in window)) {
-    for (const target of targets) target.classList.add("is-visible");
-    return;
+  for (const target of root.querySelectorAll(".asset-item, .folder-tile")) {
+    target.classList.add("is-visible");
   }
-  shell.classList.add("is-reveal-ready");
-  targets.forEach((target, index) => {
-    target.style.setProperty("--reveal-delay", `${Math.min(index % 10, 9) * 18}ms`);
-  });
-  if (!revealObserver) {
-    revealObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        entry.target.classList.add("is-visible");
-        revealObserver.unobserve(entry.target);
-      }
-    }, {
-      root: libraryPane || null,
-      rootMargin: "90px 0px",
-      threshold: 0.08,
-    });
-  }
-  for (const target of targets) revealObserver.observe(target);
 };
 
 registerRevealTargets();
@@ -381,7 +384,6 @@ const openInlinePlayer = (card, panePosition) => {
   }
   configureFavoriteButton(inlineFavorite, card);
   window.requestAnimationFrame(() => restorePanePosition(panePosition));
-  window.setTimeout(() => restorePanePosition(panePosition), 0);
 };
 
 const closeInlinePlayer = () => {

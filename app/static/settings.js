@@ -1,4 +1,21 @@
 const panel = document.querySelector("[data-connectivity-test]");
+const settingsNavLinks = [...document.querySelectorAll(".settings-side-item[href^='#']")];
+
+const activateSettingsSection = (hash = window.location.hash || "#general") => {
+  for (const link of settingsNavLinks) {
+    const active = link.getAttribute("href") === hash;
+    link.classList.toggle("active", active);
+    if (active) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  }
+};
+
+for (const link of settingsNavLinks) {
+  link.addEventListener("click", () => activateSettingsSection(link.getAttribute("href")));
+}
+
+window.addEventListener("hashchange", () => activateSettingsSection());
+activateSettingsSection();
 
 if (panel) {
   const startButton = panel.querySelector("[data-connectivity-start]");

@@ -15,7 +15,7 @@
     </aside>
     <div class="settings-content">
       <header class="settings-heading" id="general">
-        <div><p class="eyebrow">Preferences</p><h1>设置</h1></div>
+        <div><p class="eyebrow">偏好设置</p><h1>设置</h1></div>
         <p class="muted">配置页面标题、扫描策略和时间线下方的元数据展示。</p>
       </header>
     <form class="form settings-form" action="/settings" method="post">
@@ -23,7 +23,7 @@
         页面标题
         <input name="site_title" type="text" value="{{ settings.site_title }}" required>
       </label>
-      <label>
+      <label id="library">
         视频目标路径
         <input name="video_root" type="text" value="{{ settings.video_root }}" required>
       </label>
@@ -31,7 +31,7 @@
         定期扫描间隔，小时（0 为关闭自动扫描）
         <input name="scan_interval_hours" type="number" min="0" value="{{ settings.scan_interval_hours }}" required>
       </label>
-      <label>
+      <label id="playback">
         默认播放音量，百分比
         <input name="default_volume_percent" type="number" min="0" max="100" value="{{ settings.default_volume_percent }}" required>
       </label>
@@ -53,7 +53,7 @@
           <option value="high" {% if settings.default_panorama_quality == 'high' %}selected{% endif %}>流畅</option>
         </select>
       </label>
-      <label>
+      <label id="thumbnail">
         封面分辨率
         <select name="thumbnail_resolution">
           <option value="480" {% if settings.thumbnail_resolution == 480 %}selected{% endif %}>480P</option>
@@ -61,7 +61,7 @@
           <option value="720" {% if settings.thumbnail_resolution == 720 %}selected{% endif %}>720P</option>
         </select>
       </label>
-      <label>
+      <label id="transcode">
         平面视频 HLS 转码编码器
         <select name="flat_hls_encoder">
           <option value="h264_qsv" {% if settings.flat_hls_encoder == 'h264_qsv' %}selected{% endif %}>h264_qsv（硬件优先，性能开销最低）</option>
@@ -79,12 +79,12 @@
           <option value="libx264_veryfast" {% if settings.panorama_hls_encoder == 'libx264_veryfast' %}selected{% endif %}>libx264 veryfast（CPU 画质优先）</option>
         </select>
       </label>
-      <label>
+      <label id="cache">
         HLS 最大缓存占用，MB
         <input name="hls_cache_max_mb" type="number" min="256" max="102400" value="{{ settings.hls_cache_max_mb }}" required>
         <input name="stream_cache_retention_days" type="hidden" value="{{ settings.stream_cache_retention_days }}">
       </label>
-      <fieldset class="settings-fieldset">
+      <fieldset class="settings-fieldset" id="network">
         <legend>内网直连</legend>
         <label class="check"><input type="checkbox" name="intranet_keepalive_enabled" {% if settings.intranet_keepalive_enabled %}checked{% endif %}>启用内网直连检测</label>
         <label>
@@ -197,9 +197,16 @@
         </form>
       </div>
     </section>
+    <section class="settings-action-panel settings-about-panel" id="about">
+      <div>
+        <strong>关于 VideoRecBack</strong>
+        <p class="muted">当前版本 2.7。用于浏览、索引和播放 NAS 中的视频归档。</p>
+      </div>
+      <a class="topbar-link" href="/">返回视频库</a>
+    </section>
     </div>
   </section>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/settings.js?v=2.7" defer></script>
+  <script src="/static/settings.js?v=2.7-r1" defer></script>
 {% endblock %}

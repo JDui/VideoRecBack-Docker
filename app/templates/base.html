@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ settings.site_title if settings else "视频归档" }}{% endblock %}</title>
     <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="/static/styles.css?v=2.7">
+    <link rel="stylesheet" href="/static/styles.css?v=2.7-r3">
     {% block head %}{% endblock %}
   </head>
   <body
@@ -25,9 +25,9 @@
           <a class="{% if filters is defined and filters.view == 'folders' %}active{% endif %}" href="/?view=folders">文件夹</a>
           <a class="{% if filters is defined and filters.view == 'calendar' %}active{% endif %}" href="/?view=calendar">日历</a>
           <a class="{% if filters is defined and filters.view == 'favorites' %}active{% endif %}" href="/?view=favorites">收藏</a>
-          <button class="intranet-jump-button" type="button" data-intranet-jump hidden>跳转内网</button>
         </nav>
         <div class="global-actions">
+          <button class="intranet-jump-button topbar-link" type="button" data-intranet-jump hidden>跳转内网</button>
           {% if filters is defined %}
             <details class="filter-menu">
               <summary><i class="bi bi-funnel" aria-hidden="true"></i>筛选<i class="bi bi-chevron-down" aria-hidden="true"></i></summary>

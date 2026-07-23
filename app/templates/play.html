@@ -121,12 +121,11 @@
         <div><dt>码率</dt><dd>{{ video.average_bitrate|bitrate }}</dd></div>
         <div><dt>创建时间</dt><dd>{{ video.mtime|date }}</dd></div>
       </dl>
-      <div class="inline-video-tags"><strong>标签</strong><div><span>旅行</span><span>日落</span><span>湖泊</span><span>山脉</span><button class="icon-button" type="button" aria-label="添加标签"><i class="bi bi-plus-lg" aria-hidden="true"></i></button></div></div>
     </section>
     {% endif %}
   </section>
 {% endblock %}
 {% block scripts %}
   <script src="/static/vendor/hls.min.js"></script>
-  <script type="module" src="/static/player.js?v=2.7"></script>
+  <script type="module" src="/static/player.js?v=2.7-r1"></script>
 {% endblock %}

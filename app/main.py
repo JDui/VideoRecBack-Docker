@@ -342,10 +342,34 @@ def create_app() -> FastAPI:
     @app.get("/video/{video_id}", response_class=HTMLResponse)
     async def video_detail(request: Request, video_id: int):
         video = get_video(db, video_id)
+        with db.connect() as conn:
+            ordered_videos = conn.execute(
+                """
+                SELECT id
+                FROM videos
+                WHERE missing = 0
+                ORDER BY mtime DESC, id DESC
+                """
+            ).fetchall()
+        ordered_ids = [int(row["id"]) for row in ordered_videos]
+        current_index = ordered_ids.index(video_id) if video_id in ordered_ids else -1
+        previous_id = ordered_ids[current_index - 1] if current_index > 0 else None
+        next_id = (
+            ordered_ids[current_index + 1]
+            if current_index >= 0 and current_index + 1 < len(ordered_ids)
+            else None
+        )
+        folder_link = folder_url({"view": "folders"}, (video["folder"] or "").strip("/"))
         return templates.TemplateResponse(
             request,
             "detail.html",
-            {"video": video, "settings": load_settings(config_dir)},
+            {
+                "video": video,
+                "settings": load_settings(config_dir),
+                "previous_id": previous_id,
+                "next_id": next_id,
+                "folder_link": folder_link,
+            },
         )
 
     @app.post("/video/{video_id}/type")
@@ -366,6 +390,22 @@ def create_app() -> FastAPI:
             )
         LOGGER.info("Video %s type changed to %s; rebuilding only this thumbnail, no full scan.", video_id, video_type)
         await asyncio.to_thread(scanner.rebuild_video_thumbnail, video_id, video_type)
+        return RedirectResponse(f"/video/{video_id}", status_code=303)
+
+    @app.post("/video/{video_id}/refresh-thumbnail")
+    async def refresh_video_thumbnail(video_id: int):
+        video = get_video(db, video_id)
+        with db.connect() as conn:
+            conn.execute(
+                """
+                UPDATE videos
+                SET thumb_status = 'pending', thumb_version = 0, thumb_error = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (video_id,),
+            )
+        await asyncio.to_thread(scanner.rebuild_video_thumbnail, video_id, video["type"])
         return RedirectResponse(f"/video/{video_id}", status_code=303)
 
     @app.post("/video/{video_id}/favorite")
@@ -1008,6 +1048,7 @@ def build_folder_browser(rows, filters: dict[str, str]) -> dict[str, object]:
         "breadcrumbs": breadcrumbs,
         "folders": sorted(child_dirs.values(), key=lambda item: str(item["name"]).lower()),
         "files": files,
+        "total_count": len(files) + sum(int(item["count"]) for item in child_dirs.values()),
     }
 
 
