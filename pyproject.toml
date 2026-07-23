@@ -1,6 +1,6 @@
 [project]
 name = "videorecback"
-version = "2.7"
+version = "2.6.3"
 description = "A clean NAS video archive browser with cached previews."
 requires-python = ">=3.12"
 dependencies = [

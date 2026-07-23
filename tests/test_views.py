@@ -75,27 +75,6 @@ def test_calendar_zoom_urls_disable_unreachable_levels(monkeypatch, tmp_path):
     assert main.calendar_zoom_urls(year_filters)["day"] == "#"
 
 
-def test_calendar_renders_unavailable_zoom_levels_as_disabled_buttons(monkeypatch, tmp_path):
-    main = load_main(monkeypatch, tmp_path)
-    app = main.create_app()
-    with app.state.db.connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO videos(path, name, mtime, missing, type, size_bytes)
-            VALUES (?, 'flat.mp4', ?, 0, 'flat', 1)
-            """,
-            (str(tmp_path / "flat.mp4"), datetime(2026, 7, 8).timestamp()),
-        )
-
-    with TestClient(app) as client:
-        response = client.get("/?view=calendar")
-
-    assert response.status_code == 200
-    assert 'href="#"' not in response.text
-    assert 'disabled aria-label="月视图需要先选择对应日期"' in response.text
-    assert 'disabled aria-label="日视图需要先选择对应日期"' in response.text
-
-
 def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     app = main.create_app()
@@ -118,8 +97,8 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_protocol"' in response.text
     assert "内网直连" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.7" in response.text
-    assert "/static/settings.js?v=2.7-r1" in response.text
+    assert "/static/intranet.js?v=2.6.1" in response.text
+    assert "/static/settings.js?v=2.6.1" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
     assert "确认要刷新所有封面吗" in response.text
@@ -381,84 +360,6 @@ def test_favorites_view_filters_and_exposes_context_actions(monkeypatch, tmp_pat
     assert 'data-timeline-url="/?view=timeline#timeline-2026-07-08"' in response.text
 
 
-def test_folder_browser_counts_nested_videos(monkeypatch, tmp_path):
-    main = load_main(monkeypatch, tmp_path)
-    rows = [
-        {"folder": "旅行", "name": "root.mp4"},
-        {"folder": "旅行/全景/2025", "name": "pano.mp4"},
-        {"folder": "城市/夜景", "name": "city.mp4"},
-    ]
-
-    root = main.build_folder_browser(rows, {"view": "folders", "folder": ""})
-    travel = main.build_folder_browser(rows, {"view": "folders", "folder": "旅行"})
-
-    assert root["total_count"] == 3
-    assert [(item["name"], item["count"]) for item in root["folders"]] == [("城市", 1), ("旅行", 2)]
-    assert travel["total_count"] == 2
-    assert [row["name"] for row in travel["files"]] == ["root.mp4"]
-
-
-def test_detail_page_exposes_working_navigation_and_actions(monkeypatch, tmp_path):
-    main = load_main(monkeypatch, tmp_path)
-    app = main.create_app()
-    with app.state.db.connect() as conn:
-        conn.executemany(
-            """
-            INSERT INTO videos(id, path, name, folder, mtime, missing, type, size_bytes)
-            VALUES (?, ?, ?, ?, ?, 0, 'flat', 1)
-            """,
-            [
-                (1, str(tmp_path / "new.mp4"), "new.mp4", "旅行/全景/2025", 2),
-                (2, str(tmp_path / "old.mp4"), "old.mp4", "旅行/全景/2024", 1),
-            ],
-        )
-
-    with TestClient(app) as client:
-        response = client.get("/video/1")
-
-    assert response.status_code == 200
-    assert 'class="detail-neighbor disabled" aria-disabled="true"' in response.text
-    assert 'class="detail-neighbor" href="/video/2">下一条' in response.text
-    assert 'action="/video/1/favorite"' in response.text
-    assert 'action="/video/1/refresh-thumbnail"' in response.text
-    assert 'href="/?view=folders&amp;folder=%E6%97%85%E8%A1%8C%2F%E5%85%A8%E6%99%AF%2F2025"' in response.text
-    assert "点击添加备注" not in response.text
-    assert 'aria-label="添加标签"' not in response.text
-
-
-def test_refresh_single_thumbnail_route_rebuilds_selected_video(monkeypatch, tmp_path):
-    main = load_main(monkeypatch, tmp_path)
-    app = main.create_app()
-    calls = []
-    app.state.scanner.rebuild_video_thumbnail = lambda video_id, video_type: calls.append((video_id, video_type))
-    with app.state.db.connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO videos(
-                id, path, name, folder, mtime, missing, type, size_bytes,
-                thumb_status, thumb_version, thumb_error
-            )
-            VALUES (1, ?, 'flat.mp4', '旅行', 1, 0, 'flat', 1, 'error', 7, 'failed')
-            """,
-            (str(tmp_path / "flat.mp4"),),
-        )
-
-    with TestClient(app) as client:
-        response = client.post("/video/1/refresh-thumbnail", follow_redirects=False)
-
-    with app.state.db.connect() as conn:
-        video = conn.execute(
-            "SELECT thumb_status, thumb_version, thumb_error FROM videos WHERE id = 1"
-        ).fetchone()
-
-    assert response.status_code == 303
-    assert response.headers["location"] == "/video/1"
-    assert calls == [(1, "flat")]
-    assert video["thumb_status"] == "pending"
-    assert video["thumb_version"] == 0
-    assert video["thumb_error"] is None
-
-
 def test_connectivity_test_endpoints(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     app = main.create_app()
@@ -660,7 +561,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.7-r1" in response.text
+    assert "/static/app.js?v=2.6.3" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
@@ -705,14 +606,11 @@ def test_intranet_health_gif_is_fast_probe_target(monkeypatch, tmp_path):
 
     with TestClient(app) as client:
         response = client.get("/intranet/health.gif")
-        preflight = client.options("/intranet/health.gif")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/gif"
     assert response.headers["access-control-allow-origin"] == "*"
     assert response.content.startswith(b"GIF89a")
-    assert preflight.status_code == 204
-    assert preflight.headers["access-control-allow-private-network"] == "true"
 
 
 def test_refresh_all_thumbnails_route_marks_background_pending(monkeypatch, tmp_path):

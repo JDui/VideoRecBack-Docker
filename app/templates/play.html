@@ -106,26 +106,9 @@
         </label>
       {% endif %}
     </div>
-    {% if embed %}
-    <section class="inline-video-info" aria-label="视频信息">
-      <h2>视频信息</h2>
-      <dl>
-        <div><dt>文件名</dt><dd>{{ video.name }}</dd></div>
-        <div><dt>文件路径</dt><dd>{{ video.path }}</dd></div>
-        <div><dt>文件大小</dt><dd>{{ video.size_bytes|size }}</dd></div>
-        <div><dt>时长</dt><dd>{{ video.duration_seconds|duration }}</dd></div>
-        <div><dt>分辨率</dt><dd>{% if video.width and video.height %}{{ video.width }} × {{ video.height }}{% else %}未知{% endif %}</dd></div>
-        <div><dt>编码格式</dt><dd>{{ video.video_codec or "未知" }}</dd></div>
-        <div><dt>帧率</dt><dd>{{ video.frame_rate or "未知" }}</dd></div>
-        <div><dt>色深</dt><dd>{% if video.bit_depth %}{{ video.bit_depth }}bit{% else %}未知{% endif %}</dd></div>
-        <div><dt>码率</dt><dd>{{ video.average_bitrate|bitrate }}</dd></div>
-        <div><dt>创建时间</dt><dd>{{ video.mtime|date }}</dd></div>
-      </dl>
-    </section>
-    {% endif %}
   </section>
 {% endblock %}
 {% block scripts %}
   <script src="/static/vendor/hls.min.js"></script>
-  <script type="module" src="/static/player.js?v=2.7-r1"></script>
+  <script type="module" src="/static/player.js?v=2.6.3"></script>
 {% endblock %}

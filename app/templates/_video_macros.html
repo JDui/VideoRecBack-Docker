@@ -22,20 +22,19 @@
         {% endif %}
       </span>
       {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
-      {% if video.favorite %}<span class="asset-favorite-marker" aria-label="已收藏"><i class="bi bi-star-fill" aria-hidden="true"></i></span>{% endif %}
-      {% if video.type == "panorama" %}<span class="asset-type-badge"><i class="bi bi-badge-vr" aria-hidden="true"></i>全景</span>{% endif %}
+      {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
+      <span class="asset-overlay">
+        <strong>{{ video.name }}</strong>
+        <span>{% if video.width and video.height %}{{ video.width }}×{{ video.height }}{% endif %}</span>
+      </span>
     </a>
     <div class="asset-caption">
       <strong title="{{ video.name }}">{{ video.name }}</strong>
-      <span class="asset-caption-meta">
-        <span class="asset-tags">
-          <span class="asset-tag">{% if video.type == "panorama" %}5.7K{% elif video.width and video.width >= 3800 %}4K{% else %}HD{% endif %}</span>
-          {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
-          <span class="asset-tag">{% if video.type == "panorama" %}全景{% elif video.width and video.height and video.width / video.height > 1.5 %}16:9{% else %}平面{% endif %}</span>
-        </span>
-        {% if settings.show_size %}<span class="asset-size">{{ video.size_bytes|size }}</span>{% endif %}
+      <span>
+        {% if settings.show_date %}{{ video.mtime|date }}{% endif %}
+        {% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}
+        {% if settings.show_duration %}{% if settings.show_date or settings.show_size %} · {% endif %}{{ video.duration_seconds|duration }}{% endif %}
       </span>
-      {% if settings.show_date %}<span class="asset-caption-date">{{ video.mtime|date }}{% if settings.show_duration %} · {{ video.duration_seconds|duration }}{% endif %}</span>{% endif %}
     </div>
   </article>
 {% endmacro %}
