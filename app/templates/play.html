@@ -38,7 +38,7 @@
       {% if video.thumb_status == "ready" %}
         <img class="player-poster" src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}" data-player-poster>
       {% else %}
-        <div class="player-poster player-poster--empty" data-player-poster>{{ video.name }}</div>
+        <div class="player-poster player-poster--empty" role="img" aria-label="{{ video.name }}" data-player-poster></div>
       {% endif %}
       {% if video.type == "panorama" %}
         <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
@@ -46,7 +46,12 @@
       {% else %}
         <video id="videoPlayer" class="player" playsinline preload="none" data-media-base="/media/{{ video.id }}"></video>
         <div class="player-center-action" data-player-center-action>播放</div>
-        <div class="flat-player-overlay" data-flat-controls>
+      {% endif %}
+      <div class="transcode-overlay" data-transcode-overlay hidden>正在切换转码中...</div>
+    </div>
+    <div class="player-controls">
+      {% if video.type != "panorama" %}
+        <div class="flat-player-bar" data-flat-controls>
           <input class="flat-player-progress" type="range" min="0" max="1000" value="0" aria-label="播放进度" data-seek-control>
           <div class="flat-player-controls">
             <button class="flat-control-button flat-control-button--icon" type="button" data-flat-play aria-label="播放" title="播放">
@@ -67,9 +72,6 @@
           </div>
         </div>
       {% endif %}
-      <div class="transcode-overlay" data-transcode-overlay hidden>正在切换转码中...</div>
-    </div>
-    <div class="player-controls">
       {% if video.type == "panorama" %}
         <label class="control-row progress-strip" aria-label="播放进度">
           <span class="control-label">进度</span>
@@ -108,5 +110,5 @@
 {% endblock %}
 {% block scripts %}
   <script src="/static/vendor/hls.min.js"></script>
-  <script type="module" src="/static/player.js?v=2.6.1"></script>
+  <script type="module" src="/static/player.js?v=2.6.2"></script>
 {% endblock %}

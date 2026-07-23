@@ -1770,7 +1770,7 @@ textarea {
 .player-shell {
   animation: shell-enter var(--motion-slow) var(--ease-snap);
   display: grid;
-  gap: 14px;
+  gap: 8px;
   transition: opacity var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
 }
 
@@ -1782,12 +1782,12 @@ textarea {
   height: 100vh;
   max-width: none;
   overflow: hidden;
-  padding: 14px 22px;
+  padding: 8px 14px;
 }
 
 .player-page--embed .page {
   height: 100vh;
-  padding: 12px;
+  padding: 8px;
 }
 
 .player-page .back-link {
@@ -1814,11 +1814,11 @@ textarea {
   gap: 10px;
   justify-content: space-between;
   min-width: 0;
-  padding: 10px;
+  padding: 6px 8px;
 }
 
 .player-toolbar h1 {
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1.1;
   margin: 0;
   min-width: 0;
@@ -1832,7 +1832,7 @@ textarea {
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px;
   justify-content: flex-end;
   min-width: 0;
 }
@@ -1930,7 +1930,6 @@ textarea {
 
 .player-stage:hover {
   box-shadow: var(--shadow-hover);
-  transform: translateY(-1px);
 }
 
 .player-stage.is-panorama {
@@ -2107,13 +2106,13 @@ textarea {
   color: #ffffff;
   cursor: pointer;
   display: flex;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 900;
-  height: 58px;
+  height: 44px;
   justify-content: center;
   left: 50%;
-  min-width: 58px;
-  padding: 0 18px;
+  min-width: 44px;
+  padding: 0 13px;
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
@@ -2127,35 +2126,17 @@ textarea {
   transform: translate(-50%, -50%) scale(0.96);
 }
 
-.flat-player-overlay {
-  backdrop-filter: blur(6px);
-  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.68) 56%, rgba(0, 0, 0, 0.88) 100%);
-  bottom: 0;
-  color: #ffffff;
+.flat-player-bar {
   display: grid;
-  gap: 8px;
-  left: 0;
-  opacity: 0;
-  padding: 54px 18px 14px;
-  pointer-events: none;
-  position: absolute;
-  right: 0;
-  transform: translateY(8px);
-  transition: opacity var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
-  z-index: 7;
-}
-
-.player-stage:hover .flat-player-overlay,
-.player-stage:focus-within .flat-player-overlay,
-.player-shell.is-paused .flat-player-overlay {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
+  gap: 6px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 2px 3px 4px;
 }
 
 .flat-player-progress {
   appearance: none;
-  background: linear-gradient(90deg, #ff1f1f, #ff1f1f) 0 / 0% 100% no-repeat, rgba(255, 255, 255, 0.32);
+  background: linear-gradient(90deg, var(--accent), var(--accent)) 0 / 0% 100% no-repeat, #dce2de;
   border: 0;
   border-radius: 999px;
   height: 5px;
@@ -2172,7 +2153,7 @@ textarea {
 
 .flat-player-progress::-webkit-slider-thumb {
   appearance: none;
-  background: #ff1f1f;
+  background: var(--accent);
   border: 2px solid #ffffff;
   border-radius: 999px;
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
@@ -2181,7 +2162,7 @@ textarea {
 }
 
 .flat-player-progress::-moz-range-thumb {
-  background: #ff1f1f;
+  background: var(--accent);
   border: 2px solid #ffffff;
   border-radius: 999px;
   height: 13px;
@@ -2191,14 +2172,14 @@ textarea {
 .flat-player-controls {
   align-items: center;
   display: flex;
-  gap: 9px;
+  gap: 6px;
   min-width: 0;
 }
 
 .flat-control-button {
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: #f2f4f2;
+  border: 1px solid #d7dcd8;
+  color: var(--text);
   justify-content: center;
   min-height: 30px;
   padding: 6px 9px;
@@ -2206,7 +2187,7 @@ textarea {
 }
 
 .flat-control-button:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--accent-soft);
   transform: translateY(-1px) scale(1.03);
 }
 
@@ -2216,10 +2197,10 @@ textarea {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 950;
-  height: 34px;
-  min-height: 34px;
+  height: 30px;
+  min-height: 30px;
   padding: 0;
-  width: 34px;
+  width: 30px;
 }
 
 .flat-control-button--seek {
@@ -2235,7 +2216,7 @@ textarea {
 
 .flat-play-glyph::before {
   border-bottom: 8px solid transparent;
-  border-left: 12px solid #ffffff;
+  border-left: 12px solid currentColor;
   border-top: 8px solid transparent;
   content: "";
   left: 3px;
@@ -2252,7 +2233,7 @@ textarea {
 
 .flat-control-button.is-playing .flat-play-glyph::before,
 .flat-control-button.is-playing .flat-play-glyph::after {
-  background: #ffffff;
+  background: currentColor;
   border: 0;
   border-radius: 1px;
   height: 16px;
@@ -2279,7 +2260,7 @@ textarea {
 
 .flat-volume-slider {
   appearance: none;
-  background: rgba(255, 255, 255, 0.32);
+  background: #d7ddd9;
   border: 0;
   border-radius: 999px;
   height: 4px;
@@ -2290,14 +2271,14 @@ textarea {
 
 .flat-volume-slider::-webkit-slider-thumb {
   appearance: none;
-  background: #ffffff;
+  background: var(--accent);
   border-radius: 999px;
   height: 12px;
   width: 12px;
 }
 
 .flat-volume-slider::-moz-range-thumb {
-  background: #ffffff;
+  background: var(--accent);
   border: 0;
   border-radius: 999px;
   height: 12px;
@@ -2310,15 +2291,15 @@ textarea {
   border-radius: 8px;
   box-shadow: var(--shadow-soft);
   display: grid;
-  gap: 4px;
-  grid-template-columns: 1fr;
+  gap: 4px 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   overflow: hidden;
   padding: 6px;
   transition: border-color var(--motion-med) var(--ease-smooth), box-shadow var(--motion-med) var(--ease-smooth), transform var(--motion-med) var(--ease-snap);
 }
 
 .player-time {
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--muted);
   flex: 1 1 auto;
   font-size: 11px;
   font-weight: 900;
@@ -2332,14 +2313,28 @@ textarea {
   display: grid;
   gap: 8px;
   grid-template-columns: 42px minmax(110px, 1fr) 42px;
-  min-height: 20px;
+  min-height: 18px;
   transition: background-color var(--motion-fast) var(--ease-smooth), transform var(--motion-fast) var(--ease-smooth);
   width: 100%;
 }
 
 .control-row:hover {
   background: rgba(232, 247, 245, 0.56);
-  transform: translateX(2px);
+}
+
+.progress-strip {
+  grid-column: 1 / -1;
+}
+
+.player-shell:fullscreen {
+  background: #f5f6f4;
+  gap: 8px;
+  grid-template-rows: minmax(120px, 1fr) max-content;
+  padding: 8px;
+}
+
+.player-shell:fullscreen .player-toolbar {
+  display: none;
 }
 
 .control-label,
@@ -2585,11 +2580,12 @@ textarea {
   }
 
   .player-controls {
+    grid-template-columns: 1fr;
     overflow: visible;
   }
 
-  .flat-player-overlay {
-    padding: 48px 12px 12px;
+  .flat-player-bar {
+    grid-column: auto;
   }
 
   .flat-player-controls {

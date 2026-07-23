@@ -178,7 +178,11 @@ if (scanForm?.dataset.scanRunning === "1") {
         window.location.replace(url.toString());
         return;
       }
-      if (scanLabel) scanLabel.textContent = "建立索引中";
+      if (scanLabel) {
+        scanLabel.textContent = status.indexing
+          ? "建立索引中"
+          : `处理媒体 ${Number(status.pending_media || 0)}`;
+      }
     } catch {}
     window.setTimeout(pollScanStatus, 750);
   };

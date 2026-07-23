@@ -175,7 +175,7 @@ def test_panorama_play_page_includes_hls_overlay_and_progress(monkeypatch, tmp_p
     assert 'data-pano-progress' not in response.text
 
 
-def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatch, tmp_path):
+def test_flat_play_page_keeps_controls_outside_video_stage(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     save_settings(tmp_path / "config", Settings(default_flat_quality="ultra", default_panorama_quality="low"))
     app = main.create_app()
@@ -208,7 +208,9 @@ def test_flat_play_page_uses_overlay_controls_without_bottom_progress(monkeypatc
     assert 'data-flat-controls' in response.text
     assert 'class="flat-player-progress"' in response.text
     assert 'class="progress-strip"' not in response.text
-    assert 'class="flat-player-bar"' not in response.text
+    assert 'class="flat-player-bar"' in response.text
+    assert 'class="flat-player-overlay"' not in response.text
+    assert response.text.index('class="player-stage') < response.text.index('class="flat-player-bar"')
     assert 'data-flat-play' in response.text
     assert 'class="flat-play-glyph"' in response.text
     assert 'aria-label="后退10秒"' in response.text
@@ -559,7 +561,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.6.1" in response.text
+    assert "/static/app.js?v=2.6.2" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

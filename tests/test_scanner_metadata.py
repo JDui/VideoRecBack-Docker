@@ -444,6 +444,55 @@ def test_media_worker_completes_deferred_metadata_and_thumbnail(monkeypatch, tmp
     assert jobs == 0
 
 
+def test_successful_media_with_optional_metadata_missing_is_not_requeued(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "new.mp4"
+    target.write_bytes(b"video")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+    scanner.cache_dir.mkdir(parents=True, exist_ok=True)
+    scanner._scan_sync(Settings(video_root=str(root)))
+
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(12, 1920, 1080))
+    monkeypatch.setattr("app.scanner.generate_thumbnail", lambda path, output, *args: output.write_bytes(b"thumb"))
+    monkeypatch.setattr("app.scanner.generate_preview_thumbnail", lambda source, output: output)
+
+    scanner._process_media_jobs_sync(Settings(video_root=str(root)), limit=1)
+    summary = scanner._scan_sync(Settings(video_root=str(root)))
+
+    with db.connect() as conn:
+        video = conn.execute("SELECT media_version FROM videos WHERE path = ?", (str(target),)).fetchone()
+        jobs = conn.execute("SELECT COUNT(*) AS count FROM media_jobs").fetchone()["count"]
+
+    assert summary.indexed == 0
+    assert video["media_version"] == 1
+    assert jobs == 0
+
+
+def test_unchanged_failed_media_job_is_not_reset_by_full_scan(tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "broken.mp4"
+    target.write_bytes(b"video")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+    scanner._scan_sync(Settings(video_root=str(root)))
+    with db.connect() as conn:
+        conn.execute("UPDATE media_jobs SET status = 'error', attempts = 3, error = 'broken'")
+
+    scanner._scan_sync(Settings(video_root=str(root)))
+
+    with db.connect() as conn:
+        job = conn.execute("SELECT status, attempts, error FROM media_jobs").fetchone()
+
+    assert job["status"] == "error"
+    assert job["attempts"] == 3
+    assert job["error"] == "broken"
+
+
 def test_scan_folder_deletes_only_missing_folder_records(monkeypatch, tmp_path):
     root = tmp_path / "media"
     target = root / "target"

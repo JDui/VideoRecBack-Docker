@@ -597,7 +597,7 @@ if (video) {
       document.exitFullscreen?.();
       return;
     }
-    stage?.requestFullscreen?.();
+    shell?.requestFullscreen?.();
   });
   if (seekControl) seekControl.addEventListener("pointerup", () => {
     seekingWithControl = false;
@@ -770,7 +770,7 @@ async function initPanorama() {
     return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
   };
   const toggleFullscreen = () => {
-    const target = canvas.parentElement;
+    const target = shell;
     if (!target) return;
     if (document.fullscreenElement) {
       document.exitFullscreen?.();

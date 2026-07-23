@@ -20,6 +20,7 @@ def test_database_has_video_metadata_columns(tmp_path):
         "average_bitrate",
         "video_codec",
         "thumb_version",
+        "media_version",
         "favorite",
     }.issubset(columns)
 
@@ -74,3 +75,19 @@ def test_database_has_scan_indexes_and_media_jobs(tmp_path):
     assert "media_jobs" in tables
     assert "idx_videos_visible_timeline" in indexes
     assert "idx_scan_queue_path" in indexes
+
+
+def test_database_uses_bounded_wal_settings(tmp_path):
+    db = Database(tmp_path)
+    db.init()
+
+    with db.connect() as conn:
+        journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        synchronous = conn.execute("PRAGMA synchronous").fetchone()[0]
+        checkpoint_pages = conn.execute("PRAGMA wal_autocheckpoint").fetchone()[0]
+        journal_limit = conn.execute("PRAGMA journal_size_limit").fetchone()[0]
+
+    assert journal_mode == "wal"
+    assert synchronous == 1
+    assert checkpoint_pages == 256
+    assert journal_limit == 32 * 1024 * 1024

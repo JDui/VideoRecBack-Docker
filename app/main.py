@@ -302,10 +302,14 @@ def create_app() -> FastAPI:
 
     @app.get("/scan/status")
     async def scan_status():
+        pending_media = scanner.pending_media_jobs()
+        indexing = bool(getattr(app.state, "manual_scan_pending", False) or scanner.is_running)
+        processing_media = bool(scanner.is_processing_media or pending_media > 0)
         return {
-            "scanning": is_scan_running(app),
-            "processing_media": scanner.is_processing_media,
-            "pending_media": scanner.pending_media_jobs(),
+            "scanning": indexing or processing_media,
+            "indexing": indexing,
+            "processing_media": processing_media,
+            "pending_media": pending_media,
         }
 
     @app.post("/scan-queue")
@@ -512,12 +516,17 @@ async def background_media_worker(app: FastAPI) -> None:
             LOGGER.exception("Background media job failed unexpectedly.")
             await asyncio.sleep(2.0)
             continue
-        await asyncio.sleep(0.1 if summary.seen else 2.0)
+        await asyncio.sleep(1.0 if summary.seen else 2.0)
 
 
 def is_scan_running(app: FastAPI) -> bool:
     scanner = app.state.scanner
-    return bool(getattr(app.state, "manual_scan_pending", False) or getattr(scanner, "is_running", False))
+    return bool(
+        getattr(app.state, "manual_scan_pending", False)
+        or getattr(scanner, "is_running", False)
+        or getattr(scanner, "is_processing_media", False)
+        or scanner.pending_media_jobs() > 0
+    )
 
 
 def is_background_busy(app: FastAPI) -> bool:

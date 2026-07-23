@@ -6,6 +6,21 @@ import pytest
 from app.config import Settings
 
 
+def test_scan_remains_running_while_media_jobs_are_pending(monkeypatch, tmp_path):
+    monkeypatch.setenv("APP_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("APP_DATA_DIR", str(tmp_path / "data"))
+    from app import main
+
+    scanner = SimpleNamespace(
+        is_running=False,
+        is_processing_media=False,
+        pending_media_jobs=lambda: 4,
+    )
+    app = SimpleNamespace(state=SimpleNamespace(manual_scan_pending=False, scanner=scanner))
+
+    assert main.is_scan_running(app) is True
+
+
 def test_background_maintenance_disables_full_scan(monkeypatch, tmp_path):
     monkeypatch.setenv("APP_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("APP_DATA_DIR", str(tmp_path / "data"))

@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS videos (
     thumb_status TEXT NOT NULL DEFAULT 'pending',
     thumb_error TEXT,
     thumb_path TEXT,
-    thumb_version INTEGER NOT NULL DEFAULT 2
+    thumb_version INTEGER NOT NULL DEFAULT 2,
+    media_version INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -91,6 +92,7 @@ MIGRATIONS = {
     "mtime_ns": "ALTER TABLE videos ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0",
     "thumb_version": "ALTER TABLE videos ADD COLUMN thumb_version INTEGER NOT NULL DEFAULT 0",
     "favorite": "ALTER TABLE videos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
+    "media_version": "ALTER TABLE videos ADD COLUMN media_version INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -102,11 +104,20 @@ class Database:
     def init(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
             existing = {row["name"] for row in conn.execute("PRAGMA table_info(videos)").fetchall()}
             for column, statement in MIGRATIONS.items():
                 if column not in existing:
                     conn.execute(statement)
+            if "media_version" not in existing:
+                conn.execute(
+                    """
+                    UPDATE videos
+                    SET media_version = 1
+                    WHERE thumb_status = 'ready' AND thumb_path IS NOT NULL
+                    """
+                )
             conn.execute("DELETE FROM scan_queue WHERE status = 'done'")
             conn.execute(
                 """
@@ -136,8 +147,12 @@ class Database:
     def connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA wal_autocheckpoint=256")
+        conn.execute("PRAGMA journal_size_limit=33554432")
         try:
             yield conn
             conn.commit()

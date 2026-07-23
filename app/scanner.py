@@ -13,6 +13,7 @@ from app.thumbnails import VideoToolError, generate_preview_thumbnail, generate_
 from app.video_types import detect_video_type
 
 THUMBNAIL_VERSION = 8
+MEDIA_VERSION = 1
 LOGGER = logging.getLogger(__name__)
 
 
@@ -169,7 +170,13 @@ class Scanner:
 
     def _load_video_index(self) -> dict[str, object]:
         with self.db.connect() as conn:
-            rows = conn.execute("SELECT * FROM videos").fetchall()
+            rows = conn.execute(
+                """
+                SELECT videos.*, media_jobs.status AS media_job_status
+                FROM videos
+                LEFT JOIN media_jobs ON media_jobs.video_id = videos.id
+                """
+            ).fetchall()
         return {str(row["path"]): row for row in rows}
 
     def _record_changed_files(
@@ -202,9 +209,9 @@ class Scanner:
                     INSERT INTO videos (
                         path, name, relative_path, folder, type, size_bytes,
                         mtime, mtime_ns, missing, thumb_status, thumb_error,
-                        thumb_version, updated_at
+                        thumb_version, media_version, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', NULL, ?, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', NULL, ?, 0, CURRENT_TIMESTAMP)
                     ON CONFLICT(path) DO UPDATE SET
                         name = excluded.name,
                         relative_path = excluded.relative_path,
@@ -226,6 +233,7 @@ class Scanner:
                         thumb_status = 'pending',
                         thumb_error = NULL,
                         thumb_version = excluded.thumb_version,
+                        media_version = 0,
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING id
                     """,
@@ -451,6 +459,10 @@ class Scanner:
                 ):
                     raise VideoToolError(f"Unable to generate thumbnail: {path}")
                 with self.db.connect() as conn:
+                    conn.execute(
+                        "UPDATE videos SET media_version = ? WHERE id = ?",
+                        (MEDIA_VERSION, video_id),
+                    )
                     conn.execute("DELETE FROM media_jobs WHERE id = ?", (job_id,))
                 summary.indexed += 1
                 summary.thumbnails += 1
@@ -495,15 +507,7 @@ class Scanner:
                 )
                 thumb_path = row["thumb_path"]
                 thumb_missing = not thumb_path or not Path(thumb_path).exists()
-                metadata_missing = (
-                    row["duration_seconds"] is None
-                    or row["width"] is None
-                    or row["height"] is None
-                    or row["bit_depth"] is None
-                    or row["chroma_subsampling"] is None
-                    or row["average_bitrate"] is None
-                )
-                if metadata_missing:
+                if int(row["media_version"] or 0) < MEDIA_VERSION and not metadata_values_complete(row):
                     unchanged_metadata_id = row_id
                 version_stale = row["thumb_version"] != THUMBNAIL_VERSION
                 if row["thumb_status"] in {"pending", "error"} or thumb_missing or version_stale:
@@ -564,9 +568,9 @@ class Scanner:
                     path, name, relative_path, folder, type, size_bytes, duration_seconds,
                     width, height, aspect_ratio, bit_depth, is_10bit, chroma_subsampling,
                     average_bitrate, video_codec, mtime,
-                    missing, thumb_status, thumb_error, thumb_path, thumb_version, updated_at
+                    missing, thumb_status, thumb_error, thumb_path, thumb_version, media_version, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
                 ON CONFLICT(path) DO UPDATE SET
                     name = excluded.name,
                     relative_path = excluded.relative_path,
@@ -588,6 +592,7 @@ class Scanner:
                     thumb_error = excluded.thumb_error,
                     thumb_path = excluded.thumb_path,
                     thumb_version = excluded.thumb_version,
+                    media_version = 0,
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -616,8 +621,18 @@ class Scanner:
             row = conn.execute("SELECT id FROM videos WHERE path = ?", (path_text,)).fetchone()
             video_id = int(row["id"])
 
-        if thumb_status == "pending":
-            self._generate_and_record_thumbnail(path, video_id, video_type, duration, settings.thumbnail_resolution)
+        if thumb_status == "pending" and self._generate_and_record_thumbnail(
+            path,
+            video_id,
+            video_type,
+            duration,
+            settings.thumbnail_resolution,
+        ):
+            with self.db.connect() as conn:
+                conn.execute(
+                    "UPDATE videos SET media_version = ? WHERE id = ?",
+                    (MEDIA_VERSION, video_id),
+                )
         return 1
 
     def rebuild_video_thumbnail(self, video_id: int, video_type: str, thumbnail_resolution: int = 576) -> None:
@@ -742,6 +757,10 @@ class Scanner:
                     average_bitrate = ?,
                     video_codec = ?,
                     type = CASE WHEN ? = 'panorama' THEN 'panorama' ELSE type END,
+                    media_version = CASE
+                        WHEN thumb_status = 'ready' AND thumb_version = ? THEN ?
+                        ELSE media_version
+                    END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
@@ -756,6 +775,8 @@ class Scanner:
                     probe.average_bitrate,
                     probe.codec_name,
                     video_type,
+                    THUMBNAIL_VERSION,
+                    MEDIA_VERSION,
                     video_id,
                 ),
             )
@@ -926,14 +947,8 @@ def snapshot_matches(row, snapshot: FileSnapshot) -> bool:
 
 
 def media_data_incomplete(row) -> bool:
-    metadata_missing = (
-        row["duration_seconds"] is None
-        or row["width"] is None
-        or row["height"] is None
-        or row["bit_depth"] is None
-        or row["chroma_subsampling"] is None
-        or row["average_bitrate"] is None
-    )
+    if row["media_job_status"] in {"pending", "running", "error"}:
+        return False
     thumb_path = row["thumb_path"]
     thumbnail_missing = (
         row["thumb_status"] != "ready"
@@ -941,7 +956,23 @@ def media_data_incomplete(row) -> bool:
         or not thumb_path
         or not Path(thumb_path).exists()
     )
-    return metadata_missing or thumbnail_missing
+    if int(row["media_version"] or 0) >= MEDIA_VERSION:
+        return thumbnail_missing
+    return thumbnail_missing or not metadata_values_complete(row)
+
+
+def metadata_values_complete(row) -> bool:
+    return all(
+        row[column] is not None
+        for column in (
+            "duration_seconds",
+            "width",
+            "height",
+            "bit_depth",
+            "chroma_subsampling",
+            "average_bitrate",
+        )
+    )
 
 
 def calculate_aspect_ratio(width: int | None, height: int | None) -> float | None:
