@@ -279,6 +279,10 @@ def create_app() -> FastAPI:
     async def intranet_health_options():
         return Response(status_code=204, headers=INTRANET_HEALTH_HEADERS)
 
+    @app.options("/intranet/health.gif")
+    async def intranet_health_gif_options():
+        return Response(status_code=204, headers=INTRANET_HEALTH_HEADERS)
+
     @app.get("/intranet/health")
     async def intranet_health():
         return JSONResponse({"ok": True, "service": "videorecback"}, headers=INTRANET_HEALTH_HEADERS)

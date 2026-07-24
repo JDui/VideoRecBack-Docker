@@ -4,7 +4,6 @@ const FETCH_PROBE_TIMEOUT_MS = 8000;
 const IMAGE_PROBE_TIMEOUT_MS = 1200;
 const PROBE_INTERVAL_MS = 15000;
 const PROBE_RETRY_DELAYS_MS = [350, 1200, 3000];
-const REACHABLE_CACHE_TTL_MS = 10 * 60 * 1000;
 const jumpButton = document.querySelector("[data-intranet-jump]");
 const LOCAL_ACCESS = "local";
 const EXTERNAL_ACCESS = "external";
@@ -17,14 +16,46 @@ const configuredRedirectProtocol = () => {
   return intranetConfig.intranetRedirectProtocol === "https" ? "https:" : "http:";
 };
 
-const isPrivateHost = (host) => {
-  const value = String(host || "").trim().toLowerCase();
-  if (value === "localhost" || value === "::1" || value.endsWith(".local")) return true;
-  const parts = value.split(".").map(Number);
+const normalizedHost = (host) => {
+  return String(host || "").trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+};
+
+const isPrivateIpv4 = (host) => {
+  const parts = host.split(".").map(Number);
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
-  return parts[0] === 10 || parts[0] === 127 ||
+  return parts[0] === 10 ||
+    parts[0] === 127 ||
+    (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+    (parts[0] === 169 && parts[1] === 254) ||
     (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
     (parts[0] === 192 && parts[1] === 168);
+};
+
+const isPrivateIpv6 = (host) => {
+  const value = host.split("%", 1)[0];
+  if (!value.includes(":")) return false;
+  if (value === "::1") return true;
+  if (value.startsWith("::ffff:")) return isPrivateIpv4(value.slice(7));
+  const firstGroup = Number.parseInt(value.split(":", 1)[0], 16);
+  return Number.isInteger(firstGroup) &&
+    ((firstGroup >= 0xfc00 && firstGroup <= 0xfdff) ||
+      (firstGroup >= 0xfe80 && firstGroup <= 0xfebf));
+};
+
+const isPrivateHost = (host) => {
+  const value = normalizedHost(host);
+  if (!value) return false;
+  if (
+    value === "localhost" ||
+    value.endsWith(".localhost") ||
+    value.endsWith(".local") ||
+    value.endsWith(".lan") ||
+    value.endsWith(".home.arpa") ||
+    !value.includes(".") && !value.includes(":")
+  ) {
+    return true;
+  }
+  return isPrivateIpv4(value) || isPrivateIpv6(value);
 };
 
 const isLocalAccess = () => isPrivateHost(window.location.hostname);
@@ -51,23 +82,6 @@ const intranetOrigin = () => {
 const sameTarget = () => {
   const target = intranetOrigin();
   return target?.origin === window.location.origin;
-};
-
-const reachabilityCacheKey = () => `videorecback-intranet-reachable:${intranetOrigin()?.origin || ""}`;
-
-const hasRecentReachability = () => {
-  try {
-    const checkedAt = Number(localStorage.getItem(reachabilityCacheKey()) || 0);
-    return checkedAt > 0 && Date.now() - checkedAt < REACHABLE_CACHE_TTL_MS;
-  } catch {
-    return false;
-  }
-};
-
-const rememberReachability = () => {
-  try {
-    localStorage.setItem(reachabilityCacheKey(), String(Date.now()));
-  } catch {}
 };
 
 const redirectToIntranet = () => {
@@ -103,6 +117,10 @@ const showJumpButton = () => {
   jumpButton.addEventListener("click", redirectToIntranet);
 };
 
+const markProbeState = (state) => {
+  document.body.dataset.intranetProbe = state;
+};
+
 const fetchHealthProbe = async () => {
   const target = intranetOrigin();
   if (!target) return false;
@@ -113,7 +131,9 @@ const fetchHealthProbe = async () => {
   try {
     const response = await fetch(target.toString(), {
       cache: "no-store",
+      credentials: "omit",
       mode: "cors",
+      referrerPolicy: "no-referrer",
       signal: controller.signal,
       targetAddressSpace: "local",
     });
@@ -173,6 +193,13 @@ let activeProbe = null;
 let retryIndex = 0;
 let retryTimer = null;
 
+const shouldProbe = () => {
+  return intranetConfig.intranetEnabled === "1" &&
+    !isLocalAccess() &&
+    !sameTarget() &&
+    intranetOrigin() !== null;
+};
+
 const scheduleFastRetry = () => {
   if (retryTimer || retryIndex >= PROBE_RETRY_DELAYS_MS.length) return;
   retryTimer = window.setTimeout(() => {
@@ -186,23 +213,26 @@ const refreshJumpButton = async () => {
   markAccess();
   if (isLocalAccess()) {
     hideJumpButton();
+    markProbeState("local");
     return;
   }
-  if (intranetConfig.intranetEnabled !== "1" || sameTarget()) {
+  if (!shouldProbe()) {
     hideJumpButton();
+    markProbeState("disabled");
     return;
   }
-  showJumpButton();
-  if (hasRecentReachability()) return;
   if (activeProbe) return;
+  markProbeState("checking");
   activeProbe = browserCanReachIntranet();
   const reachable = await activeProbe;
   activeProbe = null;
-  if (reachable) {
+  if (reachable && shouldProbe()) {
     retryIndex = 0;
-    rememberReachability();
+    markProbeState("reachable");
     showJumpButton();
   } else {
+    markProbeState("unreachable");
+    hideJumpButton();
     scheduleFastRetry();
   }
 };

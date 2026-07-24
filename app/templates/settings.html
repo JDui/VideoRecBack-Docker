@@ -92,7 +92,7 @@
           跳转端口
           <input name="intranet_redirect_port" type="number" min="1" max="65535" value="{{ settings.intranet_redirect_port }}" placeholder="8080">
         </label>
-        <p class="settings-help">从公网入口访问时会立即提供内网跳转按钮，并在后台验证直连状态。新版浏览器可能在首次访问时询问本地网络权限。</p>
+        <p class="settings-help">浏览器确认当前网址不是内网地址，并能直接访问上述内网服务后，才会显示跳转按钮。新版浏览器可能在首次探测时询问本地网络权限。</p>
       </fieldset>
       <label>
         视频扩展名
