@@ -21,50 +21,6 @@ const configuredRedirectProtocol = () => {
   return intranetConfig.intranetRedirectProtocol === "https" ? "https:" : "http:";
 };
 
-const normalizedHost = (host) => {
-  return String(host || "").trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-};
-
-const isPrivateIpv4 = (host) => {
-  const parts = host.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
-  return parts[0] === 10 ||
-    parts[0] === 127 ||
-    (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
-    (parts[0] === 169 && parts[1] === 254) ||
-    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-    (parts[0] === 192 && parts[1] === 168);
-};
-
-const isPrivateIpv6 = (host) => {
-  const value = host.split("%", 1)[0];
-  if (!value.includes(":")) return false;
-  if (value === "::1") return true;
-  if (value.startsWith("::ffff:")) return isPrivateIpv4(value.slice(7));
-  const firstGroup = Number.parseInt(value.split(":", 1)[0], 16);
-  return Number.isInteger(firstGroup) &&
-    ((firstGroup >= 0xfc00 && firstGroup <= 0xfdff) ||
-      (firstGroup >= 0xfe80 && firstGroup <= 0xfebf));
-};
-
-const isPrivateHost = (host) => {
-  const value = normalizedHost(host);
-  if (!value) return false;
-  if (
-    value === "localhost" ||
-    value.endsWith(".localhost") ||
-    value.endsWith(".local") ||
-    value.endsWith(".lan") ||
-    value.endsWith(".home.arpa") ||
-    !value.includes(".") && !value.includes(":")
-  ) {
-    return true;
-  }
-  return isPrivateIpv4(value) || isPrivateIpv6(value);
-};
-
-const isLocalAccess = () => isPrivateHost(window.location.hostname);
-
 const markAccess = () => {
   document.body.dataset.intranetAccess = isLocalAccess() ? LOCAL_ACCESS : EXTERNAL_ACCESS;
 };
@@ -88,6 +44,8 @@ const sameTarget = () => {
   const target = intranetOrigin();
   return target?.origin === window.location.origin;
 };
+
+const isLocalAccess = () => sameTarget();
 
 const currentPageOrigin = () => {
   if (window.location.origin && window.location.origin !== "null") {

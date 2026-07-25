@@ -32,8 +32,14 @@
         <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}" {% if filters.view == 'folders' %}aria-current="page"{% endif %}>文件夹</a>
         <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}" {% if filters.view == 'calendar' %}aria-current="page"{% endif %}>日历</a>
         <a class="{% if filters.view == 'favorites' %}active{% endif %}" href="{{ view_urls.favorites }}" {% if filters.view == 'favorites' %}aria-current="page"{% endif %}>收藏</a>
-        <button class="intranet-jump-button" type="button" data-intranet-jump aria-live="polite" hidden>跳转内网</button>
       </nav>
+      <button
+        class="intranet-jump-button{% if settings.intranet_keepalive_enabled and settings.intranet_redirect_host %} is-visible{% endif %}"
+        type="button"
+        data-intranet-jump
+        aria-live="polite"
+        {% if not settings.intranet_keepalive_enabled or not settings.intranet_redirect_host %}hidden{% endif %}
+      >检测内网</button>
       <label class="preview-size-control">
         预览大小
         <input type="range" min="132" max="280" step="4" value="176" data-preview-size>
@@ -203,5 +209,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.6.4" defer></script>
+  <script src="/static/app.js?v=2.6.5" defer></script>
 {% endblock %}

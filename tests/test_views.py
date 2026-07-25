@@ -97,7 +97,7 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_protocol"' in response.text
     assert "内网直连" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.6.4" in response.text
+    assert "/static/intranet.js?v=2.6.5" in response.text
     assert "/static/settings.js?v=2.6.1" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
@@ -352,12 +352,37 @@ def test_favorites_view_filters_and_exposes_context_actions(monkeypatch, tmp_pat
 
     assert response.status_code == 200
     assert ">收藏</a>" in response.text
-    assert 'data-intranet-jump aria-live="polite" hidden>跳转内网</button>' in response.text
+    assert "data-intranet-jump" in response.text
+    button_markup = response.text.split("data-intranet-jump", 1)[1].split("</button>", 1)[0]
+    assert "hidden" in button_markup
     assert "fav.mp4" in response.text
     assert "plain.mp4" not in response.text
     assert 'data-favorite-menu="1"' in response.text
     assert "跳转到时间线位置" in response.text
     assert 'data-timeline-url="/?view=timeline#timeline-2026-07-08"' in response.text
+
+
+def test_intranet_action_is_visible_when_enabled(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    save_settings(
+        app.state.config_dir,
+        Settings(
+            intranet_keepalive_enabled=True,
+            intranet_redirect_host="192.168.31.20",
+            intranet_redirect_port="8080",
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    button_markup = response.text.split("data-intranet-jump", 1)[1].split("</button>", 1)[0]
+    button_start = response.text.split("data-intranet-jump", 1)[0].rsplit("<button", 1)[1]
+    assert "hidden" not in button_markup
+    assert "is-visible" in button_start
+    assert ">检测内网" in button_markup
 
 
 def test_connectivity_test_endpoints(monkeypatch, tmp_path):
@@ -585,7 +610,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.6.4" in response.text
+    assert "/static/app.js?v=2.6.5" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

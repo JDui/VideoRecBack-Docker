@@ -321,19 +321,40 @@ button:active {
 }
 
 .intranet-jump-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  justify-content: center;
+  line-height: 1;
   max-width: 0;
   opacity: 0;
   overflow: hidden;
   padding-left: 0 !important;
   padding-right: 0 !important;
   transform: translateX(-8px) scale(0.92);
+  transition: background-color var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), max-width var(--motion-med) var(--ease-snap), opacity var(--motion-med) var(--ease-smooth), padding var(--motion-med) var(--ease-snap), transform var(--motion-med) var(--ease-snap);
+  white-space: nowrap;
+}
+
+.intranet-jump-button:hover {
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text);
 }
 
 .intranet-jump-button.is-visible {
   max-width: 112px;
   opacity: 1;
+  padding-bottom: 9px;
   padding-left: 15px !important;
   padding-right: 15px !important;
+  padding-top: 9px;
   transform: translateX(0) scale(1);
 }
 
