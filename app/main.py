@@ -8,7 +8,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -58,6 +58,26 @@ INTRANET_HEALTH_HEADERS = {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
 }
+INTRANET_PROBE_NONCE_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,128}")
+
+
+def normalize_opener_origin(value: str) -> str | None:
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def create_app() -> FastAPI:
@@ -290,6 +310,23 @@ def create_app() -> FastAPI:
     @app.get("/intranet/health.gif")
     async def intranet_health_gif():
         return Response(INTRANET_HEALTH_GIF, media_type="image/gif", headers=INTRANET_HEALTH_HEADERS)
+
+    @app.get("/intranet/probe", response_class=HTMLResponse)
+    async def intranet_probe(request: Request, nonce: str = "", opener_origin: str = ""):
+        normalized_origin = normalize_opener_origin(opener_origin)
+        if not INTRANET_PROBE_NONCE_PATTERN.fullmatch(nonce) or not normalized_origin:
+            raise HTTPException(status_code=400, detail="Invalid intranet probe request")
+        return templates.TemplateResponse(
+            request,
+            "intranet_probe.html",
+            {"nonce": nonce, "opener_origin": normalized_origin},
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.post("/scan")
     async def trigger_scan():

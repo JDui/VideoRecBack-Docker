@@ -2,11 +2,16 @@ const intranetConfig = document.body?.dataset || {};
 
 const FETCH_PROBE_TIMEOUT_MS = 8000;
 const IMAGE_PROBE_TIMEOUT_MS = 1200;
+const MANUAL_PROBE_TIMEOUT_MS = 6000;
+const MANUAL_REACHABLE_TTL_MS = 60 * 1000;
 const PROBE_INTERVAL_MS = 15000;
 const PROBE_RETRY_DELAYS_MS = [350, 1200, 3000];
 const jumpButton = document.querySelector("[data-intranet-jump]");
 const LOCAL_ACCESS = "local";
 const EXTERNAL_ACCESS = "external";
+const DETECT_MODE = "detect";
+const JUMP_MODE = "jump";
+const PROBE_MESSAGE_TYPE = "videorecback:intranet-probe";
 
 const configuredRedirectHost = () => (intranetConfig.intranetRedirectHost || "").trim();
 
@@ -84,6 +89,17 @@ const sameTarget = () => {
   return target?.origin === window.location.origin;
 };
 
+const currentPageOrigin = () => {
+  if (window.location.origin && window.location.origin !== "null") {
+    return window.location.origin;
+  }
+  try {
+    return new URL(document.referrer).origin;
+  } catch {
+    return "";
+  }
+};
+
 const redirectToIntranet = () => {
   const target = intranetOrigin();
   if (!target || sameTarget()) return;
@@ -95,6 +111,7 @@ const redirectToIntranet = () => {
 
 const hideJumpButton = () => {
   if (!jumpButton || jumpButton.hidden) return;
+  jumpButton.disabled = false;
   jumpButton.classList.remove("is-visible");
   jumpButton.classList.add("is-hiding");
   window.setTimeout(() => {
@@ -104,17 +121,41 @@ const hideJumpButton = () => {
   }, 360);
 };
 
-const showJumpButton = () => {
+const revealActionButton = () => {
   if (!jumpButton || isLocalAccess() || sameTarget()) return;
-  if (jumpButton.classList.contains("is-visible")) return;
   jumpButton.hidden = false;
   jumpButton.classList.remove("is-hiding");
+  if (jumpButton.classList.contains("is-visible")) return;
   window.requestAnimationFrame(() => {
     jumpButton.classList.add("is-visible");
   });
-  if (jumpButton.dataset.bound === "1") return;
-  jumpButton.dataset.bound = "1";
-  jumpButton.addEventListener("click", redirectToIntranet);
+};
+
+const showJumpButton = () => {
+  if (!jumpButton || isLocalAccess() || sameTarget()) return;
+  jumpButton.dataset.mode = JUMP_MODE;
+  jumpButton.textContent = "跳转内网";
+  jumpButton.title = "内网服务可达，点击切换到内网地址";
+  jumpButton.disabled = false;
+  revealActionButton();
+};
+
+const showDetectButton = (label = "检测内网", title = "点击确认当前浏览器能否直连内网服务") => {
+  if (!jumpButton || isLocalAccess() || sameTarget()) return;
+  jumpButton.dataset.mode = DETECT_MODE;
+  jumpButton.textContent = label;
+  jumpButton.title = title;
+  jumpButton.disabled = false;
+  revealActionButton();
+};
+
+const showManualChecking = () => {
+  if (!jumpButton) return;
+  jumpButton.dataset.mode = DETECT_MODE;
+  jumpButton.textContent = "正在检测";
+  jumpButton.title = "正在通过内网地址确认连接";
+  jumpButton.disabled = true;
+  revealActionButton();
 };
 
 const markProbeState = (state) => {
@@ -192,6 +233,11 @@ markAccess();
 let activeProbe = null;
 let retryIndex = 0;
 let retryTimer = null;
+let manualProbeActive = false;
+let manualProbeNonce = "";
+let manualProbeWindow = null;
+let manualProbeTimer = null;
+let manualReachableUntil = 0;
 
 const shouldProbe = () => {
   return intranetConfig.intranetEnabled === "1" &&
@@ -209,6 +255,89 @@ const scheduleFastRetry = () => {
   }, PROBE_RETRY_DELAYS_MS[retryIndex]);
 };
 
+const createProbeNonce = () => {
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`.padEnd(16, "0");
+};
+
+const finishManualProbe = (reachable) => {
+  if (!manualProbeActive) return;
+  manualProbeActive = false;
+  manualProbeNonce = "";
+  if (manualProbeTimer) {
+    window.clearTimeout(manualProbeTimer);
+    manualProbeTimer = null;
+  }
+  try {
+    manualProbeWindow?.close();
+  } catch {}
+  manualProbeWindow = null;
+  if (reachable) {
+    manualReachableUntil = Date.now() + MANUAL_REACHABLE_TTL_MS;
+    retryIndex = 0;
+    markProbeState("reachable");
+    showJumpButton();
+    return;
+  }
+  markProbeState("manual-unreachable");
+  showDetectButton("重新检测", "未收到内网服务确认，点击重试");
+};
+
+const startManualProbe = () => {
+  const target = intranetOrigin();
+  if (!target || !shouldProbe() || manualProbeActive) return;
+  manualProbeActive = true;
+  manualProbeNonce = createProbeNonce();
+  target.pathname = "/intranet/probe";
+  target.search = "";
+  target.searchParams.set("nonce", manualProbeNonce);
+  const openerOrigin = currentPageOrigin();
+  if (!openerOrigin) {
+    manualProbeActive = false;
+    manualProbeNonce = "";
+    markProbeState("invalid-origin");
+    showDetectButton("重新检测", "无法确认当前页面来源");
+    return;
+  }
+  target.searchParams.set("opener_origin", openerOrigin);
+  markProbeState("manual-checking");
+  showManualChecking();
+  manualProbeWindow = window.open(
+    target.toString(),
+    "videorecback-intranet-probe",
+    "popup=yes,width=420,height=240"
+  );
+  if (!manualProbeWindow) {
+    manualProbeActive = false;
+    manualProbeNonce = "";
+    markProbeState("popup-blocked");
+    showDetectButton("重新检测", "浏览器阻止了探测窗口，请允许此网站打开弹窗后重试");
+    return;
+  }
+  manualProbeTimer = window.setTimeout(() => finishManualProbe(false), MANUAL_PROBE_TIMEOUT_MS);
+};
+
+const handleProbeMessage = (event) => {
+  const target = intranetOrigin();
+  const payload = event.data;
+  if (
+    !manualProbeActive ||
+    !target ||
+    event.source !== manualProbeWindow ||
+    event.origin !== target.origin ||
+    payload?.type !== PROBE_MESSAGE_TYPE ||
+    payload?.service !== "videorecback" ||
+    payload?.nonce !== manualProbeNonce
+  ) {
+    return;
+  }
+  finishManualProbe(true);
+};
+
 const refreshJumpButton = async () => {
   markAccess();
   if (isLocalAccess()) {
@@ -221,6 +350,15 @@ const refreshJumpButton = async () => {
     markProbeState("disabled");
     return;
   }
+  if (manualProbeActive) return;
+  if (manualReachableUntil > Date.now()) {
+    markProbeState("reachable");
+    showJumpButton();
+    return;
+  }
+  if (jumpButton?.dataset.mode !== JUMP_MODE) {
+    showDetectButton();
+  }
   if (activeProbe) return;
   markProbeState("checking");
   activeProbe = browserCanReachIntranet();
@@ -232,11 +370,23 @@ const refreshJumpButton = async () => {
     showJumpButton();
   } else {
     markProbeState("unreachable");
-    hideJumpButton();
+    if (manualReachableUntil > Date.now()) {
+      showJumpButton();
+    } else {
+      showDetectButton();
+    }
     scheduleFastRetry();
   }
 };
 
+jumpButton?.addEventListener("click", () => {
+  if (jumpButton.dataset.mode === JUMP_MODE) {
+    redirectToIntranet();
+    return;
+  }
+  startManualProbe();
+});
+window.addEventListener("message", handleProbeMessage);
 refreshJumpButton();
 window.setInterval(refreshJumpButton, PROBE_INTERVAL_MS);
 window.addEventListener("online", refreshJumpButton);

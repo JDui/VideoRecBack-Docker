@@ -32,7 +32,7 @@
         <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}" {% if filters.view == 'folders' %}aria-current="page"{% endif %}>文件夹</a>
         <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}" {% if filters.view == 'calendar' %}aria-current="page"{% endif %}>日历</a>
         <a class="{% if filters.view == 'favorites' %}active{% endif %}" href="{{ view_urls.favorites }}" {% if filters.view == 'favorites' %}aria-current="page"{% endif %}>收藏</a>
-        <button class="intranet-jump-button" type="button" data-intranet-jump hidden>跳转内网</button>
+        <button class="intranet-jump-button" type="button" data-intranet-jump aria-live="polite" hidden>跳转内网</button>
       </nav>
       <label class="preview-size-control">
         预览大小
@@ -203,5 +203,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.6.3" defer></script>
+  <script src="/static/app.js?v=2.6.4" defer></script>
 {% endblock %}

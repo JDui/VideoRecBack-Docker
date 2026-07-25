@@ -97,7 +97,7 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="intranet_redirect_protocol"' in response.text
     assert "内网直连" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.6.3" in response.text
+    assert "/static/intranet.js?v=2.6.4" in response.text
     assert "/static/settings.js?v=2.6.1" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
@@ -352,7 +352,7 @@ def test_favorites_view_filters_and_exposes_context_actions(monkeypatch, tmp_pat
 
     assert response.status_code == 200
     assert ">收藏</a>" in response.text
-    assert 'data-intranet-jump hidden>跳转内网</button>' in response.text
+    assert 'data-intranet-jump aria-live="polite" hidden>跳转内网</button>' in response.text
     assert "fav.mp4" in response.text
     assert "plain.mp4" not in response.text
     assert 'data-favorite-menu="1"' in response.text
@@ -389,6 +389,30 @@ def test_intranet_health_allows_browser_direct_probe(monkeypatch, tmp_path):
     assert response.headers["cache-control"] == "no-store"
     assert preflight.status_code == 204
     assert preflight.headers["access-control-allow-private-network"] == "true"
+
+
+def test_intranet_probe_page_posts_verified_message(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    nonce = "0123456789abcdef0123456789abcdef"
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/intranet/probe",
+            params={"nonce": nonce, "opener_origin": "https://public.example:8443"},
+        )
+        invalid = client.get(
+            "/intranet/probe",
+            params={"nonce": "short", "opener_origin": "javascript:alert(1)"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert "videorecback:intranet-probe" in response.text
+    assert nonce in response.text
+    assert "https://public.example:8443" in response.text
+    assert invalid.status_code == 400
 
 
 def test_hls_encoder_is_selected_by_video_type(monkeypatch, tmp_path):
@@ -561,7 +585,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.6.3" in response.text
+    assert "/static/app.js?v=2.6.4" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

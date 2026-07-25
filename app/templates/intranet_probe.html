@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>正在检测内网</title>
+    <style>
+      body {
+        align-items: center;
+        background: #f5f7fa;
+        color: #243447;
+        display: flex;
+        font: 15px/1.6 system-ui, sans-serif;
+        justify-content: center;
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <p>已连接内网服务，正在返回原页面。</p>
+    <script>
+      const payload = {
+        type: "videorecback:intranet-probe",
+        service: "videorecback",
+        nonce: {{ nonce | tojson }}
+      };
+      const openerOrigin = {{ opener_origin | tojson }};
+      if (window.opener) {
+        window.opener.postMessage(payload, openerOrigin);
+        window.setTimeout(() => window.close(), 80);
+      }
+    </script>
+  </body>
+</html>
