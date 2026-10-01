@@ -36,6 +36,27 @@ const favoriteToggle = document.querySelector("[data-favorite-toggle]");
 const favoriteLabel = document.querySelector("[data-favorite-label]");
 const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
+const playerFeedback = document.querySelector("[data-player-feedback]");
+let feedbackTimer = null;
+const showPlayerFeedback = (message) => {
+  if (!playerFeedback) return;
+  window.clearTimeout(feedbackTimer);
+  playerFeedback.textContent = message;
+  playerFeedback.classList.add("is-visible");
+  feedbackTimer = window.setTimeout(() => playerFeedback.classList.remove("is-visible"), 1200);
+};
+
+const toggleFullscreen = async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen?.();
+    else if (shell?.requestFullscreen) await shell.requestFullscreen();
+    else if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    else showPlayerFeedback("当前浏览器不支持全屏");
+  } catch {
+    showPlayerFeedback("暂时无法进入全屏");
+  }
+};
+
 let mediaLoaded = false;
 let seekingWithControl = false;
 let fallbackOriginalToTranscode = () => false;
@@ -129,6 +150,7 @@ const toggleMute = () => {
     video.volume = clamp(Number.isFinite(previousVolume) && previousVolume > 0 ? previousVolume : 0.6, 0, 1);
   }
   syncVolumeUi();
+  syncMuteUi();
 };
 
 const togglePlayback = () => {
@@ -148,6 +170,7 @@ const togglePlayback = () => {
 const seekBy = (seconds) => {
   if (!video) return;
   setLogicalCurrentTime(getLogicalCurrentTime() + seconds);
+  showPlayerFeedback(`${seconds > 0 ? "前进" : "后退"} ${Math.abs(seconds)} 秒`);
 };
 
 const changeVolumeBy = (delta) => {
@@ -161,7 +184,7 @@ const changeVolumeBy = (delta) => {
 const isEditableKeyTarget = (target) => {
   if (!(target instanceof Element)) return false;
   if (target.closest("[contenteditable='true']")) return true;
-  return ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName) && target.type !== "range";
+  return Boolean(target.closest("input, select, textarea, button, summary, a"));
 };
 
 const getLogicalDuration = () => {
@@ -243,7 +266,7 @@ const syncProgressUi = () => {
   if (timeValue) {
     const current = formatClock(getLogicalCurrentTime());
     const total = Number.isFinite(duration) ? formatClock(duration) : "00:00";
-    timeValue.textContent = shell?.dataset.videoType === "panorama" ? current : `${current} / ${total}`;
+    timeValue.textContent = `${current} / ${total}`;
   }
 };
 
@@ -255,7 +278,8 @@ const syncPlayUi = () => {
     flatPlayButton.setAttribute("title", label);
   }
   if (centerAction) {
-    centerAction.textContent = label;
+    centerAction.setAttribute("aria-label", label);
+    centerAction.tabIndex = video?.paused ? 0 : -1;
     centerAction.classList.toggle("is-hidden", !video?.paused);
   }
   shell?.classList.toggle("is-playing", Boolean(video && !video.paused && !video.ended));
@@ -264,7 +288,11 @@ const syncPlayUi = () => {
 
 const syncMuteUi = () => {
   if (!video || !muteToggle) return;
-  muteToggle.textContent = video.muted || video.volume === 0 ? "静音" : "音量";
+  const muted = video.muted || video.volume === 0;
+  muteToggle.classList.toggle("is-muted", muted);
+  muteToggle.setAttribute("aria-pressed", String(muted));
+  muteToggle.setAttribute("aria-label", muted ? "取消静音" : "静音");
+  muteToggle.setAttribute("title", muted ? "取消静音" : "静音");
 };
 
 const syncExposureUi = () => {
@@ -309,6 +337,7 @@ if (video) {
       favoriteToggle.dataset.favoriteState = favorite ? "1" : "0";
       favoriteToggle.classList.toggle("active", favorite);
       favoriteToggle.setAttribute("aria-pressed", favorite ? "true" : "false");
+      favoriteToggle.setAttribute("aria-label", favorite ? "取消收藏" : "收藏视频");
       if (favoriteLabel) favoriteLabel.textContent = favorite ? "已收藏" : "收藏";
     };
     favoriteToggle.addEventListener("click", async () => {
@@ -572,6 +601,7 @@ if (video) {
     if (!Number.isFinite(duration) || duration <= 0) return;
     const nextTime = duration * (Number(seekControl.value) / 1000);
     if (timeValue) timeValue.textContent = `${formatClock(nextTime)} / ${formatClock(duration)}`;
+    seekControl.style.backgroundSize = `${Number(seekControl.value) / 10}% 100%, 100% 100%`;
   });
   seekControl?.addEventListener("change", () => {
     const duration = getLogicalDuration();
@@ -592,12 +622,11 @@ if (video) {
   for (const button of document.querySelectorAll("[data-seek-step]")) {
     button.addEventListener("click", () => seekBy(Number(button.dataset.seekStep || 0)));
   }
-  fullscreenToggle?.addEventListener("click", () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.();
-      return;
-    }
-    shell?.requestFullscreen?.();
+  fullscreenToggle?.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", () => {
+    const fullscreen = Boolean(document.fullscreenElement);
+    fullscreenToggle?.setAttribute("aria-label", fullscreen ? "退出全屏" : "全屏");
+    fullscreenToggle?.setAttribute("title", fullscreen ? "退出全屏" : "全屏");
   });
   if (seekControl) seekControl.addEventListener("pointerup", () => {
     seekingWithControl = false;
@@ -681,6 +710,18 @@ const closePlayerPage = () => {
     stopHlsHeartbeat(true);
   }, 0);
 };
+
+document.addEventListener("click", (event) => {
+  const menu = document.querySelector("[data-quality-menu]");
+  if (menu?.open && !menu.contains(event.target)) menu.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  const menu = document.querySelector("[data-quality-menu]");
+  if (event.key === "Escape" && menu?.open) {
+    menu.open = false;
+    menu.querySelector("summary")?.focus();
+  }
+});
 
 document.querySelector("[data-player-close]")?.addEventListener("click", closePlayerPage);
 window.addEventListener("pagehide", () => stopHlsHeartbeat(true));
@@ -769,15 +810,6 @@ async function initPanorama() {
     if (points.length < 2) return 0;
     return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
   };
-  const toggleFullscreen = () => {
-    const target = shell;
-    if (!target) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.();
-      return;
-    }
-    target.requestFullscreen?.();
-  };
   const resize = () => {
     const rect = canvas.parentElement.getBoundingClientRect();
     const scale = Math.min(window.devicePixelRatio || 1, 2);
@@ -840,30 +872,6 @@ async function initPanorama() {
     if (event.ctrlKey || event.metaKey) return true;
     return Math.abs(dx) < 4 && (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL || Math.abs(dy) >= 40);
   };
-  const ignoreShortcut = (event) => {
-    const target = event.target;
-    return target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target?.tagName);
-  };
-  const keyDown = (event) => {
-    if (ignoreShortcut(event)) return;
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setVideoVolume(video.volume + 0.05);
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setVideoVolume(video.volume - 0.05);
-    } else if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      seekBy(-15);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      seekBy(15);
-    } else if (event.key === " " || event.code === "Space") {
-      event.preventDefault();
-      togglePlayback();
-    }
-  };
-
   window.addEventListener("resize", resize);
   canvas.addEventListener("pointerdown", pointerDown);
   canvas.addEventListener("pointermove", pointerMove);
@@ -891,7 +899,6 @@ async function initPanorama() {
     }
     togglePlayback();
   });
-  document.addEventListener("keydown", keyDown);
 
   resize();
 

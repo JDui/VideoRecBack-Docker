@@ -3,6 +3,7 @@
 {% block body_class %}library-page{% endblock %}
 {% block chrome %}{% endblock %}
 {% block content %}
+  {% from "_icons.html" import icon %}
   {% set preview = videos[0] if videos else none %}
   {% from "_video_macros.html" import asset_card with context %}
 
@@ -192,16 +193,16 @@
       {% endif %}
     </section>
 
-    <button class="pane-resizer" type="button" aria-label="调整播放器宽度" data-resizer></button>
+    <button class="pane-resizer" type="button" aria-label="调整播放器宽度，左右方向键调整" aria-valuemin="25" aria-valuemax="75" aria-valuenow="67" role="separator" aria-orientation="vertical" data-resizer></button>
     <aside class="preview-pane" data-inline-player>
       <div class="inline-player-head">
-        <strong>播放：<span data-inline-player-title></span></strong>
+        <div class="inline-player-heading"><span class="inline-player-eyebrow">正在观看</span><strong data-inline-player-title></strong></div>
         <div class="inline-player-actions">
           <button class="nav-button secondary favorite-toggle" type="button" data-inline-favorite hidden aria-pressed="false">
-            <span data-favorite-label>收藏</span>
+            {{ icon('heart') }}<span data-favorite-label>收藏</span>
           </button>
-          <a class="nav-button secondary" href="#" data-inline-settings hidden>视频设置</a>
-          <button type="button" data-close-player>关闭</button>
+          <a class="nav-button secondary" href="#" data-inline-settings hidden aria-label="视频设置" title="视频设置">{{ icon('settings') }}<span>设置</span></a>
+          <button type="button" data-close-player aria-label="关闭播放器" title="关闭播放器">{{ icon('close') }}</button>
         </div>
       </div>
       <iframe title="内嵌播放器" data-player-frame></iframe>
@@ -209,5 +210,5 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.6.5" defer></script>
+  <script src="/static/app.js?v=2.6.6" defer></script>
 {% endblock %}

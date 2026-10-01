@@ -300,6 +300,7 @@ const setFavoriteButtonState = (button, favorite) => {
   button.dataset.favoriteState = favorite ? "1" : "0";
   button.classList.toggle("active", favorite);
   button.setAttribute("aria-pressed", favorite ? "true" : "false");
+  button.setAttribute("aria-label", favorite ? "取消收藏" : "收藏视频");
   const label = favoriteLabelFor(button);
   if (label) label.textContent = favorite ? "已收藏" : "收藏";
 };
@@ -476,23 +477,39 @@ inlineSettings?.addEventListener("click", (event) => {
 
 if (resizer && shell) {
   let resizing = false;
+  const updatePlayerWidth = (fraction) => {
+    const ratio = Math.max(0.25, Math.min(0.75, fraction));
+    shell.style.setProperty("--player-width", `calc((100% - 8px) * ${ratio})`);
+    resizer.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+    window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
+  };
   resizer.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
     resizing = true;
+    shell.classList.add("is-resizing");
     resizer.setPointerCapture(event.pointerId);
   });
   resizer.addEventListener("pointermove", (event) => {
     if (!resizing) return;
     const rect = shell.getBoundingClientRect();
-    const width = Math.max(360, Math.min(rect.width * 0.62, rect.right - event.clientX));
-    shell.style.setProperty("--player-width", `${Math.round(width)}px`);
-    window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
+    updatePlayerWidth((rect.right - event.clientX) / Math.max(1, rect.width - 8));
   });
-  for (const name of ["pointerup", "pointercancel"]) {
-    resizer.addEventListener(name, () => {
-      resizing = false;
-      window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
-    });
+  const finishResize = () => {
+    resizing = false;
+    shell.classList.remove("is-resizing");
+    window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
+  };
+  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
+    resizer.addEventListener(name, finishResize);
   }
+  resizer.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
+    event.preventDefault();
+    const rect = shell.getBoundingClientRect();
+    const current = frame.parentElement.getBoundingClientRect().width / Math.max(1, rect.width - 8);
+    updatePlayerWidth(event.key === "Home" ? 2 / 3 : current + (event.key === "ArrowLeft" ? 0.025 : -0.025));
+  });
+  resizer.addEventListener("dblclick", () => updatePlayerWidth(2 / 3));
 }
 
 if (libraryPane && shell) {
