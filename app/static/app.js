@@ -45,6 +45,7 @@ const capturePanePosition = () => {
     scrollTop: libraryPane?.scrollTop || 0,
     sectionId,
     sectionOffset,
+    ...(timelineRoot?.hasAttribute("data-timeline-gallery") ? { timelineDate: section?.dataset.galleryDate || "" } : {}),
   };
 };
 
@@ -70,6 +71,7 @@ const saveReturnState = (position = capturePanePosition()) => {
     view: new URLSearchParams(window.location.search).get("view") || "timeline",
     activeSection: position.sectionId,
     sectionOffset: position.sectionOffset,
+    timelineDate: position.timelineDate,
     savedAt: Date.now(),
   };
   const value = JSON.stringify(state);
@@ -114,6 +116,7 @@ const saveTimelinePosition = (position = capturePanePosition()) => {
         scrollTop: position.scrollTop,
         sectionId: position.sectionId,
         sectionOffset: position.sectionOffset,
+        timelineDate: position.timelineDate,
         savedAt: Date.now(),
       })
     );
@@ -316,6 +319,10 @@ const setCardFavoriteState = (card, favorite) => {
   if (!card) return;
   card.dataset.favoriteState = favorite ? "1" : "0";
   if (card === inlinePlayerCard) setFavoriteButtonState(inlineFavorite, favorite);
+  const date = card.parentElement?.dataset.galleryDate;
+  if (date) window.dispatchEvent(new CustomEvent("videorecback:timeline-favorite", {
+    detail: { videoId: card.dataset.videoId, date, favorite },
+  }));
 };
 
 const bindFavoriteControl = (button, currentCard) => {
@@ -605,7 +612,7 @@ if (timelineLoadSentinel && "IntersectionObserver" in window) {
   timelineLoader.observe(timelineLoadSentinel);
 }
 
-if (timelineRail && libraryPane) {
+if (timelineRail && libraryPane && !timelineRoot?.hasAttribute("data-timeline-gallery")) {
   const marks = [...timelineRail.querySelectorAll(".timeline-jump-mark")];
   let sections = [...document.querySelectorAll("[data-timeline-section]")];
   let points = [...document.querySelectorAll("[data-timeline-point]")];

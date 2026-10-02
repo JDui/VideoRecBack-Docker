@@ -1,0 +1,2 @@
+{% from '_home_card.html' import home_card with context %}
+{% for video in videos %}{{ home_card(video, hero=True) }}{% endfor %}

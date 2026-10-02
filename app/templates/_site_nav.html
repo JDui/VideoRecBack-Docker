@@ -1,0 +1,18 @@
+{% macro site_nav(active, date_text='') %}
+  {% from '_icons.html' import icon %}
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="site-brand" href="/">{{ settings.site_title }}</a>
+      <nav class="site-navigation" aria-label="主导航">
+        <a href="/" {% if active == 'home' %}aria-current="page"{% endif %}>首页</a>
+        <a href="/library" {% if active == 'library' %}aria-current="page"{% endif %}>视频库</a>
+        <a href="/?view=favorites" {% if active == 'favorites' %}aria-current="page"{% endif %}>收藏</a>
+      </nav>
+      <div class="site-header-actions">
+        {% if date_text %}<span class="site-date">{{ date_text }}</span>{% endif %}
+        <button class="intranet-jump-button{% if settings.intranet_keepalive_enabled and settings.intranet_redirect_host %} is-visible{% endif %}" type="button" data-intranet-jump {% if not settings.intranet_keepalive_enabled or not settings.intranet_redirect_host %}hidden{% endif %}>检测内网</button>
+        <a class="site-settings" href="/settings" {% if active == 'settings' %}aria-current="page"{% endif %} aria-label="设置" title="设置">{{ icon('settings') }}<span>设置</span></a>
+      </div>
+    </div>
+  </header>
+{% endmacro %}

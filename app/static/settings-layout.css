@@ -1,0 +1,73 @@
+.preferences-page .page { max-width: 1440px; padding: 32px clamp(20px, 4.3vw, 64px) 120px; }
+.preferences-heading { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 26px; }
+.preferences-heading h1 { font-size: 32px; letter-spacing: -.03em; line-height: 1.3; margin: 0 0 8px; }
+.preferences-heading p { margin: 0; font-size: 15px; color: var(--muted); }
+.preferences-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; align-items: start; }
+.preferences-nav { display: grid; gap: 6px; position: sticky; top: 24px; border-right: 1px solid var(--line); padding-right: 20px; }
+.preferences-nav a { display: block; border-radius: 6px; padding: 15px 20px; color: var(--muted); font-size: 15px; font-weight: 600; border-left: 3px solid transparent; }
+.preferences-nav a[aria-current], .preferences-nav a:hover { color: var(--accent-deep); background: #e3f0eb; }
+.preferences-nav a[aria-current] { border-left-color: var(--accent); }
+.preferences-nav .preferences-back { margin-top: 24px; font-size: 13px; font-weight: 400; }
+.preferences-content, .preferences-form { min-width: 0; }
+.preference-section { padding: 0 0 28px; margin: 0 0 28px; border-bottom: 1px solid var(--line); scroll-margin-top: 24px; }
+.preference-section > header { margin-bottom: 24px; }
+.preference-section h2 { font-size: 22px; line-height: 1.3; font-weight: 700; letter-spacing: -.02em; margin: 0 0 8px; }
+.preference-section > header p { font-size: 14px; color: var(--muted); margin: 0; line-height: 1.6; }
+.preference-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 36px; align-items: start; }
+.preference-field { display: flex; flex-direction: column; gap: 6px; color: var(--text); font-size: 14px; line-height: 1.5; font-weight: 600; min-width: 0; }
+.preference-field input, .preference-field select, .preference-field textarea { font-size: 14px; font-weight: 400; padding: 10px 13px; width: 100%; border-radius: 6px; box-shadow: none; min-height: 42px; }
+.preference-field textarea { resize: vertical; line-height: 1.6; min-height: 92px; }
+.preference-field small, .preference-display small { font-size: 12px; line-height: 1.6; font-weight: 400; color: var(--muted); }
+.preference-input-unit { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 6px; background: white; overflow: hidden; }
+.preference-input-unit input { border: 0; border-radius: 0; min-width: 0; width: 0; flex: 1; background: transparent; }
+.preference-input-unit:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.preference-input-unit input:focus { outline: 0; box-shadow: none; }
+.preference-input-unit > span { display: flex; align-items: center; flex-shrink: 0; white-space: nowrap; padding: 0 16px; border-left: 1px solid var(--line); background: #f7f9f8; color: var(--muted); font-size: 13px; font-weight: 400; }
+.preference-check { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; min-height: 34px; cursor: pointer; }
+.preference-check input { width: 18px; height: 18px; min-height: 18px; margin: 0; accent-color: var(--accent); padding: 0; flex-shrink: 0; cursor: pointer; }
+.preference-display { border: 0; padding: 0; margin: 0; min-width: 0; }
+.preference-display legend { font-size: 14px; font-weight: 600; margin-bottom: 12px; padding: 0; }
+.preference-display > div { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 8px; }
+.preference-wide, .preference-hint { grid-column: 1 / -1; }
+.preference-hint { font-size: 12px; line-height: 1.7; color: var(--muted); margin: 0; }
+.preferences-savebar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,.97); border-top: 1px solid var(--line); z-index: 25; }
+.preferences-savebar > div { display: flex; align-items: center; justify-content: space-between; gap: 20px; max-width: 1440px; margin: auto; padding: 14px clamp(20px, 4.3vw, 64px); }
+.preferences-savebar p { color: var(--muted); font-size: 13px; margin: 0; }
+.preferences-savebar button { background: var(--accent); color: white; border: 1px solid var(--accent); padding: 10px 23px; border-radius: 6px; font-size: 14px; font-weight: 600; min-height: 42px; box-shadow: none; }
+.preferences-savebar button:hover { background: var(--accent-deep); transform: none; box-shadow: none; }
+.preferences-savebar button:disabled { opacity: .6; }
+.preference-maintenance { border-bottom: 0; margin-bottom: 0; }
+.preferences-page .settings-action-panel { display: block; padding: 0; border: 0; background: transparent; border-radius: 0; box-shadow: none; transform: none; margin-bottom: 30px; }
+.preferences-page .connectivity-panel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
+.preferences-page .settings-action-panel strong { font-size: 15px; font-weight: 600; }
+.preferences-page .settings-action-panel .muted { font-size: 13px; line-height: 1.7; color: var(--muted); }
+.preferences-page .connectivity-results { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.preferences-page .connectivity-results span { border: 0; background: transparent; padding: 0; font-size: 13px; font-weight: 400; }
+.preferences-page .connectivity-results button { background: #e3f0eb; border: 0; color: var(--accent-deep); border-radius: 6px; font-size: 13px; font-weight: 600; padding: 9px 15px; }
+.preferences-page .settings-confirm-head { margin: 0 0 8px; }
+.preferences-page .settings-confirm-action { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.preferences-page .settings-confirm-action > div { min-width: 0; }
+.preferences-page .settings-confirm-action button { flex-shrink: 0; background: white; color: var(--danger); border: 1px solid #e6d0cc; box-shadow: none; font-size: 13px; font-weight: 500; border-radius: 6px; padding: 9px 13px; }
+.preferences-page .settings-confirm-action button:hover { background: #faf0ee; transform: none; box-shadow: none; }
+.preferences-page .settings-confirm-action:last-child { border: 0; }
+@media (max-width: 1000px) {
+  .preferences-layout { grid-template-columns: 170px minmax(0, 1fr); gap: 24px; }
+  .preferences-nav { padding-right: 14px; }
+  .preferences-nav a { padding: 13px; }
+  .preference-fields { gap: 22px; }
+}
+@media (max-width: 700px) {
+  .preferences-page .page { padding-top: 24px; }
+  .preferences-heading h1 { font-size: 28px; }
+  .preferences-heading { margin-bottom: 0; }
+  .preferences-layout { display: block; }
+  .preferences-nav { position: sticky; top: 0; z-index: 15; display: flex; overflow-x: auto; gap: 6px; padding: 12px 0; margin-bottom: 24px; border: 0; background: #f3f7f5; }
+  .preferences-nav a { flex-shrink: 0; padding: 10px 12px; font-size: 13px; border-left: 0; }
+  .preferences-nav a[aria-current] { border-left: 0; }
+  .preferences-nav .preferences-back { display: none; }
+  .preference-fields { grid-template-columns: 1fr; gap: 22px; }
+  .preference-section { scroll-margin-top: 78px; }
+  .preferences-page .settings-confirm-action { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .preferences-savebar p { max-width: 60%; line-height: 1.6; }
+  .preferences-savebar button { padding: 10px 15px; }
+}

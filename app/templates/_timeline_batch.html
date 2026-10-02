@@ -1,4 +1,5 @@
 {% from "_video_macros.html" import asset_card with context %}
+{% from "_timeline_card.html" import timeline_card with context %}
 {% for group in timeline_groups %}
   <section class="timeline-section" id="{{ group.anchor }}" data-timeline-section data-timeline-point data-year="{{ group.year }}" data-month="{{ group.month }}" data-day="{{ group.day }}" data-label="{{ group.label }}" data-granularity="{{ group.granularity }}">
     <header class="timeline-section-head">
@@ -12,7 +13,7 @@
           <small>{{ day.videos|length }} 个视频</small>
         </div>
         <div class="asset-grid timeline-asset-grid">
-          {% for video in day.videos %}{{ asset_card(video) }}{% endfor %}
+          {% for video in day.videos %}{% if timeline_gallery %}{{ timeline_card(video) }}{% else %}{{ asset_card(video) }}{% endif %}{% endfor %}
         </div>
       </div>
     {% endfor %}

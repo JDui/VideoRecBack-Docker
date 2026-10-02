@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}首页 - {{ settings.site_title }}{% endblock %}
+{% block body_class %}home-page{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/home.css?v=2">{% endblock %}
+{% block chrome %}
+  {% from '_site_nav.html' import site_nav with context %}
+  {{ site_nav('home', home.today ~ ' · ' ~ home.weekday) }}
+{% endblock %}
+{% block content %}
+  {% from '_home_card.html' import home_card with context %}
+  <section class="home-discover" aria-labelledby="discover-title">
+    <header class="home-section-head home-section-head--hero">
+      <div><p class="home-eyebrow">与旧时光，不期而遇</p><h1 id="discover-title">回忆拾回</h1></div>
+      <button class="home-soft-button" type="button" data-home-shuffle {% if not home.random %}disabled{% endif %} aria-controls="home-random">再拾三段</button>
+    </header>
+    <div class="home-grid home-grid--random" id="home-random" data-home-random>
+      {% with videos=home.random %}{% include '_home_random.html' %}{% endwith %}
+    </div>
+    <p class="home-feedback" data-home-feedback role="status"></p>
+    {% if not home.random %}
+      <div class="home-empty home-empty--welcome"><h2>从第一段影像开始</h2><p>设置视频目录，再更新影像库。那些值得重温的时刻，会在这里与你相遇。</p><a class="home-soft-button" href="/settings#library">设置视频目录</a></div>
+    {% endif %}
+  </section>
+  <section class="home-section" aria-labelledby="recent-title">
+    <header class="home-section-head"><h2 id="recent-title">最近记录</h2><a class="home-more" href="/library">查看全部</a></header>
+    <div class="home-grid home-grid--recent">{% for video in home.recent %}{{ home_card(video) }}{% else %}<p class="home-empty">新的记录，会让这里慢慢丰盈。</p>{% endfor %}</div>
+  </section>
+  <div class="home-lower">
+    <section class="home-section" aria-labelledby="favorites-title">
+      <header class="home-section-head"><h2 id="favorites-title">珍藏片段</h2><a class="home-more" href="/?view=favorites">查看全部</a></header>
+      <div class="home-grid home-grid--favorites">{% for video in home.favorites %}{{ home_card(video) }}{% else %}<p class="home-empty">遇到想反复重温的片段，在播放时点一下收藏。</p>{% endfor %}</div>
+    </section>
+    <section class="home-section home-memories" aria-labelledby="memories-title">
+      <header class="home-section-head"><h2 id="memories-title">那年今日</h2><a class="home-more" href="/?view=memories">查看全部</a></header>
+      <div class="home-memory-list">{% for video in home.memories %}{{ home_card(video, memory=True) }}{% else %}<p class="home-empty">往年的 {{ home.today_short }} 暂无记录。别的日子，也藏着值得重温的片刻。</p>{% endfor %}</div>
+    </section>
+  </div>
+  <footer class="home-library-status" aria-labelledby="status-title" data-home-status data-scanning="{{ '1' if scan_running else '0' }}">
+    <h2 id="status-title">影像库概览</h2>
+    <dl class="home-stat-list">
+      <div><dt>视频</dt><dd>{{ '{:,}'.format(home.summary.total) }} <span>个视频</span></dd></div>
+      <div><dt>全景</dt><dd>{{ home.summary.panorama }} <span>个全景</span></dd></div>
+      <div><dt>收藏</dt><dd>{{ home.summary.favorites }} <span>个收藏</span></dd></div>
+      <div><dt>封面</dt><dd>{% if not home.summary.total %}等待影像{% elif home.summary.errors %}{{ home.summary.errors }} 个封面失败{% elif home.summary.pending %}{{ home.summary.pending }} 个封面待生成{% else %}封面就绪{% endif %}</dd></div>
+      <div><dt>更新状态</dt><dd data-home-scan-status>{{ '正在更新' if scan_running else '扫描空闲' }}</dd></div>
+    </dl>
+    <form action="/scan" method="post" data-home-scan-form><button class="home-soft-button" type="submit" data-home-scan-button {% if scan_running %}disabled{% endif %}>{{ '正在更新' if scan_running else '更新影像库' }}</button></form>
+  </footer>
+{% endblock %}
+{% block scripts %}<script src="/static/home.js?v=2" defer></script>{% endblock %}

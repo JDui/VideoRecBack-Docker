@@ -1,115 +1,84 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% block title %}设置 - {{ settings.site_title }}{% endblock %}
+{% block body_class %}preferences-page{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="/static/home.css?v=2">
+  <link rel="stylesheet" href="/static/settings-layout.css?v=2">
+{% endblock %}
+{% block chrome %}
+  {% from '_site_nav.html' import site_nav with context %}{{ site_nav('settings') }}
+{% endblock %}
 {% block content %}
-  <a class="back-link" href="javascript:history.length > 1 ? history.back() : location.assign('/')">返回</a>
-  <section class="settings-shell">
-    <div>
-      <p class="eyebrow">Preferences</p>
-      <h1>设置</h1>
-      <p class="muted">配置页面标题、扫描策略和时间线下方的元数据展示。</p>
-    </div>
-    <form class="form settings-form" action="/settings" method="post">
-      <label>
-        页面标题
-        <input name="site_title" type="text" value="{{ settings.site_title }}" required>
-      </label>
-      <label>
-        视频目标路径
-        <input name="video_root" type="text" value="{{ settings.video_root }}" required>
-      </label>
-      <label>
-        定期扫描间隔，小时（0 为关闭自动扫描）
-        <input name="scan_interval_hours" type="number" min="0" value="{{ settings.scan_interval_hours }}" required>
-      </label>
-      <label>
-        默认播放音量，百分比
-        <input name="default_volume_percent" type="number" min="0" max="100" value="{{ settings.default_volume_percent }}" required>
-      </label>
-      <label>
-        平面视频默认画质
-        <select name="default_flat_quality">
-          <option value="original" {% if settings.default_flat_quality == 'original' %}selected{% endif %}>原画</option>
-          <option value="ultra" {% if settings.default_flat_quality == 'ultra' %}selected{% endif %}>超清</option>
-          <option value="low" {% if settings.default_flat_quality == 'low' %}selected{% endif %}>高清</option>
-          <option value="high" {% if settings.default_flat_quality == 'high' %}selected{% endif %}>流畅</option>
-        </select>
-      </label>
-      <label>
-        全景视频默认画质
-        <select name="default_panorama_quality">
-          <option value="original" {% if settings.default_panorama_quality == 'original' %}selected{% endif %}>原画</option>
-          <option value="ultra" {% if settings.default_panorama_quality == 'ultra' %}selected{% endif %}>超清</option>
-          <option value="low" {% if settings.default_panorama_quality == 'low' %}selected{% endif %}>高清</option>
-          <option value="high" {% if settings.default_panorama_quality == 'high' %}selected{% endif %}>流畅</option>
-        </select>
-      </label>
-      <label>
-        封面分辨率
-        <select name="thumbnail_resolution">
-          <option value="480" {% if settings.thumbnail_resolution == 480 %}selected{% endif %}>480P</option>
-          <option value="576" {% if settings.thumbnail_resolution == 576 %}selected{% endif %}>576P</option>
-          <option value="720" {% if settings.thumbnail_resolution == 720 %}selected{% endif %}>720P</option>
-        </select>
-      </label>
-      <label>
-        平面视频 HLS 转码编码器
-        <select name="flat_hls_encoder">
-          <option value="h264_qsv" {% if settings.flat_hls_encoder == 'h264_qsv' %}selected{% endif %}>h264_qsv（硬件优先，性能开销最低）</option>
-          <option value="h264_vaapi" {% if settings.flat_hls_encoder == 'h264_vaapi' %}selected{% endif %}>h264_vaapi（Linux VAAPI 硬件）</option>
-          <option value="libx264_ultrafast" {% if settings.flat_hls_encoder == 'libx264_ultrafast' %}selected{% endif %}>libx264 ultrafast（CPU 实时优先）</option>
-          <option value="libx264_veryfast" {% if settings.flat_hls_encoder == 'libx264_veryfast' %}selected{% endif %}>libx264 veryfast（CPU 画质优先）</option>
-        </select>
-      </label>
-      <label>
-        全景视频 HLS 转码编码器
-        <select name="panorama_hls_encoder">
-          <option value="h264_qsv" {% if settings.panorama_hls_encoder == 'h264_qsv' %}selected{% endif %}>h264_qsv（硬件优先，性能开销最低）</option>
-          <option value="h264_vaapi" {% if settings.panorama_hls_encoder == 'h264_vaapi' %}selected{% endif %}>h264_vaapi（Linux VAAPI 硬件）</option>
-          <option value="libx264_ultrafast" {% if settings.panorama_hls_encoder == 'libx264_ultrafast' %}selected{% endif %}>libx264 ultrafast（CPU 实时优先）</option>
-          <option value="libx264_veryfast" {% if settings.panorama_hls_encoder == 'libx264_veryfast' %}selected{% endif %}>libx264 veryfast（CPU 画质优先）</option>
-        </select>
-      </label>
-      <label>
-        HLS 最大缓存占用，MB
-        <input name="hls_cache_max_mb" type="number" min="256" max="102400" value="{{ settings.hls_cache_max_mb }}" required>
-        <input name="stream_cache_retention_days" type="hidden" value="{{ settings.stream_cache_retention_days }}">
-      </label>
-      <fieldset class="settings-fieldset">
-        <legend>内网直连</legend>
-        <label class="check"><input type="checkbox" name="intranet_keepalive_enabled" {% if settings.intranet_keepalive_enabled %}checked{% endif %}>启用内网直连检测</label>
-        <label>
-          内网服务 IP 或主机
-          <input name="intranet_redirect_host" type="text" value="{{ settings.intranet_redirect_host }}" placeholder="192.168.31.20">
-        </label>
-        <label>
-          内网服务协议
-          <select name="intranet_redirect_protocol">
-            <option value="http" {% if settings.intranet_redirect_protocol == 'http' %}selected{% endif %}>HTTP</option>
-            <option value="https" {% if settings.intranet_redirect_protocol == 'https' %}selected{% endif %}>HTTPS</option>
-          </select>
-        </label>
-        <label>
-          跳转端口
-          <input name="intranet_redirect_port" type="number" min="1" max="65535" value="{{ settings.intranet_redirect_port }}" placeholder="8080">
-        </label>
-        <p class="settings-help">浏览器会先自动探测内网服务；若请求被安全策略拦截，可点击“检测内网”通过一次性探测窗口确认，成功后按钮会变为“跳转内网”。</p>
-      </fieldset>
-      <label>
-        视频扩展名
-        <input name="video_extensions" type="text" value="{{ settings.video_extensions|join(', ') }}" required>
-      </label>
-      <label>
-        忽略文件名规则（每行或逗号分隔）
-        <textarea name="ignore_name_patterns" rows="4" placeholder="Thumbs.db&#10;desktop.ini&#10;._*">{{ settings.ignore_name_patterns|join('\n') }}</textarea>
-      </label>
-      <div class="checks">
-        <label class="check"><input type="checkbox" name="show_date" {% if settings.show_date %}checked{% endif %}>显示日期</label>
-        <label class="check"><input type="checkbox" name="show_size" {% if settings.show_size %}checked{% endif %}>显示大小</label>
-        <label class="check"><input type="checkbox" name="show_duration" {% if settings.show_duration %}checked{% endif %}>显示时长</label>
-        <label class="check"><input type="checkbox" name="ignore_dotfiles" {% if settings.ignore_dotfiles %}checked{% endif %}>忽略点开头文件和目录</label>
-      </div>
-      <button type="submit">保存设置</button>
-    </form>
+  {% macro quality(name, label, value) %}
+    <label class="preference-field">{{ label }}<select name="{{ name }}">
+      {% for key, text in [('original', '原画'), ('ultra', '超清'), ('low', '高清'), ('high', '流畅')] %}<option value="{{ key }}" {% if value == key %}selected{% endif %}>{{ text }}</option>{% endfor %}
+    </select><small>下次播放时使用，可在播放器中切换。</small></label>
+  {% endmacro %}
+  {% macro encoder(name, label, value) %}
+    <label class="preference-field">{{ label }}<select name="{{ name }}">
+      {% for key, text in [('h264_qsv', 'Intel QSV · 硬件优先'), ('h264_vaapi', 'VAAPI · Linux 硬件'), ('libx264_ultrafast', 'CPU · 实时优先'), ('libx264_veryfast', 'CPU · 画质优先')] %}<option value="{{ key }}" {% if value == key %}selected{% endif %}>{{ text }}</option>{% endfor %}
+    </select></label>
+  {% endmacro %}
+  <header class="preferences-heading"><h1>设置</h1><p>让影像库更合你的习惯。</p></header>
+  <div class="preferences-layout">
+    <nav class="preferences-nav" aria-label="设置分组">
+      <a href="#library" aria-current="location">视频库</a>
+      <a href="#playback">播放偏好</a>
+      <a href="#processing">封面与转码</a>
+      <a href="#network">内网连接</a>
+      <a href="#maintenance">维护工具</a>
+      <a class="preferences-back" href="/">返回首页</a>
+    </nav>
+    <div class="preferences-content">
+      <form class="preferences-form" id="preferences-form" action="/settings" method="post">
+        <section class="preference-section" id="library" aria-labelledby="library-heading">
+          <header><h2 id="library-heading">视频库</h2><p>管理视频来源与扫描方式。</p></header>
+          <div class="preference-fields">
+            <label class="preference-field">页面标题<input name="site_title" value="{{ settings.site_title }}" required autocomplete="off"></label>
+            <label class="preference-field">视频目录<input name="video_root" value="{{ settings.video_root }}" required spellcheck="false"><small>填写服务端或容器内的视频目录。</small></label>
+            <label class="preference-field">自动扫描间隔<span class="preference-input-unit"><input name="scan_interval_hours" type="number" min="0" value="{{ settings.scan_interval_hours }}" required><span>小时</span></span><small>填 0 可关闭自动扫描。</small></label>
+            <label class="preference-field">视频格式<input name="video_extensions" value="{{ settings.video_extensions|join(', ') }}" required spellcheck="false"><small>多个扩展名用逗号分隔。</small></label>
+            <label class="preference-field">忽略规则<textarea name="ignore_name_patterns" rows="3" placeholder="Thumbs.db&#10;desktop.ini&#10;._*" spellcheck="false">{{ settings.ignore_name_patterns|join('\n') }}</textarea><small>每行一个规则，也可用逗号分隔；支持通配符。</small></label>
+            <div class="preference-field"><label class="preference-check"><input name="ignore_dotfiles" type="checkbox" {% if settings.ignore_dotfiles %}checked{% endif %}><span>忽略隐藏文件</span></label><small>跳过以点开头的文件和目录。</small></div>
+          </div>
+        </section>
+        <section class="preference-section" id="playback" aria-labelledby="playback-heading">
+          <header><h2 id="playback-heading">播放偏好</h2><p>设置每次打开视频时的默认体验。</p></header>
+          <div class="preference-fields">
+            <label class="preference-field">默认音量<span class="preference-input-unit"><input name="default_volume_percent" type="number" min="0" max="100" value="{{ settings.default_volume_percent }}" required><span>%</span></span><small>范围为 0–100，下次播放时生效。</small></label>
+            {{ quality('default_flat_quality', '平面视频画质', settings.default_flat_quality) }}
+            {{ quality('default_panorama_quality', '全景视频画质', settings.default_panorama_quality) }}
+            <fieldset class="preference-display"><legend>视频信息展示</legend><div>
+              <label class="preference-check"><input name="show_date" type="checkbox" {% if settings.show_date %}checked{% endif %}>日期</label>
+              <label class="preference-check"><input name="show_size" type="checkbox" {% if settings.show_size %}checked{% endif %}>大小</label>
+              <label class="preference-check"><input name="show_duration" type="checkbox" {% if settings.show_duration %}checked{% endif %}>时长</label>
+            </div><small>选择视频卡片和播放页中显示的信息。</small></fieldset>
+          </div>
+        </section>
+        <section class="preference-section" id="processing" aria-labelledby="processing-heading">
+          <header><h2 id="processing-heading">封面与转码</h2><p>平衡预览清晰度、播放流畅度与设备负载。</p></header>
+          <div class="preference-fields">
+            <label class="preference-field">封面分辨率<select name="thumbnail_resolution">{% for value in [480, 576, 720] %}<option value="{{ value }}" {% if settings.thumbnail_resolution == value %}selected{% endif %}>{{ value }}P</option>{% endfor %}</select><small>用于新生成的封面；已有封面可在维护工具中刷新。</small></label>
+            <label class="preference-field">串流缓存上限<span class="preference-input-unit"><input name="hls_cache_max_mb" type="number" min="256" max="102400" value="{{ settings.hls_cache_max_mb }}" required><span>MB</span></span><small>范围为 256–102400 MB。</small></label>
+            {{ encoder('flat_hls_encoder', '平面视频转码编码器', settings.flat_hls_encoder) }}
+            {{ encoder('panorama_hls_encoder', '全景视频转码编码器', settings.panorama_hls_encoder) }}
+            <p class="preference-hint">硬件编码需要设备与容器支持；CPU 编码可用于通用设备。</p>
+            <input name="stream_cache_retention_days" type="hidden" value="{{ settings.stream_cache_retention_days }}">
+          </div>
+        </section>
+        <section class="preference-section" id="network" aria-labelledby="network-heading">
+          <header><h2 id="network-heading">内网连接</h2><p>在局域网中使用内网直连，减少绕行。</p></header>
+          <div class="preference-fields">
+            <label class="preference-check preference-wide"><input type="checkbox" name="intranet_keepalive_enabled" {% if settings.intranet_keepalive_enabled %}checked{% endif %}><span>启用内网直连检测</span></label>
+            <label class="preference-field">服务地址<input name="intranet_redirect_host" value="{{ settings.intranet_redirect_host }}" placeholder="192.168.31.20" spellcheck="false"><small>填写 IP 或主机名，不包含协议与路径。</small></label>
+            <label class="preference-field">服务端口<input name="intranet_redirect_port" type="number" min="1" max="65535" value="{{ settings.intranet_redirect_port }}" placeholder="8080"></label>
+            <label class="preference-field">连接协议<select name="intranet_redirect_protocol"><option value="http" {% if settings.intranet_redirect_protocol == 'http' %}selected{% endif %}>HTTP</option><option value="https" {% if settings.intranet_redirect_protocol == 'https' %}selected{% endif %}>HTTPS</option></select></label>
+            <p class="preference-hint">浏览器会自动探测内网服务。若被安全策略拦截，可点击“检测内网”进行一次性确认，成功后即可“跳转内网”。</p>
+          </div>
+        </section>
+      </form>
+      <section class="preference-section preference-maintenance" id="maintenance" aria-labelledby="maintenance-heading">
+        <header><h2 id="maintenance-heading">维护工具</h2><p>检查连接质量，或按需重新整理影像数据。</p></header>
     <section class="settings-action-panel connectivity-panel" data-connectivity-test>
       <div>
         <strong>服务器连通测试</strong>
@@ -187,8 +156,12 @@
         </form>
       </div>
     </section>
-  </section>
+      </section>
+    </div>
+  </div>
+  <footer class="preferences-savebar"><div>
+    <p role="status" data-settings-save-status>{{ '设置已保存。' if request.query_params.get('saved') == '1' else '设置只在保存后生效。' }}</p>
+    <button type="submit" form="preferences-form" data-settings-save>保存设置</button>
+  </div></footer>
 {% endblock %}
-{% block scripts %}
-  <script src="/static/settings.js?v=2.6.6" defer></script>
-{% endblock %}
+{% block scripts %}<script src="/static/settings.js?v=2" defer></script>{% endblock %}

@@ -1,0 +1,23 @@
+{% macro home_card(video, hero=False, memory=False) %}
+  <article class="home-video{% if memory %} home-video--memory{% endif %}">
+    <a class="home-cover" href="/video/{{ video.id }}/play" data-home-video="{{ video.id }}" aria-label="播放 {{ video.name }}">
+      {% if video.thumb_status == 'ready' %}
+        <img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="{{ video.name }}" loading="{{ 'eager' if hero else 'lazy' }}" decoding="async">
+      {% else %}
+        <span class="home-cover-status">{{ '封面暂不可用' if video.thumb_status == 'error' else '封面正在准备' }}</span>
+      {% endif %}
+      {% if settings.show_duration and video.duration_seconds %}<span class="home-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
+      {% if video.type == 'panorama' %}<span class="home-kind">全景</span>{% endif %}
+      {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="home-bit-depth">10bit</span>{% endif %}
+    </a>
+    <div class="home-video-caption">
+      {% if memory %}<span class="home-memory-year">{{ video.mtime|memory_year }} 年的今天</span>{% endif %}
+      <a class="home-video-title" href="/video/{{ video.id }}/play" data-home-video="{{ video.id }}" title="{{ video.name }}">{{ video.name }}</a>
+      <p class="home-video-meta">
+        {% if settings.show_date %}<span>{{ video.mtime|date }}</span>{% endif %}
+        {% if video.folder %}<span title="{{ video.folder }}">{{ video.folder }}</span>{% endif %}
+        {% if settings.show_size %}<span>{{ video.size_bytes|size }}</span>{% endif %}
+      </p>
+    </div>
+  </article>
+{% endmacro %}

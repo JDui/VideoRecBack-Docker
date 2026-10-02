@@ -2,6 +2,7 @@
 {% block title %}{{ settings.site_title }}{% endblock %}
 {% block body_class %}library-page{% endblock %}
 {% block chrome %}{% endblock %}
+{% block head %}{% if filters.view == 'timeline' %}<link rel="stylesheet" href="/static/timeline.css?v=11">{% endif %}{% endblock %}
 {% block content %}
   {% from "_icons.html" import icon %}
   {% set preview = videos[0] if videos else none %}
@@ -29,6 +30,7 @@
         <span>{{ stats.total }} 个视频 · {{ stats.flat }} 平面 · {{ stats.panorama }} 全景</span>
       </div>
       <nav class="view-switch" aria-label="视图">
+        <a href="/">首页</a>
         <a class="{% if filters.view == 'timeline' %}active{% endif %}" href="{{ view_urls.timeline }}" {% if filters.view == 'timeline' %}aria-current="page"{% endif %}>时间线</a>
         <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}" {% if filters.view == 'folders' %}aria-current="page"{% endif %}>文件夹</a>
         <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}" {% if filters.view == 'calendar' %}aria-current="page"{% endif %}>日历</a>
@@ -99,6 +101,7 @@
     </header>
 
     <section class="library-pane">
+      {% if filters.view == 'memories' %}<header class="asset-section-head"><h2>那年今日</h2><span>重温往年同一天的记录</span></header>{% endif %}
       {% if videos %}
         {% if filters.view == "favorites" %}
           <section class="favorites-view">
@@ -161,18 +164,37 @@
           </section>
         {% else %}
           <section
-            class="immich-timeline"
+            class="immich-timeline{% if filters.view == 'timeline' %} timeline-gallery{% endif %}"
             data-timeline-root
+            {% if filters.view == 'timeline' %}data-timeline-gallery{% endif %}
             data-timeline-cache='{{ timeline_cache|tojson }}'
             data-batch-url="{{ timeline_batch_url }}"
             data-has-more="{{ '1' if timeline_has_more else '0' }}"
             {% if timeline_next_cursor %}data-next-mtime="{{ timeline_next_cursor.mtime }}" data-next-id="{{ timeline_next_cursor.id }}"{% endif %}
           >
+            {% if filters.view == 'timeline' %}
+              <header class="timeline-position-bar">
+                <output data-gallery-position aria-label="当前浏览日期">{{ videos[0].mtime|date }}</output>
+                <span>按时间排序</span>
+                <span class="timeline-feedback" data-gallery-feedback role="status"></span>
+              </header>
+              <script type="application/json" data-gallery-date-index>{{ timeline_date_index|tojson }}</script>
+            {% endif %}
             <div class="timeline-stack" data-timeline-stack>
+              {% set timeline_gallery = filters.view == 'timeline' %}
               {% include "_timeline_batch.html" %}
             </div>
             <div class="timeline-load-sentinel" data-timeline-load {% if not timeline_has_more %}hidden{% endif %}>继续加载</div>
             <aside class="timeline-jump-rail" aria-label="快速跳转时间线" data-timeline-jump>
+              {% if filters.view == 'timeline' %}
+                <button class="timeline-latest" type="button" data-gallery-latest>{{ icon('back') }}<span>回到最新</span></button>
+                <div class="timeline-scrubber">
+                  <div class="timeline-date-axis" role="slider" tabindex="0" aria-label="时间轴，方向键选择日期" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0" data-gallery-scrubber>
+                    <div class="timeline-date-ticks" data-gallery-date-ticks aria-hidden="true"></div>
+                    <span class="timeline-current-tick" data-gallery-current-tick aria-hidden="true"></span>
+                  </div>
+                  <output class="timeline-scrub-date" data-gallery-scrub-date role="tooltip"></output>
+              {% endif %}
               {% for year in timeline_rail %}
                 <div class="timeline-jump-year">
                   <span>{{ year.year }}</span>
@@ -185,6 +207,7 @@
                   </div>
                 </div>
               {% endfor %}
+              {% if filters.view == 'timeline' %}</div><span class="timeline-rail-legend">{{ icon('heart') }}收藏</span>{% endif %}
             </aside>
           </section>
         {% endif %}
@@ -210,5 +233,6 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.6.6" defer></script>
+  <script src="/static/app.js?v=2.6.8" defer></script>
+  {% if filters.view == 'timeline' %}<script src="/static/timeline.js?v=12" defer></script>{% endif %}
 {% endblock %}

@@ -33,6 +33,7 @@ from app.config import (
 )
 from app.db import Database
 from app.formatting import format_bitrate, format_date, format_duration, format_size
+from app.home import home_content, memory_date_values, random_videos
 from app.media import (
     build_range_response,
     record_hls_heartbeat,
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     templates.env.filters["size"] = format_size
     templates.env.filters["date"] = format_date
     templates.env.filters["bitrate"] = format_bitrate
+    templates.env.filters["memory_year"] = lambda value: datetime.fromtimestamp(value).year
 
     @app.on_event("startup")
     async def startup() -> None:
@@ -117,9 +119,35 @@ def create_app() -> FastAPI:
             if task:
                 task.cancel()
 
+    @app.get("/home/random")
+    async def home_random(request: Request):
+        raw_ids = request.query_params.get("exclude", "")
+        try:
+            ids = [int(value) for value in raw_ids.split(",") if value]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid video IDs")
+        if len(ids) > 3 or any(value < 1 for value in ids):
+            raise HTTPException(status_code=400, detail="Invalid video IDs")
+        videos = random_videos(db, ids)
+        html = templates.get_template("_home_random.html").render(
+            videos=videos, settings=load_settings(config_dir)
+        )
+        return JSONResponse({"html": html}, headers={"Cache-Control": "no-store"})
+
+    @app.get("/library", response_class=HTMLResponse)
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
         settings = load_settings(config_dir)
+        library_params = {
+            "view", "type", "duration", "aspect", "folder", "q",
+            "calendar_zoom", "calendar_year", "calendar_month", "date_from", "date_to",
+        }
+        if request.url.path == "/" and not library_params.intersection(request.query_params):
+            return templates.TemplateResponse(
+                request, "home.html",
+                {"settings": settings, "home": home_content(db), "scan_running": is_scan_running(app)},
+                headers={"Cache-Control": "no-store"},
+            )
         filters = read_filters(request)
         all_rows = query_videos(db, filters)
         rows = all_rows
@@ -143,6 +171,7 @@ def create_app() -> FastAPI:
                 "view_urls": build_view_urls(filters),
                 "timeline_groups": timeline_groups,
                 "timeline_rail": timeline_rail,
+                "timeline_date_index": build_timeline_date_index(all_rows) if filters["view"] == "timeline" else [],
                 "timeline_cache": build_timeline_cache(timeline_groups, timeline_rail, filters),
                 "timeline_has_more": timeline_has_more,
                 "timeline_next_cursor": timeline_next_cursor,
@@ -158,19 +187,30 @@ def create_app() -> FastAPI:
         settings = load_settings(config_dir)
         filters = read_filters(request)
         filters["view"] = "timeline"
-        try:
-            cursor = (
-                float(request.query_params["cursor_mtime"]),
-                int(request.query_params["cursor_id"]),
-            )
-        except (KeyError, TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="Invalid timeline cursor")
+        start_date = request.query_params.get("start_date")
+        if start_date is not None:
+            cursor = None
+            if start_date != "latest":
+                try:
+                    datetime.strptime(start_date, "%Y-%m-%d")
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid timeline date")
+                filters["date_to"] = min(start_date, filters["date_to"]) if filters["date_to"] else start_date
+        else:
+            try:
+                cursor = (
+                    float(request.query_params["cursor_mtime"]),
+                    int(request.query_params["cursor_id"]),
+                )
+            except (KeyError, TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Invalid timeline cursor")
         rows = query_videos(db, filters, cursor=cursor, limit=TIMELINE_PAGE_SIZE + 1)
         has_more = len(rows) > TIMELINE_PAGE_SIZE
         page_rows = rows[:TIMELINE_PAGE_SIZE]
         html = templates.get_template("_timeline_batch.html").render(
             settings=settings,
             timeline_groups=build_timeline_groups(page_rows),
+            timeline_gallery=True,
         )
         return {
             "html": html,
@@ -240,7 +280,7 @@ def create_app() -> FastAPI:
         )
         save_settings(config_dir, settings)
         sync_settings_to_db(db, settings)
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/settings?saved=1", status_code=303)
 
     @app.post("/settings/refresh-thumbnails")
     async def refresh_thumbnails():
@@ -697,7 +737,7 @@ def read_filters(request: Request) -> dict[str, str]:
     params = request.query_params
     view = (
         params.get("view", "timeline")
-        if params.get("view", "timeline") in {"timeline", "folders", "calendar", "favorites"}
+        if params.get("view", "timeline") in {"timeline", "folders", "calendar", "favorites", "memories"}
         else "timeline"
     )
     requested_zoom = params.get("calendar_zoom")
@@ -746,6 +786,10 @@ def query_videos(
         clauses.append("aspect_ratio IS NOT NULL AND aspect_ratio >= 0.8 AND aspect_ratio < 1.4")
     if filters["view"] == "favorites":
         clauses.append("favorite = 1")
+    if filters["view"] == "memories":
+        month_day, year_start = memory_date_values()
+        clauses.append("mtime < ? AND strftime('%m-%d', mtime, 'unixepoch', 'localtime') = ?")
+        values.extend([year_start, month_day])
     if filters["q"]:
         clauses.append("(name LIKE ? OR folder LIKE ? OR relative_path LIKE ?)")
         like = f"%{filters['q']}%"
@@ -873,6 +917,17 @@ def build_timeline_groups(rows):
 
 def group_by_date(rows):
     return build_timeline_groups(rows)
+
+
+def build_timeline_date_index(rows) -> list[dict[str, str | int]]:
+    dates: dict[str, dict[str, int]] = {}
+    for row in rows:
+        date = datetime.fromtimestamp(row["mtime"]).date().isoformat()
+        entry = dates.setdefault(date, {"count": 0, "favorite_count": 0})
+        entry["count"] += 1
+        if "favorite" in row.keys() and row["favorite"]:
+            entry["favorite_count"] += 1
+    return [{"date": date, **dates[date]} for date in sorted(dates, reverse=True)]
 
 
 def build_timeline_rail(rows) -> list[dict[str, object]]:

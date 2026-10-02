@@ -1,5 +1,38 @@
 const panel = document.querySelector("[data-connectivity-test]");
 
+const preferencesForm = document.querySelector('#preferences-form');
+const saveStatus = document.querySelector('[data-settings-save-status]');
+const saveButton = document.querySelector('[data-settings-save]');
+const sectionLinks = [...document.querySelectorAll('.preferences-nav a[href^="#"]')];
+const preferenceSections = [...document.querySelectorAll('.preference-section')];
+
+const syncSectionNavigation = () => {
+  const threshold = window.innerWidth <= 700 ? 120 : 100;
+  let current = preferenceSections[0];
+  for (const section of preferenceSections) {
+    if (section.getBoundingClientRect().top <= threshold) current = section;
+  }
+  for (const link of sectionLinks) {
+    if (link.hash === `#${current?.id}`) link.setAttribute('aria-current', 'location');
+    else link.removeAttribute('aria-current');
+  }
+};
+window.addEventListener('scroll', syncSectionNavigation, { passive: true });
+window.addEventListener('resize', syncSectionNavigation, { passive: true });
+syncSectionNavigation();
+
+preferencesForm?.addEventListener('input', () => { saveStatus.textContent = '已修改，保存后生效。'; });
+preferencesForm?.addEventListener('submit', () => {
+  saveButton.disabled = true;
+  saveButton.textContent = '正在保存';
+  saveStatus.textContent = '正在保存设置。';
+});
+window.addEventListener('pageshow', () => {
+  if (!saveButton) return;
+  saveButton.disabled = false;
+  saveButton.textContent = '保存设置';
+});
+
 if (panel) {
   const startButton = panel.querySelector("[data-connectivity-start]");
   const statusValue = panel.querySelector("[data-connectivity-status]");

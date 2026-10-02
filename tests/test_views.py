@@ -1,3 +1,5 @@
+import json
+import re
 from datetime import datetime, timedelta
 from importlib import import_module
 
@@ -98,7 +100,7 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert "内网直连" in response.text
     assert "服务器连通测试" in response.text
     assert "/static/intranet.js?v=2.6.6" in response.text
-    assert "/static/settings.js?v=2.6.6" in response.text
+    assert "/static/settings.js?v=2" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
     assert "确认要刷新所有封面吗" in response.text
@@ -564,6 +566,101 @@ def test_timeline_rail_clamps_old_videos_to_2010_with_real_target(monkeypatch, t
     assert old_mark["target"] == "#timeline-2006-05-06"
 
 
+def test_timeline_date_index_counts_favorites_without_clamping_old_dates(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    rows = [
+        {"mtime": datetime(2006, 5, 6).timestamp(), "favorite": 1},
+        {"mtime": datetime(2026, 7, 8, 8).timestamp(), "favorite": 0},
+        {"mtime": datetime(2026, 7, 8, 20).timestamp(), "favorite": 1},
+        {"mtime": datetime(2026, 7, 8, 12).timestamp()},
+        {"mtime": datetime(2025, 1, 10).timestamp(), "favorite": 0},
+    ]
+
+    assert main.build_timeline_date_index(rows) == [
+        {"date": "2026-07-08", "count": 3, "favorite_count": 1},
+        {"date": "2025-01-10", "count": 1, "favorite_count": 0},
+        {"date": "2006-05-06", "count": 1, "favorite_count": 1},
+    ]
+    assert main.build_timeline_date_index([]) == []
+
+
+def _rendered_timeline_date_index(response):
+    match = re.search(
+        r"<script[^>]*\bdata-gallery-date-index\b[^>]*>(.*?)</script>",
+        response.text,
+        re.DOTALL,
+    )
+    assert match is not None
+    return json.loads(match.group(1))
+
+
+def test_timeline_date_index_uses_filtered_sqlite_rows(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, favorite)
+            VALUES (?, ?, ?, ?, ?, 1, 1)
+            """,
+            [
+                (str(tmp_path / name), name, datetime(year, 5, 6).timestamp(), missing, kind)
+                for name, year, missing, kind in [
+                    ("keep-recent.mp4", 2025, 0, "flat"),
+                    ("keep-old.mp4", 2006, 0, "flat"),
+                    ("keep-too-old.mp4", 1999, 0, "flat"),
+                    ("keep-too-new.mp4", 2026, 0, "flat"),
+                    ("keep-panorama.mp4", 2024, 0, "panorama"),
+                    ("keep-missing.mp4", 2024, 1, "flat"),
+                    ("other.mp4", 2024, 0, "flat"),
+                ]
+            ],
+        )
+    with TestClient(app) as client:
+        response = client.get(
+            "/library",
+            params={"type": "flat", "q": "keep", "date_from": "2000-01-01", "date_to": "2025-12-31"},
+        )
+
+    assert response.status_code == 200
+    assert _rendered_timeline_date_index(response) == [
+        {"date": "2025-05-06", "count": 1, "favorite_count": 1},
+        {"date": "2006-05-06", "count": 1, "favorite_count": 1},
+    ]
+
+
+def test_timeline_date_index_includes_favorites_beyond_initial_batch(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, favorite)
+            VALUES (?, ?, ?, 0, 'flat', 1, 0)
+            """,
+            [
+                (str(tmp_path / f"video-{index}.mp4"), f"video-{index}.mp4", (datetime(2026, 7, 8) - timedelta(days=index)).timestamp())
+                for index in range(main.TIMELINE_PAGE_SIZE + 1)
+            ],
+        )
+        conn.execute(
+            """
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, favorite)
+            VALUES (?, 'old-favorite.mp4', ?, 0, 'flat', 1, 1)
+            """,
+            (str(tmp_path / "old-favorite.mp4"), datetime(2006, 5, 6).timestamp()),
+        )
+    with TestClient(app) as client:
+        response = client.get("/library")
+
+    assert response.status_code == 200
+    assert response.text.count("data-video-id=") == main.TIMELINE_PAGE_SIZE
+    assert 'data-gallery-date="2006-05-06"' not in response.text
+    index = _rendered_timeline_date_index(response)
+    assert len(index) == main.TIMELINE_PAGE_SIZE + 2
+    assert index[-1] == {"date": "2006-05-06", "count": 1, "favorite_count": 1}
+
+
 def test_timeline_groups_include_calendar_data(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
     rows = [{"mtime": datetime(2026, 7, 8).timestamp()}]
@@ -603,14 +700,14 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
         )
 
     with TestClient(app) as client:
-        response = client.get("/")
+        response = client.get("/library")
 
     assert response.status_code == 200
     assert "data-timeline-cache=" in response.text
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.6.6" in response.text
+    assert "/static/app.js?v=2.6.8" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
@@ -633,7 +730,7 @@ def test_timeline_uses_batched_rendering(monkeypatch, tmp_path):
         )
 
     with TestClient(app) as client:
-        first = client.get("/")
+        first = client.get("/library")
         cursor_mtime = first.text.split('data-next-mtime="', 1)[1].split('"', 1)[0]
         cursor_id = first.text.split('data-next-id="', 1)[1].split('"', 1)[0]
         second = client.get(
@@ -713,3 +810,57 @@ def test_recheck_all_video_data_route_marks_background_pending(monkeypatch, tmp_
     assert response.status_code == 303
     assert response.headers["location"] == "/settings?metadata_recheck=1"
     assert calls == ["recheck"]
+
+
+def test_timeline_gallery_is_scoped_to_timeline(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.execute(
+            "INSERT INTO videos(path, name, mtime, missing, type, size_bytes, favorite) VALUES (?, 'sample.mp4', ?, 0, 'flat', 1, 1)",
+            (str(tmp_path / "sample.mp4"), datetime(2026, 7, 8).timestamp()),
+        )
+    with TestClient(app) as client:
+        timeline = client.get("/library").text
+        assert 'data-timeline-gallery' in timeline
+        assert 'data-gallery-date="2026-07-08"' in timeline
+        assert re.search(r'<div\b[^>]*role="slider"[^>]*data-gallery-scrubber', timeline)
+        assert re.search(r'<input\b[^>]*data-gallery-scrubber', timeline) is None
+        for url in ("/", "/settings", "/?view=folders", "/?view=calendar", "/?view=favorites", "/?view=memories"):
+            page = client.get(url).text
+            assert "/static/timeline.css" not in page
+            assert "/static/timeline.js" not in page
+            assert "data-timeline-gallery" not in page
+            assert "data-gallery-date-index" not in page
+
+
+def test_timeline_jump_loads_target_date_and_preserves_filters(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            "INSERT INTO videos(path, name, mtime, missing, type, size_bytes) VALUES (?, ?, ?, 0, ?, 1)",
+            [
+                (str(tmp_path / name), name, datetime(year, 7, 8).timestamp(), kind)
+                for name, year, kind in [
+                    ("new.mp4", 2026, "flat"),
+                    ("target.mp4", 2024, "flat"),
+                    ("pano.mp4", 2024, "panorama"),
+                    ("old.mp4", 2022, "flat"),
+                ]
+            ],
+        )
+    with TestClient(app) as client:
+        response = client.get("/timeline-batch", params={"start_date": "2024-07-08", "type": "flat"})
+        assert response.status_code == 200
+        html = response.json()["html"]
+        assert "target.mp4" in html and "old.mp4" in html
+        assert "new.mp4" not in html and "pano.mp4" not in html
+        assert "data-gallery-date" in html
+        constrained = client.get("/timeline-batch", params={"start_date": "2024-07-08", "date_to": "2022-07-08"})
+        assert "target.mp4" not in constrained.json()["html"]
+        assert "old.mp4" in constrained.json()["html"]
+        latest = client.get("/timeline-batch", params={"start_date": "latest"})
+        assert "new.mp4" in latest.json()["html"]
+        assert client.get("/timeline-batch", params={"start_date": "2024-02-30"}).status_code == 400
+        assert client.get("/timeline-batch").status_code == 400
