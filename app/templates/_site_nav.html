@@ -10,7 +10,10 @@
       </nav>
       <div class="site-header-actions">
         {% if date_text %}<span class="site-date">{{ date_text }}</span>{% endif %}
-        <button class="intranet-jump-button{% if settings.intranet_keepalive_enabled and settings.intranet_redirect_host %} is-visible{% endif %}" type="button" data-intranet-jump {% if not settings.intranet_keepalive_enabled or not settings.intranet_redirect_host %}hidden{% endif %}>检测内网</button>
+        <button class="intranet-jump-button{% if settings.intranet_keepalive_enabled and settings.intranet_redirect_host %} is-visible{% endif %}" type="button" data-intranet-jump aria-live="polite" {% if not settings.intranet_keepalive_enabled or not settings.intranet_redirect_host %}hidden{% endif %}>检测内网</button>
+        {% if active in ['home', 'library', 'favorites'] and (not settings.intranet_keepalive_enabled or not settings.intranet_redirect_host) %}
+          <a class="site-intranet-settings" href="/settings#network" title="配置内网地址并启用检测，即可切换到内网">内网设置</a>
+        {% endif %}
         <a class="site-settings" href="/settings" {% if active == 'settings' %}aria-current="page"{% endif %} aria-label="设置" title="设置">{{ icon('settings') }}<span>设置</span></a>
       </div>
     </div>

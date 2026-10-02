@@ -1,7 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}首页 - {{ settings.site_title }}{% endblock %}
 {% block body_class %}home-page{% endblock %}
-{% block head %}<link rel="stylesheet" href="/static/home.css?v=2">{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="/static/home.css?v=4">
+  <link rel="stylesheet" href="/static/site-shell.css?v=1">
+{% endblock %}
 {% block chrome %}
   {% from '_site_nav.html' import site_nav with context %}
   {{ site_nav('home', home.today ~ ' · ' ~ home.weekday) }}
@@ -47,4 +50,4 @@
     <form action="/scan" method="post" data-home-scan-form><button class="home-soft-button" type="submit" data-home-scan-button {% if scan_running %}disabled{% endif %}>{{ '正在更新' if scan_running else '更新影像库' }}</button></form>
   </footer>
 {% endblock %}
-{% block scripts %}<script src="/static/home.js?v=2" defer></script>{% endblock %}
+{% block scripts %}<script src="/static/home.js?v=4" defer></script>{% endblock %}

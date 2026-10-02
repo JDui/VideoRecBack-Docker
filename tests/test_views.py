@@ -707,7 +707,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.6.8" in response.text
+    assert "/static/app.js?v=2.6.9" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
@@ -857,10 +857,124 @@ def test_timeline_jump_loads_target_date_and_preserves_filters(monkeypatch, tmp_
         assert "target.mp4" in html and "old.mp4" in html
         assert "new.mp4" not in html and "pano.mp4" not in html
         assert "data-gallery-date" in html
+        assert response.json()["has_newer"] is True
+        assert response.json()["previous_cursor"] == {
+            "mtime": datetime(2024, 7, 8).timestamp(), "id": 2,
+        }
         constrained = client.get("/timeline-batch", params={"start_date": "2024-07-08", "date_to": "2022-07-08"})
         assert "target.mp4" not in constrained.json()["html"]
         assert "old.mp4" in constrained.json()["html"]
+        assert constrained.json()["has_newer"] is False
         latest = client.get("/timeline-batch", params={"start_date": "latest"})
         assert "new.mp4" in latest.json()["html"]
+        assert latest.json()["has_newer"] is False
         assert client.get("/timeline-batch", params={"start_date": "2024-02-30"}).status_code == 400
         assert client.get("/timeline-batch").status_code == 400
+
+
+def test_timeline_newer_batches_preserve_order_and_equal_timestamp_cursors(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    start = datetime(2025, 7, 8).timestamp()
+    count = main.TIMELINE_PAGE_SIZE * 2 + 41
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            "INSERT INTO videos(path, name, mtime, missing, type, size_bytes) VALUES (?, ?, ?, 0, 'flat', 1)",
+            [
+                (str(tmp_path / f"video-{index}.mp4"), f"video-{index}.mp4", start + index // 200)
+                for index in range(count)
+            ],
+        )
+
+    cursor = {"mtime": start, "id": 1}
+    seen = []
+    with TestClient(app) as client:
+        for page_number in range(3):
+            response = client.get(
+                "/timeline-batch",
+                params={"direction": "newer", "cursor_mtime": cursor["mtime"], "cursor_id": cursor["id"]},
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            ids = [int(value) for value in re.findall(r'id="timeline-video-(\d+)"', payload["html"])]
+            assert ids == sorted(ids, reverse=True)
+            assert len(ids) == (main.TIMELINE_PAGE_SIZE if page_number < 2 else 40)
+            assert payload["previous_cursor"] == {
+                "mtime": start + (ids[0] - 1) // 200, "id": ids[0],
+            }
+            seen.extend(reversed(ids))
+            if page_number < 2:
+                assert payload["has_more"] is True
+                assert payload["next_cursor"] == payload["previous_cursor"]
+                cursor = payload["next_cursor"]
+            else:
+                assert payload["has_more"] is False
+                assert payload["next_cursor"] is None
+                cursor = payload["previous_cursor"]
+        assert seen == list(range(2, count + 1))
+        empty = client.get(
+            "/timeline-batch",
+            params={"direction": "newer", "cursor_mtime": cursor["mtime"], "cursor_id": cursor["id"]},
+        ).json()
+        assert "data-video-id=" not in empty["html"]
+        assert empty["has_more"] is False
+        assert empty["next_cursor"] is None
+        assert empty["previous_cursor"] is None
+
+
+def test_timeline_newer_batches_respect_date_and_video_filters(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.executemany(
+            "INSERT INTO videos(path, name, mtime, missing, type, size_bytes) VALUES (?, ?, ?, ?, ?, 1)",
+            [
+                (str(tmp_path / name), name, datetime(year, 7, 8).timestamp(), missing, kind)
+                for name, year, missing, kind in [
+                    ("clip-old.mp4", 2024, 0, "flat"),
+                    ("clip-target.mp4", 2025, 0, "flat"),
+                    ("clip-new.mp4", 2026, 0, "flat"),
+                    ("clip-panorama.mp4", 2025, 0, "panorama"),
+                    ("clip-missing.mp4", 2025, 1, "flat"),
+                    ("other.mp4", 2025, 0, "flat"),
+                ]
+            ],
+        )
+    with TestClient(app) as client:
+        response = client.get(
+            "/timeline-batch",
+            params={
+                "direction": "newer", "cursor_mtime": datetime(2023, 7, 8).timestamp(), "cursor_id": 0,
+                "date_from": "2024-07-09", "date_to": "2025-07-08", "type": "flat", "q": "clip",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert re.findall(r'id="timeline-video-(\d+)"', payload["html"]) == ["2"]
+        assert payload["has_more"] is False
+        assert payload["previous_cursor"]["id"] == 2
+
+
+def test_timeline_empty_jump_reports_newer_content_and_rejects_invalid_direction(monkeypatch, tmp_path):
+    main = load_main(monkeypatch, tmp_path)
+    app = main.create_app()
+    with app.state.db.connect() as conn:
+        conn.execute(
+            "INSERT INTO videos(path, name, mtime, missing, type, size_bytes) VALUES (?, 'sample.mp4', ?, 0, 'flat', 1)",
+            (str(tmp_path / "sample.mp4"), datetime(2025, 7, 8).timestamp()),
+        )
+    with TestClient(app) as client:
+        empty = client.get("/timeline-batch", params={"start_date": "2024-07-08"}).json()
+        assert empty["previous_cursor"] is None
+        assert empty["has_more"] is False
+        assert empty["has_newer"] is True
+        bounded = client.get(
+            "/timeline-batch", params={"start_date": "2024-07-08", "date_to": "2024-07-08"},
+        ).json()
+        assert bounded["has_newer"] is False
+        assert client.get(
+            "/timeline-batch", params={"direction": "sideways", "cursor_mtime": 0, "cursor_id": 0},
+        ).status_code == 400
+        assert client.get(
+            "/timeline-batch", params={"direction": "newer", "start_date": "latest"},
+        ).status_code == 400

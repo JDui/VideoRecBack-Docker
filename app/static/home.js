@@ -6,9 +6,126 @@ const scanButton = document.querySelector('[data-home-scan-button]');
 const scanStatus = document.querySelector('[data-home-scan-status]');
 let wasScanning = document.querySelector('[data-home-status]')?.dataset.scanning === '1';
 let scanSubmitting = false;
+const homeRandomStorageKey = 'videorecback-home-random';
+const homePreserveRandomKey = 'videorecback-home-preserve-random';
+const homeRandomIds = () => [...new Set([...randomGrid.querySelectorAll('[data-home-video]')].map(item => item.dataset.homeVideo))];
+const saveHomeRandom = () => {
+  if (!randomGrid) return;
+  try {
+    sessionStorage.setItem(homeRandomStorageKey, JSON.stringify({ html: randomGrid.innerHTML, ids: homeRandomIds() }));
+  } catch {}
+};
+const restoreHomeRandom = () => {
+  if (!randomGrid) return false;
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(homeRandomStorageKey) || 'null');
+    if (typeof cached?.html !== 'string' || !Array.isArray(cached.ids)
+        || cached.ids.length > 3 || !cached.ids.every(id => typeof id === 'string' && /^\d+$/.test(id))) return false;
+    randomGrid.innerHTML = cached.html;
+    if (shuffleButton) shuffleButton.disabled = cached.ids.length === 0;
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+if (randomGrid) {
+  let restoreRandom = true;
+  try {
+    const preserveRandom = sessionStorage.getItem(homePreserveRandomKey) === '1';
+    sessionStorage.removeItem(homePreserveRandomKey);
+    const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
+    restoreRandom = !reloaded || preserveRandom;
+  } catch {}
+  if (restoreRandom) restoreHomeRandom();
+  saveHomeRandom();
+}
+
+let homeContextOrigin = null;
+let homeContextCard = null;
+const homeContextMenu = document.createElement('div');
+homeContextMenu.className = 'favorite-context-menu';
+homeContextMenu.dataset.homeContextMenu = '';
+homeContextMenu.setAttribute('role', 'menu');
+homeContextMenu.setAttribute('aria-label', '视频操作');
+homeContextMenu.hidden = true;
+const homeTimelineAction = document.createElement('button');
+homeTimelineAction.type = 'button';
+homeTimelineAction.setAttribute('role', 'menuitem');
+homeTimelineAction.textContent = '跳转到时间线位置';
+homeContextMenu.append(homeTimelineAction);
+if (randomGrid) document.body.append(homeContextMenu);
+
+const hideHomeContextMenu = (restoreFocus = true) => {
+  if (homeContextMenu.hidden) return;
+  homeContextMenu.hidden = true;
+  if (restoreFocus && homeContextOrigin?.isConnected) homeContextOrigin.focus({ preventScroll: true });
+  homeContextOrigin = null;
+  homeContextCard = null;
+};
+const homeRandomCard = target => target instanceof Element ? target.closest('.home-video[data-home-timeline-url]') : null;
+const openHomeContextMenu = (card, target, point) => {
+  homeContextCard = card;
+  homeContextOrigin = target instanceof Element ? target.closest('a, button') : null;
+  if (!homeContextOrigin || !card.contains(homeContextOrigin)) homeContextOrigin = card.querySelector('[data-home-video]');
+  const rect = homeContextOrigin.getBoundingClientRect();
+  const x = point?.x ?? rect.left + Math.min(rect.width / 2, 100);
+  const y = point?.y ?? rect.bottom;
+  homeContextMenu.hidden = false;
+  const menuRect = homeContextMenu.getBoundingClientRect();
+  homeContextMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - menuRect.width - 8))}px`;
+  homeContextMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menuRect.height - 8))}px`;
+  homeTimelineAction.focus({ preventScroll: true });
+};
+
+randomGrid?.addEventListener('contextmenu', event => {
+  const card = homeRandomCard(event.target);
+  if (!card || !randomGrid.contains(card)) return;
+  event.preventDefault();
+  openHomeContextMenu(card, event.target, event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : null);
+});
+randomGrid?.addEventListener('keydown', event => {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+  const card = homeRandomCard(event.target);
+  if (!card || !randomGrid.contains(card)) return;
+  event.preventDefault();
+  openHomeContextMenu(card, event.target);
+});
+homeTimelineAction.addEventListener('click', event => {
+  event.preventDefault();
+  const url = homeContextCard?.dataset.homeTimelineUrl;
+  hideHomeContextMenu(false);
+  if (url) window.location.assign(url);
+});
+for (const name of ['pointerdown', 'click']) {
+  document.addEventListener(name, event => {
+    if (!(event.target instanceof Node) || homeContextMenu.contains(event.target)) return;
+    hideHomeContextMenu();
+  });
+}
+document.addEventListener('keydown', event => {
+  if (homeContextMenu.hidden) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    hideHomeContextMenu();
+  } else if (event.key === 'Tab') {
+    hideHomeContextMenu();
+  } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault();
+    homeTimelineAction.focus({ preventScroll: true });
+  }
+});
+document.addEventListener('scroll', () => hideHomeContextMenu(), true);
+window.addEventListener('resize', () => hideHomeContextMenu());
+window.addEventListener('pageshow', event => {
+  if (!event.persisted) return;
+  hideHomeContextMenu(false);
+  restoreHomeRandom();
+});
 
 shuffleButton?.addEventListener('click', async () => {
-  const ids = [...new Set([...randomGrid.querySelectorAll('[data-home-video]')].map(item => item.dataset.homeVideo))];
+  hideHomeContextMenu();
+  const ids = homeRandomIds();
   shuffleButton.disabled = true;
   shuffleButton.textContent = '正在拾回';
   randomGrid.setAttribute('aria-busy', 'true');
@@ -17,7 +134,9 @@ shuffleButton?.addEventListener('click', async () => {
     const response = await fetch(`/home/random?exclude=${encodeURIComponent(ids.join(','))}`, { cache: 'no-store' });
     if (!response.ok) throw new Error('Random videos unavailable');
     const result = await response.json();
+    if (typeof result.html !== 'string') throw new Error('Invalid random videos');
     randomGrid.innerHTML = result.html;
+    saveHomeRandom();
     feedback.textContent = '又拾回了几段时光。';
   } catch {
     feedback.textContent = '暂时未能拾回，稍后再试。';
@@ -52,6 +171,8 @@ const pollScan = async () => {
     if (!response.ok) return;
     const state = await response.json();
     if (wasScanning && !state.scanning) {
+      saveHomeRandom();
+      try { sessionStorage.setItem(homePreserveRandomKey, '1'); } catch {}
       window.location.reload();
       return;
     }

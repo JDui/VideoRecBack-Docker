@@ -565,6 +565,7 @@ const mergeTimelineSection = (incomingSection) => {
 const loadNextTimelineBatch = () => {
   if (timelineBatchPromise) return timelineBatchPromise;
   if (!timelineRoot || !timelineStack || !timelineLoadSentinel) return Promise.resolve(false);
+  if (timelineRoot.hasAttribute("data-timeline-gallery") && timelineRoot.hasAttribute("aria-busy")) return Promise.resolve(false);
   if (timelineRoot.dataset.hasMore !== "1") return Promise.resolve(false);
   const nextMtime = timelineRoot.dataset.nextMtime;
   const nextId = timelineRoot.dataset.nextId;

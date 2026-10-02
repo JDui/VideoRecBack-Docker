@@ -1,17 +1,16 @@
 body.home-page, body.preferences-page { background: #f3f7f5; }
 body.home-page :focus-visible, body.preferences-page :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.site-header { border-bottom: 1px solid var(--line); }
-.site-header-inner { display: flex; align-items: center; gap: 40px; max-width: 1440px; min-height: 56px; margin: auto; padding: 0 clamp(20px, 4.3vw, 64px); }
-.site-brand { font-size: 23px; font-weight: 750; letter-spacing: -.04em; }
-.site-navigation { display: flex; align-self: stretch; gap: 32px; }
-.site-navigation a { display: flex; align-items: center; position: relative; color: var(--muted); font-size: 15px; font-weight: 600; }
-.site-navigation a:hover, .site-navigation a[aria-current], .site-settings[aria-current] { color: var(--accent-deep); }
-.site-navigation a[aria-current] { border-bottom: 3px solid var(--accent); }
-.site-header-actions { margin-left: auto; display: flex; align-items: center; gap: 20px; }
-.site-date { color: var(--muted); font-size: 13px; white-space: nowrap; }
-.site-settings { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }
-.site-settings span { font-size: 14px; }
-.home-page .page { max-width: 1440px; padding: 20px clamp(20px, 4.3vw, 64px) 24px; }
+.preferences-page .site-header { border-bottom: 1px solid var(--line); }
+.preferences-page .site-header-inner { display: flex; align-items: center; gap: 40px; max-width: 1440px; min-height: 56px; margin: auto; padding: 0 clamp(20px, 4.3vw, 64px); }
+.preferences-page .site-brand { font-size: 23px; font-weight: 750; letter-spacing: -.04em; }
+.preferences-page .site-navigation { display: flex; align-self: stretch; gap: 32px; }
+.preferences-page .site-navigation a { display: flex; align-items: center; position: relative; color: var(--muted); font-size: 15px; font-weight: 600; }
+.preferences-page .site-navigation a:hover, .preferences-page .site-navigation a[aria-current], .preferences-page .site-settings[aria-current] { color: var(--accent-deep); }
+.preferences-page .site-navigation a[aria-current] { border-bottom: 3px solid var(--accent); }
+.preferences-page .site-header-actions { margin-left: auto; display: flex; align-items: center; gap: 20px; }
+.preferences-page .site-date { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.preferences-page .site-settings { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }
+.preferences-page .site-settings span { font-size: 14px; }
 .home-section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .home-section-head h1, .home-section-head h2 { margin: 0; letter-spacing: -.025em; line-height: 1.3; }
 .home-section-head h1 { font-size: 30px; font-weight: 750; }
@@ -63,8 +62,8 @@ body.home-page :focus-visible, body.preferences-page :focus-visible { outline: 2
 .home-discover { position: relative; }
 .home-feedback:not(:empty) { position: absolute; bottom: -24px; left: 0; }
 @media (max-width: 1100px) {
-  .site-header-inner { gap: 28px; }
-  .site-date { display: none; }
+  .preferences-page .site-header-inner { gap: 28px; }
+  .preferences-page .site-date { display: none; }
   .home-grid--recent { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 20px; }
   .home-lower { grid-template-columns: 1.2fr 1fr; gap: 24px; }
   .home-memories { padding-left: 24px; }
@@ -72,12 +71,11 @@ body.home-page :focus-visible, body.preferences-page :focus-visible { outline: 2
   .home-stat-list { gap: 16px; }
 }
 @media (max-width: 700px) {
-  .site-header-inner { min-height: 60px; flex-wrap: wrap; gap: 0 22px; padding-top: 10px; }
-  .site-brand { font-size: 20px; }
-  .site-header-actions { gap: 12px; }
-  .site-settings span { display: none; }
-  .site-navigation { order: 3; width: 100%; height: 44px; gap: 28px; }
-  .home-page .page { padding-top: 24px; }
+  .preferences-page .site-header-inner { min-height: 60px; flex-wrap: wrap; gap: 0 22px; padding-top: 10px; }
+  .preferences-page .site-brand { font-size: 20px; }
+  .preferences-page .site-header-actions { gap: 12px; }
+  .preferences-page .site-settings span { display: none; }
+  .preferences-page .site-navigation { order: 3; width: 100%; height: 44px; gap: 28px; }
   .home-section-head h1 { font-size: 28px; }
   .home-section-head h2 { font-size: 20px; }
   .home-grid--random { grid-template-columns: 1fr; gap: 20px; }

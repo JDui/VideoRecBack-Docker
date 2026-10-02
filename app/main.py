@@ -175,6 +175,8 @@ def create_app() -> FastAPI:
                 "timeline_cache": build_timeline_cache(timeline_groups, timeline_rail, filters),
                 "timeline_has_more": timeline_has_more,
                 "timeline_next_cursor": timeline_next_cursor,
+                "timeline_previous_cursor": timeline_cursor(rows[0]) if rows else None,
+                "timeline_has_newer": False,
                 "timeline_batch_url": build_timeline_batch_url(filters),
                 "folder_browser": build_folder_browser(all_rows, filters),
                 "calendar_model": build_calendar_model(all_rows, filters),
@@ -187,8 +189,14 @@ def create_app() -> FastAPI:
         settings = load_settings(config_dir)
         filters = read_filters(request)
         filters["view"] = "timeline"
+        original_filters = filters.copy()
+        direction = request.query_params.get("direction", "older")
+        if direction not in {"older", "newer"}:
+            raise HTTPException(status_code=400, detail="Invalid timeline direction")
         start_date = request.query_params.get("start_date")
         if start_date is not None:
+            if direction != "older":
+                raise HTTPException(status_code=400, detail="Date jumps require older direction")
             cursor = None
             if start_date != "latest":
                 try:
@@ -204,19 +212,33 @@ def create_app() -> FastAPI:
                 )
             except (KeyError, TypeError, ValueError):
                 raise HTTPException(status_code=400, detail="Invalid timeline cursor")
-        rows = query_videos(db, filters, cursor=cursor, limit=TIMELINE_PAGE_SIZE + 1)
+        rows = query_videos(db, filters, cursor=cursor, limit=TIMELINE_PAGE_SIZE + 1, direction=direction)
         has_more = len(rows) > TIMELINE_PAGE_SIZE
         page_rows = rows[:TIMELINE_PAGE_SIZE]
+        if direction == "newer":
+            page_rows = page_rows[::-1]
+        previous_cursor = timeline_cursor(page_rows[0]) if page_rows else None
         html = templates.get_template("_timeline_batch.html").render(
             settings=settings,
             timeline_groups=build_timeline_groups(page_rows),
             timeline_gallery=True,
         )
-        return {
+        result = {
             "html": html,
             "has_more": has_more,
-            "next_cursor": timeline_cursor(page_rows[-1]) if has_more and page_rows else None,
+            "next_cursor": timeline_cursor(page_rows[0] if direction == "newer" else page_rows[-1])
+            if has_more and page_rows else None,
+            "previous_cursor": previous_cursor,
         }
+        if start_date is not None:
+            newer_cursor = (previous_cursor["mtime"], previous_cursor["id"]) if previous_cursor else None
+            if newer_cursor is None and filters["date_to"]:
+                newer_cursor = (datetime.strptime(filters["date_to"], "%Y-%m-%d").timestamp() + 86400, 0)
+            result["has_newer"] = bool(
+                newer_cursor is not None
+                and query_videos(db, original_filters, cursor=newer_cursor, limit=1, direction="newer")
+            )
+        return result
 
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
@@ -766,7 +788,11 @@ def query_videos(
     filters: dict[str, str],
     cursor: tuple[float, int] | None = None,
     limit: int | None = None,
+    *,
+    direction: str = "older",
 ):
+    if direction not in {"older", "newer"}:
+        raise ValueError("Invalid timeline direction")
     clauses = ["missing = 0"]
     values: list[object] = []
     if filters["type"] != "all":
@@ -815,15 +841,17 @@ def query_videos(
             clauses.append("mtime >= ? AND mtime < ?")
             values.extend([month_start, month_end])
     if cursor is not None:
-        clauses.append("(mtime < ? OR (mtime = ? AND id < ?))")
+        comparison = ">" if direction == "newer" else "<"
+        clauses.append(f"(mtime {comparison} ? OR (mtime = ? AND id {comparison} ?))")
         values.extend([cursor[0], cursor[0], cursor[1]])
 
+    order = "ASC" if direction == "newer" else "DESC"
     sql = f"""
         SELECT *,
             strftime('timeline-%Y-%m-%d', mtime, 'unixepoch', 'localtime') AS timeline_day_anchor
         FROM videos
         WHERE {' AND '.join(clauses)}
-        ORDER BY mtime DESC, id DESC
+        ORDER BY mtime {order}, id {order}
     """
     if limit is not None:
         sql += " LIMIT ?"

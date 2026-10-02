@@ -7,6 +7,7 @@
   const scrubArea = scrubber.parentElement;
   const currentTick = timelineRoot.querySelector("[data-gallery-current-tick]");
   const tickContainer = timelineRoot.querySelector("[data-gallery-date-ticks]");
+  const previousSentinel = timelineRoot.querySelector("[data-gallery-previous]");
   const yearMarks = [...timelineRail.querySelectorAll('[data-kind="year"]')];
   const dateIndex = JSON.parse(timelineRoot.querySelector("[data-gallery-date-index]").textContent);
   const dates = dateIndex.map(entry => entry.date);
@@ -33,6 +34,9 @@
   let restoring = true;
   let layoutFrame = 0;
   let saveTimer = 0;
+  let hasPrevious = false;
+  let previousPromise = null;
+  let windowStartId = "";
 
   const valueFor = date => {
     const year = Math.max(0, years.indexOf(date.slice(0, 4)));
@@ -163,6 +167,7 @@
       sum = 0;
     };
     cards.forEach(card => {
+      if (card.id === windowStartId) commit(false);
       const nextSum = sum + ratio(card);
       if (row.length && nextSum * target + gap * row.length > width &&
           Math.abs(sum * target + gap * (row.length - 1) - width) < Math.abs(nextSum * target + gap * row.length - width)) commit(true);
@@ -171,6 +176,11 @@
       if (sum * target + gap * (row.length - 1) >= width) commit(true);
     });
     commit(false);
+    const lastRow = rows.at(-1);
+    const bottomPadding = parseFloat(getComputedStyle(libraryPane).paddingBottom) || 0;
+    const endSpace = windowStartId && lastRow ? Math.max(20,
+      libraryPane.clientHeight - position.parentElement.offsetHeight - lastRow[0].offsetHeight - bottomPadding) : 20;
+    timelineRoot.style.setProperty("--gallery-end-space", endSpace + "px");
     timelineRoot.style.setProperty("--rail-height", Math.max(250, libraryPane.clientHeight - 12) + "px");
     yearMarks.forEach(mark => {
       const date = mark.dataset.targetAnchor?.match(/timeline-(\d{4}-\d{2})/)?.[1];
@@ -189,17 +199,68 @@
     updatePosition();
     saveTimelinePosition();
   };
+  const loadPrevious = (preservePosition = true, duringJump = false) => {
+    if (previousPromise) return previousPromise;
+    if (!hasPrevious || !cards.length || (!duringJump && timelineRoot.hasAttribute("aria-busy"))) return Promise.resolve(false);
+    const windowId = requestId;
+    previousPromise = (async () => {
+      try {
+        if (timelineBatchPromise) await timelineBatchPromise;
+        if (windowId !== requestId) return false;
+        const first = cards[0];
+        const url = new URL(timelineRoot.dataset.batchUrl, location.origin);
+        url.searchParams.set("direction", "newer");
+        url.searchParams.set("cursor_mtime", first.dataset.galleryMtime);
+        url.searchParams.set("cursor_id", first.dataset.galleryId);
+        const response = await fetch(url, { signal: controller?.signal, headers: { Accept: "application/json" } });
+        if (!response.ok) throw new Error("Timeline newer request failed");
+        const data = await response.json();
+        if (windowId !== requestId) return false;
+        const incoming = document.createElement("div");
+        incoming.innerHTML = data.html;
+        const existingIds = new Set(cards.map(card => card.id));
+        const added = [...incoming.querySelectorAll(".timeline-video")].filter(card => !existingIds.has(card.id));
+        hasPrevious = data.has_more && added.length > 0;
+        if (!added.length) return false;
+        const anchor = cardForAnchor(timelineRoot.dataset.currentPage) || cards[0];
+        const anchorTop = anchor.getBoundingClientRect().top;
+        let prefix = timelineStack.querySelector("[data-gallery-newer-prefix]");
+        if (!prefix) {
+          prefix = document.createElement("div");
+          prefix.className = "timeline-newer-prefix";
+          prefix.setAttribute("data-gallery-newer-prefix", "");
+          timelineStack.prepend(prefix);
+        }
+        prefix.prepend(...added);
+        registerRevealTargets(prefix);
+        layout();
+        if (preservePosition) libraryPane.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+        updatePosition();
+        saveTimelinePosition();
+        feedback.textContent = "";
+        return true;
+      } catch (error) {
+        if (error.name !== "AbortError" && windowId === requestId) feedback.textContent = "更近的视频加载失败，上滑可重试";
+        return false;
+      }
+    })();
+    previousPromise.finally(() => { previousPromise = null; });
+    return previousPromise;
+  };
   const jump = async (date, hash = "", replace = false, force = false) => {
     if (!date) return;
     const currentRequest = ++requestId;
     controller?.abort();
     controller = new AbortController();
-    let card = !force && date === cards[0]?.dataset.galleryDate ? (cardForAnchor(hash) || cards[0]) : null;
+    const targetCard = () => hash.startsWith("#timeline-video-") ? cardForAnchor(hash) :
+      cards.find(card => card.dataset.galleryDate === date) || cardForAnchor(hash);
+    let card = !force && date === cards[0]?.dataset.galleryDate ? (targetCard() || cards[0]) : null;
     timelineRoot.setAttribute("aria-busy", "true");
     feedback.textContent = "正在定位…";
     try {
       if (!card) {
         if (timelineBatchPromise) await timelineBatchPromise;
+        if (previousPromise) await previousPromise;
         if (currentRequest !== requestId) return;
         const url = new URL(timelineRoot.dataset.batchUrl, location.origin);
         url.searchParams.set("start_date", date);
@@ -211,13 +272,17 @@
         incoming.innerHTML = data.html;
         if (!incoming.querySelector(".timeline-video")) throw new Error("Timeline date unavailable");
         timelineStack.replaceChildren(...incoming.children);
+        windowStartId = timelineStack.querySelector(".timeline-video").id;
+        hasPrevious = Boolean(data.has_newer);
         timelineRoot.dataset.hasMore = data.has_more ? "1" : "0";
         timelineRoot.dataset.nextMtime = data.next_cursor ? String(data.next_cursor.mtime) : "";
         timelineRoot.dataset.nextId = data.next_cursor ? String(data.next_cursor.id) : "";
         timelineLoadSentinel.hidden = !data.has_more;
         registerRevealTargets(timelineStack);
         layout();
-        card = cardForAnchor(hash) || cards.find(card => card.dataset.galleryDate === date) || cards[0];
+        await loadPrevious(false, true);
+        if (currentRequest !== requestId) return;
+        card = targetCard() || cards[0];
       }
       scrollToCard(card);
       if (hash) history[replace ? "replaceState" : "pushState"](null, "", hash);
@@ -318,8 +383,17 @@
     if (!restoring) {
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => saveTimelinePosition(), 120);
+      if (libraryPane.scrollTop < 400) loadPrevious();
     }
   }, { passive: true });
+  libraryPane.addEventListener("wheel", event => {
+    if (event.deltaY < 0 && libraryPane.scrollTop < 400) loadPrevious();
+  }, { passive: true });
+  if (previousSentinel && "IntersectionObserver" in window) {
+    new IntersectionObserver(entries => {
+      if (!restoring && entries.some(entry => entry.isIntersecting)) loadPrevious();
+    }, { root: libraryPane, rootMargin: "400px 0px 0px" }).observe(previousSentinel);
+  }
   previewSize?.addEventListener("input", scheduleLayout);
   window.addEventListener("videorecback:timeline-layout", scheduleLayout);
   window.addEventListener("videorecback:timeline-batch", scheduleLayout);

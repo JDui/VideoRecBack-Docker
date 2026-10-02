@@ -4,7 +4,7 @@ import re
 
 from fastapi.testclient import TestClient
 
-from app.config import load_settings
+from app.config import Settings, load_settings, save_settings
 from app.db import Database
 from app.home import home_content, random_videos
 
@@ -132,3 +132,68 @@ def test_regrouped_settings_saves_all_fields_and_unchecked_options(monkeypatch, 
     assert saved.intranet_redirect_protocol == "https"
     assert saved.intranet_redirect_host == "192.168.1.10"
     assert saved.ignore_name_patterns == ["temp*", "._*"]
+
+
+def test_home_exposes_intranet_setup_or_existing_detection(monkeypatch, tmp_path):
+    config_dir = tmp_path / "config"
+    monkeypatch.setenv("APP_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("APP_DATA_DIR", str(tmp_path / "data"))
+    app = import_module("app.main").create_app()
+    with TestClient(app) as client:
+        for enabled, host in [(False, ""), (True, ""), (False, "192.168.1.10")]:
+            save_settings(config_dir, Settings(scan_interval_hours=0,
+                intranet_keepalive_enabled=enabled, intranet_redirect_host=host))
+            home = client.get("/")
+            assert 'href="/settings#network"' in home.text
+            assert '>内网设置</a>' in home.text
+            button = re.search(r'<button[^>]*data-intranet-jump[^>]*>', home.text).group()
+            assert "hidden" in button
+            assert 'class="site-intranet-settings"' not in client.get("/settings").text
+
+        save_settings(config_dir, Settings(scan_interval_hours=0,
+            intranet_keepalive_enabled=True, intranet_redirect_host="192.168.1.10",
+            intranet_redirect_port="8080"))
+        home = client.get("/")
+        button = re.search(r'<button[^>]*data-intranet-jump[^>]*>', home.text).group()
+        assert "hidden" not in button
+        assert "is-visible" in button
+        assert 'data-intranet-enabled="1"' in home.text
+        assert 'data-intranet-redirect-host="192.168.1.10"' in home.text
+        assert 'data-intranet-redirect-port="8080"' in home.text
+        assert 'class="site-intranet-settings"' not in home.text
+        assert '/static/intranet.js?' in home.text
+
+
+def test_home_and_library_share_navigation_without_duplicate_library_actions(monkeypatch, tmp_path):
+    monkeypatch.setenv("APP_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("APP_DATA_DIR", str(tmp_path / "data"))
+    make_library(tmp_path)
+    app = import_module("app.main").create_app()
+    with TestClient(app) as client:
+        home = client.get("/")
+        assert '/static/site-shell.css?' in home.text
+        assert 'href="/" aria-current="page"' in home.text
+        for path in ["/library", "/?view=folders", "/?view=calendar", "/?view=favorites"]:
+            page = client.get(path)
+            assert page.status_code == 200
+            assert '/static/site-shell.css?' in page.text
+            assert page.text.count('class="site-header"') == 1
+            assert page.text.count('data-intranet-jump') == 1
+            header = re.search(r'<header class="site-header">(.*?)</header>', page.text, re.S).group(1)
+            assert 'href="/"' in header and '>首页</a>' in header
+            assert 'href="/library"' in header and '>视频库</a>' in header
+            assert 'href="/settings"' in header
+            assert 'href="/settings#network"' in header
+            active_url = '/?view=favorites' if 'favorites' in path else '/library'
+            assert f'href="{active_url}" aria-current="page"' in header
+            toolbar = re.search(r'<header class="library-topbar">(.*?)</header>', page.text, re.S).group(1)
+            assert '>首页</a>' not in toolbar
+            assert 'href="/settings"' not in toolbar
+            assert 'data-intranet-jump' not in toolbar
+            assert 'data-preview-size' in toolbar
+            assert 'class="filter-menu"' in toolbar
+            assert 'data-scan-form' in toolbar
+        timeline = client.get("/library").text
+        assert 'data-gallery-previous' in timeline
+        assert 'data-player-frame' in timeline
+        assert 'data-resizer' in timeline
