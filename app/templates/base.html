@@ -13,6 +13,7 @@
     {% endif %}
     <link rel="stylesheet" href="/static/styles.css?v=2.6.6">
     {% block head %}{% endblock %}
+    <link rel="stylesheet" href="/static/liquid-glass.css?v=4">
   </head>
   <body
     class="{% block body_class %}{% endblock %}"
@@ -22,6 +23,7 @@
     data-intranet-redirect-port="{{ settings.intranet_redirect_port if settings else '' }}"
     data-intranet-redirect-protocol="{{ settings.intranet_redirect_protocol if settings else 'http' }}"
   >
+    <div class="ambient-background" aria-hidden="true"></div>
     {% block chrome %}
       <header class="topbar">
         <a class="brand" href="/">{{ settings.site_title if settings else "视频归档" }}</a>
@@ -40,5 +42,6 @@
     </main>
     <script src="/static/intranet.js?v=2.6.9" defer></script>
     {% block scripts %}{% endblock %}
+    <script src="/static/liquid-glass.js?v=4" defer></script>
   </body>
 </html>

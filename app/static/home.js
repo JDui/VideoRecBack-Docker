@@ -127,7 +127,7 @@ shuffleButton?.addEventListener('click', async () => {
   hideHomeContextMenu();
   const ids = homeRandomIds();
   shuffleButton.disabled = true;
-  shuffleButton.textContent = '正在拾回';
+  shuffleButton.textContent = '加载中';
   randomGrid.setAttribute('aria-busy', 'true');
   feedback.textContent = '';
   try {
@@ -137,12 +137,12 @@ shuffleButton?.addEventListener('click', async () => {
     if (typeof result.html !== 'string') throw new Error('Invalid random videos');
     randomGrid.innerHTML = result.html;
     saveHomeRandom();
-    feedback.textContent = '又拾回了几段时光。';
+    feedback.textContent = '';
   } catch {
-    feedback.textContent = '暂时未能拾回，稍后再试。';
+    feedback.textContent = '加载失败，请重试。';
   } finally {
     shuffleButton.disabled = false;
-    shuffleButton.textContent = '再拾三段';
+    shuffleButton.textContent = '换一组';
     randomGrid.removeAttribute('aria-busy');
   }
 });

@@ -3,7 +3,7 @@
 {% block body_class %}library-page{% endblock %}
 {% block chrome %}
   {% from '_site_nav.html' import site_nav with context %}
-  {{ site_nav('favorites' if filters.view == 'favorites' else 'library') }}
+  {{ site_nav(filters.view, view_urls) }}
 {% endblock %}
 {% block head %}
   <link rel="stylesheet" href="/static/site-shell.css?v=1">
@@ -29,14 +29,9 @@
     </a>
   {% endmacro %}
 
+  <h1 class="visually-hidden">{{ '收藏' if filters.view == 'favorites' else '视频库' }}</h1>
   <div class="app-shell">
     <header class="library-topbar">
-      <nav class="view-switch" aria-label="视图">
-        <a class="{% if filters.view == 'timeline' %}active{% endif %}" href="{{ view_urls.timeline }}" {% if filters.view == 'timeline' %}aria-current="page"{% endif %}>时间线</a>
-        <a class="{% if filters.view == 'folders' %}active{% endif %}" href="{{ view_urls.folders }}" {% if filters.view == 'folders' %}aria-current="page"{% endif %}>文件夹</a>
-        <a class="{% if filters.view == 'calendar' %}active{% endif %}" href="{{ view_urls.calendar }}" {% if filters.view == 'calendar' %}aria-current="page"{% endif %}>日历</a>
-        <a class="{% if filters.view == 'favorites' %}active{% endif %}" href="{{ view_urls.favorites }}" {% if filters.view == 'favorites' %}aria-current="page"{% endif %}>收藏</a>
-      </nav>
       <span class="library-stats">{{ stats.total }} 个视频 · {{ stats.flat }} 平面 · {{ stats.panorama }} 全景</span>
       <label class="preview-size-control">
         预览大小
@@ -169,7 +164,6 @@
             {% if filters.view == 'timeline' %}
               <header class="timeline-position-bar">
                 <output data-gallery-position aria-label="当前浏览日期">{{ videos[0].mtime|date }}</output>
-                <span>按时间排序</span>
                 <span class="timeline-feedback" data-gallery-feedback role="status"></span>
               </header>
               <div class="timeline-previous-sentinel" data-gallery-previous aria-hidden="true"></div>
@@ -179,6 +173,7 @@
               {% set timeline_gallery = filters.view == 'timeline' %}
               {% include "_timeline_batch.html" %}
             </div>
+            {% if filters.view == 'timeline' %}<div class="timeline-end-space" aria-hidden="true"></div>{% endif %}
             <div class="timeline-load-sentinel" data-timeline-load {% if not timeline_has_more %}hidden{% endif %}>继续加载</div>
             <aside class="timeline-jump-rail" aria-label="快速跳转时间线" data-timeline-jump>
               {% if filters.view == 'timeline' %}
@@ -214,7 +209,7 @@
     <button class="pane-resizer" type="button" aria-label="调整播放器宽度，左右方向键调整" aria-valuemin="25" aria-valuemax="75" aria-valuenow="67" role="separator" aria-orientation="vertical" data-resizer></button>
     <aside class="preview-pane" data-inline-player>
       <div class="inline-player-head">
-        <div class="inline-player-heading"><span class="inline-player-eyebrow">正在观看</span><strong data-inline-player-title></strong></div>
+        <div class="inline-player-heading"><strong data-inline-player-title></strong></div>
         <div class="inline-player-actions">
           <button class="nav-button secondary favorite-toggle" type="button" data-inline-favorite hidden aria-pressed="false">
             {{ icon('heart') }}<span data-favorite-label>收藏</span>
@@ -229,5 +224,8 @@
 {% endblock %}
 {% block scripts %}
   <script src="/static/app.js?v=2.6.9" defer></script>
-  {% if filters.view == 'timeline' %}<script src="/static/timeline.js?v=14" defer></script>{% endif %}
+  {% if filters.view == 'timeline' %}
+    <script src="/static/timeline-density.js?v=1" defer></script>
+    <script src="/static/timeline.js?v=16" defer></script>
+  {% endif %}
 {% endblock %}

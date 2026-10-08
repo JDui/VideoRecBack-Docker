@@ -15,10 +15,7 @@
   const favoriteStates = new Map();
   const confirmedFavorites = new Map();
   const dateTicks = new Map();
-  const years = [...new Set(dates.map(date => date.slice(0, 4)))];
-  const datesByYear = years.map(year => dates.filter(date => date.startsWith(year)));
-  const lastYearDays = datesByYear.at(-1)?.length || 1;
-  const extent = Math.max(1, years.length - 1 + (lastYearDays - 1) / lastYearDays);
+  const densityAxis = buildDensityAxis(dateIndex);
   let cards = [];
   let rows = [];
   let requestId = 0;
@@ -38,24 +35,7 @@
   let previousPromise = null;
   let windowStartId = "";
 
-  const valueFor = date => {
-    const year = Math.max(0, years.indexOf(date.slice(0, 4)));
-    const list = datesByYear[year] || [date];
-    return (year + Math.max(0, list.indexOf(date)) / list.length) / extent * 1000;
-  };
-  const datePositions = dates.map(valueFor);
-  const dateFor = value => {
-    const position = Number(value);
-    let low = 0;
-    let high = dates.length - 1;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (datePositions[middle] < position) low = middle + 1;
-      else high = middle;
-    }
-    const previous = Math.max(0, low - 1);
-    return dates[Math.abs(datePositions[previous] - position) < Math.abs(datePositions[low] - position) ? previous : low];
-  };
+  const { valueFor, dateFor } = densityAxis;
   const setCurrentValue = date => {
     currentDate = date;
     const value = valueFor(date);
@@ -86,7 +66,15 @@
     favoriteStates.set(id, favorite);
   };
   const syncFavorite = link => syncFavoriteState(link.dataset.videoId, link.parentElement.dataset.galleryDate, link.dataset.favoriteState === "1");
-  dateIndex.forEach(entry => {
+  const maximumCount = dateIndex.reduce((maximum, entry) => Math.max(maximum, entry.count), 1);
+  densityAxis.bands.forEach((band, index) => {
+    const entry = dateIndex[index];
+    const segment = document.createElement("span");
+    segment.className = "timeline-density-segment";
+    segment.style.top = band.start / 10 + "%";
+    segment.style.height = (band.end - band.start) / 10 + "%";
+    segment.style.opacity = String(0.18 + Math.sqrt(entry.count / maximumCount) * 0.55);
+    tickContainer.append(segment);
     const tick = document.createElement("span");
     tick.className = "timeline-date-tick";
     tick.dataset.date = entry.date;
@@ -146,9 +134,9 @@
   };
   const layout = () => {
     bindCards();
-    const width = timelineStack.clientWidth;
+    const width = timelineStack.getBoundingClientRect().width;
     if (!width) return;
-    const gap = parseFloat(getComputedStyle(timelineStack).gap) || 5;
+    const gap = parseFloat(getComputedStyle(timelineStack).gap) || 10;
     const target = Math.min(width / (16 / 9), Number(previewSize?.value || 176) * (window.innerWidth <= 600 ? 0.57 : 1.25));
     rows = [];
     let row = [];
@@ -181,11 +169,16 @@
     const endSpace = windowStartId && lastRow ? Math.max(20,
       libraryPane.clientHeight - position.parentElement.offsetHeight - lastRow[0].offsetHeight - bottomPadding) : 20;
     timelineRoot.style.setProperty("--gallery-end-space", endSpace + "px");
-    timelineRoot.style.setProperty("--rail-height", Math.max(250, libraryPane.clientHeight - 12) + "px");
+    timelineRoot.style.setProperty("--rail-height", Math.max(120, libraryPane.clientHeight - 12) + "px");
+    let lastLabelPosition = -Infinity;
     yearMarks.forEach(mark => {
       const date = mark.dataset.targetAnchor?.match(/timeline-(\d{4}-\d{2})/)?.[1];
       const target = dates.find(item => item.startsWith(date));
-      mark.style.top = "calc(8px + (100% - 16px) * " + valueFor(target || dates[0]) / 1000 + ")";
+      const value = valueFor(target || dates[0]);
+      const labelPosition = value / 1000 * (scrubber.clientHeight - 16);
+      mark.hidden = labelPosition - lastLabelPosition < 36;
+      if (!mark.hidden) lastLabelPosition = labelPosition;
+      mark.style.top = "calc(8px + (100% - 16px) * " + value / 1000 + ")";
     });
     updatePosition();
   };

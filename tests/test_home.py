@@ -1,5 +1,7 @@
 from datetime import datetime
 from importlib import import_module
+from html import unescape
+from urllib.parse import parse_qs, urlsplit
 import re
 
 from fastapi.testclient import TestClient
@@ -83,7 +85,7 @@ def test_home_routes_and_legacy_library_links(monkeypatch, tmp_path):
     with TestClient(app) as client:
         home = client.get("/")
         assert home.status_code == 200
-        for copy in ["回忆拾回", "最近记录", "珍藏片段", "那年今日", "影像库概览"]:
+        for copy in ["随机视频", "最近记录", "收藏", "那年今日", "影像库概览"]:
             assert copy in home.text
         assert "removed.mp4" not in home.text
         assert 'data-timeline-root' in client.get("/library").text
@@ -144,8 +146,8 @@ def test_home_exposes_intranet_setup_or_existing_detection(monkeypatch, tmp_path
             save_settings(config_dir, Settings(scan_interval_hours=0,
                 intranet_keepalive_enabled=enabled, intranet_redirect_host=host))
             home = client.get("/")
-            assert 'href="/settings#network"' in home.text
-            assert '>内网设置</a>' in home.text
+            assert 'href="/settings"' in home.text
+            assert 'class="site-intranet-settings"' not in home.text
             button = re.search(r'<button[^>]*data-intranet-jump[^>]*>', home.text).group()
             assert "hidden" in button
             assert 'class="site-intranet-settings"' not in client.get("/settings").text
@@ -173,7 +175,7 @@ def test_home_and_library_share_navigation_without_duplicate_library_actions(mon
         home = client.get("/")
         assert '/static/site-shell.css?' in home.text
         assert 'href="/" aria-current="page"' in home.text
-        for path in ["/library", "/?view=folders", "/?view=calendar", "/?view=favorites"]:
+        for path, view in [("/library", "timeline"), ("/?view=folders", "folders"), ("/?view=calendar", "calendar"), ("/?view=favorites", "favorites"), ("/library?view=calendar&type=flat&duration=long", "calendar")]:
             page = client.get(path)
             assert page.status_code == 200
             assert '/static/site-shell.css?' in page.text
@@ -181,12 +183,22 @@ def test_home_and_library_share_navigation_without_duplicate_library_actions(mon
             assert page.text.count('data-intranet-jump') == 1
             header = re.search(r'<header class="site-header">(.*?)</header>', page.text, re.S).group(1)
             assert 'href="/"' in header and '>首页</a>' in header
-            assert 'href="/library"' in header and '>视频库</a>' in header
+            navigation = re.search(r'<nav class="site-navigation"[^>]*>(.*?)</nav>', header, re.S).group(1)
+            links = re.findall(r'<a href="([^"]*)"([^>]*)>([^<]*)</a>', navigation)
+            assert [label for _, _, label in links] == ["首页", "时间线", "文件夹", "日历", "收藏"]
+            active_links = [(url, label) for url, attrs, label in links if 'aria-current="page"' in attrs]
+            assert len(active_links) == 1
+            assert parse_qs(urlsplit(unescape(active_links[0][0])).query)["view"] == [view]
+            if "type=flat" in path:
+                for url, _, _ in links[1:]:
+                    params = parse_qs(urlsplit(unescape(url)).query)
+                    assert params["type"] == ["flat"]
+                    assert params["duration"] == ["long"]
             assert 'href="/settings"' in header
-            assert 'href="/settings#network"' in header
-            active_url = '/?view=favorites' if 'favorites' in path else '/library'
-            assert f'href="{active_url}" aria-current="page"' in header
+            assert 'class="site-intranet-settings"' not in header
             toolbar = re.search(r'<header class="library-topbar">(.*?)</header>', page.text, re.S).group(1)
+            assert '<nav' not in toolbar
+            assert 'view-switch' not in page.text
             assert '>首页</a>' not in toolbar
             assert 'href="/settings"' not in toolbar
             assert 'data-intranet-jump' not in toolbar
