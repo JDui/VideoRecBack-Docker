@@ -13,7 +13,7 @@ RUN sed -i 's#http://deb.debian.org/debian-security#https://mirrors.tuna.tsinghu
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --retries 5 --timeout 120 -i https://mirrors.aliyun.com/pypi/simple --trusted-host mirrors.aliyun.com -r requirements.txt
+RUN pip install --no-cache-dir --retries 5 --timeout 120 -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 COPY app ./app
 
