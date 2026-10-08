@@ -26,7 +26,7 @@ VideoRecBack 是一个面向 NAS 视频存档的容器化浏览器。它把设�
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.6.8
+    image: videorecback:2.6.9
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -38,6 +38,12 @@ services:
 ```
 
 打开 `http://localhost:8080`，进入设置确认目标路径为 `/media`，然后点击扫描。
+
+## 内网自动跳转
+
+设置页的“内网连接”中可开启“载入前自动跳转内网”，对应 `/config/settings.json` 的 `intranet_auto_redirect_enabled`，默认 `false`。需要同时启用“内网直连检测”并填写内网服务地址、端口与协议。
+
+开启后，首页、视频库、设置页和视频页面会先进行内网连通检测，成功后直接跳转，再加载页面内容、封面与播放器，并保留原路径、查询参数和锚点。检测失败或超过 1.5 秒会继续加载当前地址；浏览器安全策略阻止自动探测时，仍可通过“检测内网”确认连接，成功后自动切换。已经使用配置的内网地址时不会重复跳转。
 
 ## 全景封面调试
 

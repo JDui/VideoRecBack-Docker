@@ -94,12 +94,13 @@ def test_settings_page_includes_thumbnail_refresh(monkeypatch, tmp_path):
     assert 'name="flat_hls_encoder"' in response.text
     assert 'name="panorama_hls_encoder"' in response.text
     assert 'name="intranet_keepalive_enabled"' in response.text
+    assert 'name="intranet_auto_redirect_enabled"' in response.text
     assert 'name="intranet_redirect_host"' in response.text
     assert 'name="intranet_redirect_port"' in response.text
     assert 'name="intranet_redirect_protocol"' in response.text
     assert "内网直连" in response.text
     assert "服务器连通测试" in response.text
-    assert "/static/intranet.js?v=2.6.6" in response.text
+    assert "/static/intranet.js?v=2.6.9" in response.text
     assert "/static/settings.js?v=2" in response.text
     assert '<option value="ultra"' in response.text
     assert "需要确认的操作" in response.text
@@ -477,6 +478,7 @@ def test_settings_sync_splits_hls_encoder_keys(monkeypatch, tmp_path):
     assert values["flat_hls_encoder"] == "h264_qsv"
     assert values["panorama_hls_encoder"] == "libx264_veryfast"
     assert values["intranet_keepalive_enabled"] == "0"
+    assert values["intranet_auto_redirect_enabled"] == "0"
     assert values["intranet_redirect_host"] == "192.168.31.20"
     assert values["intranet_redirect_port"] == ""
     assert values["intranet_redirect_protocol"] == "https"

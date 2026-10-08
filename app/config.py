@@ -34,6 +34,7 @@ class Settings:
     ignore_dotfiles: bool = True
     ignore_name_patterns: list[str] = field(default_factory=lambda: DEFAULT_IGNORE_NAME_PATTERNS.copy())
     intranet_keepalive_enabled: bool = False
+    intranet_auto_redirect_enabled: bool = False
     intranet_redirect_host: str = ""
     intranet_redirect_port: str = ""
     intranet_redirect_protocol: str = "http"
@@ -82,6 +83,7 @@ def load_settings(config_dir: Path) -> Settings:
         ignore_dotfiles=bool(raw.get("ignore_dotfiles", True)),
         ignore_name_patterns=normalize_ignore_patterns(raw.get("ignore_name_patterns")),
         intranet_keepalive_enabled=bool(raw.get("intranet_keepalive_enabled", False)),
+        intranet_auto_redirect_enabled=bool(raw.get("intranet_auto_redirect_enabled", False)),
         intranet_redirect_host=normalize_intranet_host(raw.get("intranet_redirect_host", "")),
         intranet_redirect_port=normalize_intranet_port(raw.get("intranet_redirect_port", "")),
         intranet_redirect_protocol=normalize_intranet_redirect_protocol(raw.get("intranet_redirect_protocol", "http")),
@@ -107,6 +109,7 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload["stream_cache_retention_days"] = clamp_days(payload.get("stream_cache_retention_days", 7))
     payload["scan_interval_hours"] = int(payload.get("scan_interval_hours", 150))
     payload["intranet_keepalive_enabled"] = bool(payload.get("intranet_keepalive_enabled", False))
+    payload["intranet_auto_redirect_enabled"] = bool(payload.get("intranet_auto_redirect_enabled", False))
     payload["intranet_redirect_host"] = normalize_intranet_host(payload.get("intranet_redirect_host", ""))
     payload["intranet_redirect_port"] = normalize_intranet_port(payload.get("intranet_redirect_port", ""))
     payload["intranet_redirect_protocol"] = normalize_intranet_redirect_protocol(payload.get("intranet_redirect_protocol", "http"))

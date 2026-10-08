@@ -79,6 +79,7 @@ def test_settings_round_trip(tmp_path: Path):
         ignore_dotfiles=False,
         ignore_name_patterns=["Thumbs.db", "*.tmp.mp4"],
         intranet_keepalive_enabled=True,
+        intranet_auto_redirect_enabled=True,
         intranet_redirect_host="192.168.31.20",
         intranet_redirect_port="8080",
         intranet_redirect_protocol="https",
@@ -105,6 +106,7 @@ def test_settings_round_trip(tmp_path: Path):
     assert loaded.ignore_dotfiles is False
     assert loaded.ignore_name_patterns == ["Thumbs.db", "*.tmp.mp4"]
     assert loaded.intranet_keepalive_enabled is True
+    assert loaded.intranet_auto_redirect_enabled is True
     assert loaded.intranet_redirect_host == "192.168.31.20"
     assert loaded.intranet_redirect_port == "8080"
     assert loaded.intranet_redirect_protocol == "https"
@@ -123,6 +125,15 @@ def test_default_scan_interval_is_low_frequency(tmp_path: Path):
     settings = load_settings(tmp_path)
 
     assert settings.scan_interval_hours == 150
+
+
+def test_intranet_auto_redirect_defaults_off_for_new_and_existing_configs(tmp_path: Path):
+    assert load_settings(tmp_path).intranet_auto_redirect_enabled is False
+    (tmp_path / "settings.json").write_text(
+        '{"intranet_keepalive_enabled":true,"intranet_redirect_host":"192.168.1.10"}\n',
+        encoding="utf-8",
+    )
+    assert load_settings(tmp_path).intranet_auto_redirect_enabled is False
 
 
 def test_scan_interval_allows_zero(tmp_path: Path):

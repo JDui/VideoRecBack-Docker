@@ -4,12 +4,20 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ settings.site_title if settings else "视频归档" }}{% endblock %}</title>
+    {% if request.query_params.get('_vbr_skip_intranet') == '1' %}
+    <script>
+      const pageUrl = new URL(window.location.href);
+      pageUrl.searchParams.delete("_vbr_skip_intranet");
+      window.history.replaceState(window.history.state, "", pageUrl.toString());
+    </script>
+    {% endif %}
     <link rel="stylesheet" href="/static/styles.css?v=2.6.6">
     {% block head %}{% endblock %}
   </head>
   <body
     class="{% block body_class %}{% endblock %}"
     data-intranet-enabled="{{ '1' if settings and settings.intranet_keepalive_enabled else '0' }}"
+    data-intranet-auto-redirect-enabled="{{ '1' if settings and settings.intranet_auto_redirect_enabled else '0' }}"
     data-intranet-redirect-host="{{ settings.intranet_redirect_host if settings else '' }}"
     data-intranet-redirect-port="{{ settings.intranet_redirect_port if settings else '' }}"
     data-intranet-redirect-protocol="{{ settings.intranet_redirect_protocol if settings else 'http' }}"
@@ -30,7 +38,7 @@
     <main class="page">
       {% block content %}{% endblock %}
     </main>
-    <script src="/static/intranet.js?v=2.6.6" defer></script>
+    <script src="/static/intranet.js?v=2.6.9" defer></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

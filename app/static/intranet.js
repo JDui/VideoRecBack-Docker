@@ -2,6 +2,7 @@ const intranetConfig = document.body?.dataset || {};
 
 const FETCH_PROBE_TIMEOUT_MS = 8000;
 const IMAGE_PROBE_TIMEOUT_MS = 1200;
+const PREFLIGHT_TIMEOUT_MS = 1500;
 const MANUAL_PROBE_TIMEOUT_MS = 6000;
 const MANUAL_REACHABLE_TTL_MS = 60 * 1000;
 const PROBE_INTERVAL_MS = 15000;
@@ -58,13 +59,18 @@ const currentPageOrigin = () => {
   }
 };
 
-const redirectToIntranet = () => {
+const redirectToIntranet = (replace = false) => {
   const target = intranetOrigin();
-  if (!target || sameTarget()) return;
+  if (!target || sameTarget()) return false;
   target.pathname = window.location.pathname;
   target.search = window.location.search;
   target.hash = window.location.hash;
-  window.location.assign(target.toString());
+  if (replace) {
+    window.location.replace(target.toString());
+  } else {
+    window.location.assign(target.toString());
+  }
+  return true;
 };
 
 const hideJumpButton = () => {
@@ -90,6 +96,10 @@ const revealActionButton = () => {
 };
 
 const showJumpButton = () => {
+  if (intranetConfig.intranetAutoRedirectEnabled === "1" && shouldProbe()) {
+    redirectToIntranet(true);
+    return;
+  }
   if (!jumpButton || isLocalAccess() || sameTarget()) return;
   jumpButton.dataset.mode = JUMP_MODE;
   jumpButton.textContent = "跳转内网";
@@ -337,17 +347,40 @@ const refreshJumpButton = async () => {
   }
 };
 
-jumpButton?.addEventListener("click", () => {
-  if (jumpButton.dataset.mode === JUMP_MODE) {
-    redirectToIntranet();
+const runPreflight = () => {
+  let finished = false;
+  const finish = (reachable) => {
+    if (finished) return;
+    finished = true;
+    window.clearTimeout(timeout);
+    if (reachable && shouldProbe() && redirectToIntranet(true)) return;
+    const fallback = new URL(window.location.href);
+    fallback.searchParams.set("_vbr_skip_intranet", "1");
+    window.location.replace(fallback.toString());
+  };
+  const timeout = window.setTimeout(() => finish(false), PREFLIGHT_TIMEOUT_MS);
+  if (!shouldProbe()) {
+    finish(false);
     return;
   }
-  startManualProbe();
-});
-window.addEventListener("message", handleProbeMessage);
-refreshJumpButton();
-window.setInterval(refreshJumpButton, PROBE_INTERVAL_MS);
-window.addEventListener("online", refreshJumpButton);
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refreshJumpButton();
-});
+  browserCanReachIntranet().then(finish, () => finish(false));
+};
+
+if (intranetConfig.intranetPreflight === "1") {
+  runPreflight();
+} else {
+  jumpButton?.addEventListener("click", () => {
+    if (jumpButton.dataset.mode === JUMP_MODE) {
+      redirectToIntranet();
+      return;
+    }
+    startManualProbe();
+  });
+  window.addEventListener("message", handleProbeMessage);
+  refreshJumpButton();
+  window.setInterval(refreshJumpButton, PROBE_INTERVAL_MS);
+  window.addEventListener("online", refreshJumpButton);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshJumpButton();
+  });
+}

@@ -107,6 +107,30 @@ def create_app() -> FastAPI:
     templates.env.filters["bitrate"] = format_bitrate
     templates.env.filters["memory_year"] = lambda value: datetime.fromtimestamp(value).year
 
+    def intranet_preflight(request: Request, settings: Settings):
+        if (
+            not settings.intranet_auto_redirect_enabled
+            or not settings.intranet_keepalive_enabled
+            or not settings.intranet_redirect_host
+            or request.query_params.get("_vbr_skip_intranet") == "1"
+        ):
+            return None
+        protocol = settings.intranet_redirect_protocol
+        default_port = 443 if protocol == "https" else 80
+        if (
+            request.url.scheme == protocol
+            and request.url.hostname == settings.intranet_redirect_host.lower()
+            and (request.url.port or default_port) == int(settings.intranet_redirect_port or default_port)
+        ):
+            return None
+        fallback_url = request.url.include_query_params(_vbr_skip_intranet="1")
+        return templates.TemplateResponse(
+            request,
+            "intranet_preflight.html",
+            {"settings": settings, "fallback_url": f"{fallback_url.path}?{fallback_url.query}"},
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.on_event("startup")
     async def startup() -> None:
         sync_settings_to_db(db, load_settings(config_dir))
@@ -138,6 +162,9 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
         settings = load_settings(config_dir)
+        preflight = intranet_preflight(request, settings)
+        if preflight is not None:
+            return preflight
         library_params = {
             "view", "type", "duration", "aspect", "folder", "q",
             "calendar_zoom", "calendar_year", "calendar_month", "date_from", "date_to",
@@ -242,11 +269,15 @@ def create_app() -> FastAPI:
 
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
+        settings = load_settings(config_dir)
+        preflight = intranet_preflight(request, settings)
+        if preflight is not None:
+            return preflight
         return templates.TemplateResponse(
             request,
             "settings.html",
             {
-                "settings": load_settings(config_dir),
+                "settings": settings,
                 "thumbnail_refresh": request.query_params.get("thumbnail_refresh"),
                 "panorama_recheck": request.query_params.get("panorama_recheck"),
                 "metadata_recheck": request.query_params.get("metadata_recheck"),
@@ -273,6 +304,7 @@ def create_app() -> FastAPI:
         ignore_dotfiles: str | None = Form(None),
         ignore_name_patterns: str = Form(""),
         intranet_keepalive_enabled: str | None = Form(None),
+        intranet_auto_redirect_enabled: str | None = Form(None),
         intranet_redirect_host: str = Form(""),
         intranet_redirect_port: str = Form(""),
         intranet_redirect_protocol: str = Form("http"),
@@ -296,6 +328,7 @@ def create_app() -> FastAPI:
             ignore_dotfiles=ignore_dotfiles == "on",
             ignore_name_patterns=normalize_ignore_patterns(ignore_name_patterns),
             intranet_keepalive_enabled=intranet_keepalive_enabled == "on",
+            intranet_auto_redirect_enabled=intranet_auto_redirect_enabled == "on",
             intranet_redirect_host=normalize_intranet_host(intranet_redirect_host),
             intranet_redirect_port=normalize_intranet_port(intranet_redirect_port),
             intranet_redirect_protocol=normalize_intranet_redirect_protocol(intranet_redirect_protocol),
@@ -439,11 +472,15 @@ def create_app() -> FastAPI:
 
     @app.get("/video/{video_id}", response_class=HTMLResponse)
     async def video_detail(request: Request, video_id: int):
+        settings = load_settings(config_dir)
+        preflight = intranet_preflight(request, settings)
+        if preflight is not None:
+            return preflight
         video = get_video(db, video_id)
         return templates.TemplateResponse(
             request,
             "detail.html",
-            {"video": video, "settings": load_settings(config_dir)},
+            {"video": video, "settings": settings},
         )
 
     @app.post("/video/{video_id}/type")
@@ -487,13 +524,17 @@ def create_app() -> FastAPI:
 
     @app.get("/video/{video_id}/play", response_class=HTMLResponse)
     async def play_page(request: Request, video_id: int):
+        settings = load_settings(config_dir)
+        preflight = intranet_preflight(request, settings)
+        if preflight is not None:
+            return preflight
         video = await asyncio.to_thread(ensure_tenbit_status, db, video_id)
         return templates.TemplateResponse(
             request,
             "play.html",
             {
                 "video": video,
-                "settings": load_settings(config_dir),
+                "settings": settings,
                 "embed": request.query_params.get("embed") == "1",
             },
         )
@@ -691,6 +732,7 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "ignore_dotfiles": int(settings.ignore_dotfiles),
             "ignore_name_patterns": ",".join(settings.ignore_name_patterns),
             "intranet_keepalive_enabled": int(settings.intranet_keepalive_enabled),
+            "intranet_auto_redirect_enabled": int(settings.intranet_auto_redirect_enabled),
             "intranet_redirect_host": settings.intranet_redirect_host,
             "intranet_redirect_port": settings.intranet_redirect_port,
             "intranet_redirect_protocol": settings.intranet_redirect_protocol,

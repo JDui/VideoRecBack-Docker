@@ -70,10 +70,12 @@
           <header><h2 id="network-heading">内网连接</h2><p>在局域网中使用内网直连，减少绕行。</p></header>
           <div class="preference-fields">
             <label class="preference-check preference-wide"><input type="checkbox" name="intranet_keepalive_enabled" {% if settings.intranet_keepalive_enabled %}checked{% endif %}><span>启用内网直连检测</span></label>
+            <label class="preference-check preference-wide"><input type="checkbox" name="intranet_auto_redirect_enabled" {% if settings.intranet_auto_redirect_enabled %}checked{% endif %}><span>载入前自动跳转内网</span></label>
             <label class="preference-field">服务地址<input name="intranet_redirect_host" value="{{ settings.intranet_redirect_host }}" placeholder="192.168.31.20" spellcheck="false"><small>填写 IP 或主机名，不包含协议与路径。</small></label>
             <label class="preference-field">服务端口<input name="intranet_redirect_port" type="number" min="1" max="65535" value="{{ settings.intranet_redirect_port }}" placeholder="8080"></label>
             <label class="preference-field">连接协议<select name="intranet_redirect_protocol"><option value="http" {% if settings.intranet_redirect_protocol == 'http' %}selected{% endif %}>HTTP</option><option value="https" {% if settings.intranet_redirect_protocol == 'https' %}selected{% endif %}>HTTPS</option></select></label>
             <p class="preference-hint">浏览器会自动探测内网服务。若被安全策略拦截，可点击“检测内网”进行一次性确认，成功后即可“跳转内网”。</p>
+            <p class="preference-hint">自动跳转默认关闭。开启后需同时启用检测并填写内网地址；连接成功会保留当前页面位置直接切换，检测失败或超时会继续载入当前页面。</p>
           </div>
         </section>
       </form>

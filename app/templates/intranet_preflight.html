@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>正在连接 - {{ settings.site_title }}</title>
+  </head>
+  <body
+    data-intranet-preflight="1"
+    data-intranet-enabled="1"
+    data-intranet-auto-redirect-enabled="1"
+    data-intranet-redirect-host="{{ settings.intranet_redirect_host }}"
+    data-intranet-redirect-port="{{ settings.intranet_redirect_port }}"
+    data-intranet-redirect-protocol="{{ settings.intranet_redirect_protocol }}"
+  >
+    <p>正在检测内网连接，<a href="{{ fallback_url }}">继续访问当前地址</a>。</p>
+    <script src="/static/intranet.js?v=2.6.9"></script>
+  </body>
+</html>
