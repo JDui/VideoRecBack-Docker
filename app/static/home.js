@@ -6,20 +6,21 @@ const scanButton = document.querySelector('[data-home-scan-button]');
 const scanStatus = document.querySelector('[data-home-scan-status]');
 let wasScanning = document.querySelector('[data-home-status]')?.dataset.scanning === '1';
 let scanSubmitting = false;
+let homeRefreshPending = false;
 const homeRandomStorageKey = 'videorecback-home-random';
 const homePreserveRandomKey = 'videorecback-home-preserve-random';
 const homeRandomIds = () => [...new Set([...randomGrid.querySelectorAll('[data-home-video]')].map(item => item.dataset.homeVideo))];
 const saveHomeRandom = () => {
   if (!randomGrid) return;
   try {
-    sessionStorage.setItem(homeRandomStorageKey, JSON.stringify({ html: randomGrid.innerHTML, ids: homeRandomIds() }));
+    sessionStorage.setItem(homeRandomStorageKey, JSON.stringify({ version: 2, html: randomGrid.innerHTML, ids: homeRandomIds() }));
   } catch {}
 };
 const restoreHomeRandom = () => {
   if (!randomGrid) return false;
   try {
     const cached = JSON.parse(sessionStorage.getItem(homeRandomStorageKey) || 'null');
-    if (typeof cached?.html !== 'string' || !Array.isArray(cached.ids)
+    if (cached?.version !== 2 || typeof cached?.html !== 'string' || !Array.isArray(cached.ids)
         || cached.ids.length > 3 || !cached.ids.every(id => typeof id === 'string' && /^\d+$/.test(id))) return false;
     randomGrid.innerHTML = cached.html;
     if (shuffleButton) shuffleButton.disabled = cached.ids.length === 0;
@@ -95,7 +96,7 @@ homeTimelineAction.addEventListener('click', event => {
   event.preventDefault();
   const url = homeContextCard?.dataset.homeTimelineUrl;
   hideHomeContextMenu(false);
-  if (url) window.location.assign(url);
+  if (url) window.VideoRecBackNavigate(url);
 });
 for (const name of ['pointerdown', 'click']) {
   document.addEventListener(name, event => {
@@ -128,14 +129,30 @@ shuffleButton?.addEventListener('click', async () => {
   const ids = homeRandomIds();
   shuffleButton.disabled = true;
   shuffleButton.textContent = '加载中';
+  randomGrid.style.minHeight = randomGrid.getBoundingClientRect().height + 'px';
   randomGrid.setAttribute('aria-busy', 'true');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const outgoing = reduced ? null : randomGrid.animate([{ opacity: 1 }, { opacity: .4 }], { duration: 140, fill: 'forwards' });
   feedback.textContent = '';
   try {
     const response = await fetch(`/home/random?exclude=${encodeURIComponent(ids.join(','))}`, { cache: 'no-store' });
     if (!response.ok) throw new Error('Random videos unavailable');
     const result = await response.json();
     if (typeof result.html !== 'string') throw new Error('Invalid random videos');
-    randomGrid.innerHTML = result.html;
+    const template = document.createElement('template');
+    template.innerHTML = result.html;
+    const preload = [...template.content.querySelectorAll('img')].map(image => {
+      const loaded = new Image(); loaded.src = image.src;
+      return loaded.decode().catch(() => {});
+    });
+    await Promise.race([Promise.all(preload), new Promise(resolve => setTimeout(resolve, 1200))]);
+    await outgoing?.finished;
+    randomGrid.replaceChildren(template.content);
+    outgoing?.cancel();
+    if (!reduced) await Promise.all([...randomGrid.children].map((card, index) => card.animate(
+      [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 220, delay: index * 25, fill: 'backwards', easing: 'ease-out' }
+    ).finished));
     saveHomeRandom();
     feedback.textContent = '';
   } catch {
@@ -143,7 +160,9 @@ shuffleButton?.addEventListener('click', async () => {
   } finally {
     shuffleButton.disabled = false;
     shuffleButton.textContent = '换一组';
+    outgoing?.cancel();
     randomGrid.removeAttribute('aria-busy');
+    randomGrid.style.removeProperty('min-height');
   }
 });
 
@@ -170,7 +189,8 @@ const pollScan = async () => {
     const response = await fetch('/scan/status', { cache: 'no-store' });
     if (!response.ok) return;
     const state = await response.json();
-    if (wasScanning && !state.scanning) {
+    if (wasScanning && !state.scanning) homeRefreshPending = true;
+    if (homeRefreshPending && !document.querySelector('.home-player-shell.player-open')) {
       saveHomeRandom();
       try { sessionStorage.setItem(homePreserveRandomKey, '1'); } catch {}
       window.location.reload();
@@ -208,3 +228,7 @@ scanForm?.addEventListener('submit', async event => {
 pollScan();
 window.setInterval(pollScan, 10000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollScan(); });
+
+window.addEventListener('videorecback:player-closed', pollScan);
+
+window.addEventListener('videorecback:home-favorite', saveHomeRandom);

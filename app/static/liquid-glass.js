@@ -23,7 +23,13 @@
     container.classList.add("glass-track");
     register(container);
     register(selection);
-    const selected = () => links.find(link => link.hasAttribute("aria-current") || link.classList.contains("active"));
+    let pendingLink = null;
+    window.addEventListener("videorecback:navigate", event => {
+      pendingLink = links.find(link => link.href === event.detail.url) || null;
+      if (pendingLink) move(pendingLink);
+    });
+    window.addEventListener("pageshow", () => { pendingLink = null; });
+    const selected = () => pendingLink || links.find(link => link.hasAttribute("aria-current") || link.classList.contains("active"));
     const move = (link, immediate = false) => {
       selection.hidden = !link;
       if (!link) return;
@@ -47,6 +53,7 @@
     new ResizeObserver(() => move(selected(), true)).observe(container);
     tracks.push(() => move(selected(), true));
     move(selected(), true);
+    container.classList.add("glass-track-ready");
   }
 
   const surfaceSelector = ".site-settings, .intranet-jump-button, .home-soft-button, .nav-button, .player-back-button, .timeline-position-bar > output, .timeline-jump-rail, .timeline-scrub-date, .filterbar, .player-controls, .preferences-savebar, .quality-menu-panel, .favorite-context-menu, .home-context-menu, button:not(.pane-resizer):not(.timeline-jump-mark):not(.timeline-favorite):not(.timeline-latest), summary";

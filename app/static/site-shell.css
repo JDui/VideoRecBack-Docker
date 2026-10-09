@@ -20,7 +20,7 @@
 :is(.home-page, .library-page) .site-navigation a:hover,
 :is(.home-page, .library-page) .site-navigation a[aria-current],
 :is(.home-page, .library-page) .site-settings[aria-current] { color: var(--accent-deep); }
-:is(.home-page, .library-page) .site-navigation a[aria-current] { border-bottom: 3px solid var(--accent); }
+
 :is(.home-page, .library-page) .site-header-actions { margin-left: auto; display: flex; align-items: center; gap: 20px; }
 :is(.home-page, .library-page) .site-date { color: var(--muted); font-size: 13px; white-space: nowrap; }
 :is(.home-page, .library-page) .site-settings { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }

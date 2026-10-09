@@ -1,0 +1,4 @@
+{% macro stylesheet(url) %}
+<link rel="stylesheet" href="{{ url }}" media="print" data-app-style onload="this.media='all';this.dataset.ready='1'" onerror="this.dataset.failed='1'">
+<noscript><link rel="stylesheet" href="{{ url }}"></noscript>
+{% endmacro %}

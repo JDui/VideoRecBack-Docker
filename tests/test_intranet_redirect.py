@@ -40,6 +40,8 @@ def test_redirect_preflight_runs_before_loading_page_data(intranet_app, monkeypa
     assert "/thumb/" not in response.text
     assert "/static/player.js" not in response.text
     assert "/static/styles.css" not in response.text
+    assert "VideoRecBackLoading" in response.text
+    assert "正在检测内网连接" not in response.text
 
 
 @pytest.mark.parametrize("changes", [

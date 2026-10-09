@@ -1,0 +1,13 @@
+{% from '_icons.html' import icon %}
+<button class="pane-resizer" type="button" aria-label="调整播放器宽度，左右方向键调整" aria-valuemin="25" aria-valuemax="75" aria-valuenow="67" role="separator" aria-orientation="vertical" data-resizer></button>
+<aside class="preview-pane" data-inline-player>
+  <div class="inline-player-head">
+    <div class="inline-player-heading"><strong data-inline-player-title></strong></div>
+    <div class="inline-player-actions">
+      <button class="nav-button secondary favorite-toggle" type="button" data-inline-favorite hidden aria-pressed="false">{{ icon('heart') }}<span data-favorite-label>收藏</span></button>
+      <a class="nav-button secondary" href="#" data-inline-settings hidden aria-label="视频设置" title="视频设置">{{ icon('settings') }}<span>设置</span></a>
+      <button type="button" data-close-player aria-label="关闭播放器" title="关闭播放器">{{ icon('close') }}</button>
+    </div>
+  </div>
+  <div class="inline-frame-wrap"><iframe title="内嵌播放器" data-player-frame></iframe><div class="inline-loading" role="status">正在载入视频</div></div>
+</aside>

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% include '_loading_boot.html' %}
+{% if not preflight_loading|default(false) %}
+    <link rel="preload" as="style" href="/static/styles.css?v=2.6.6">
+    <link rel="preload" as="style" href="/static/liquid-glass.css?v=6">
+    <link rel="preload" as="script" href="/static/intranet.js?v=2.6.9">
+    <link rel="preload" as="script" href="/static/inline-player.js?v=1">
+    <link rel="preload" as="script" href="/static/liquid-glass.js?v=5">
+    <link rel="preload" as="script" href="/static/navigation.js?v=1">
+{% endif %}
+<!-- page-content-head -->

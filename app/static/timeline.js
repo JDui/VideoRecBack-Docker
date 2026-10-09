@@ -104,7 +104,7 @@
     timelineRoot.dataset.currentPage = card.id;
     if (!dragging) {
       setCurrentValue(date);
-      if (!hoveredDate) showDate(date);
+      if (!hoveredDate && document.activeElement === scrubber && scrubber.matches(":focus-visible")) showDate(date);
     }
     for (const mark of yearMarks) {
       const active = mark.dataset.targetAnchor?.includes("timeline-" + year);
@@ -319,7 +319,6 @@
     if (pointerId !== null) return;
     hoveredDate = null;
     scrubArea.classList.remove("is-previewing");
-    updatePosition();
   });
   scrubber.addEventListener("pointerdown", event => {
     if (event.button !== 0 || pointerId !== null) return;
@@ -404,6 +403,11 @@
     }
     refreshFavoriteTicks();
   });
+  window.addEventListener("videorecback:timeline-layout-now", () => {
+    cancelAnimationFrame(layoutFrame);
+    layoutFrame = 0;
+    layout();
+  });
   window.addEventListener("resize", scheduleLayout);
   new ResizeObserver(scheduleLayout).observe(timelineStack);
   new ResizeObserver(scheduleLayout).observe(libraryPane);
@@ -428,20 +432,25 @@
     }
   });
   layout();
+  window.VideoRecBackLoading?.hold();
   (async () => {
-    const saved = restoredReturnState || (isReloadNavigation() ? readTimelinePosition() : null);
-    if (saved) {
-      const savedId = saved.sectionId || saved.activeSection;
-      const date = saved.timelineDate || savedId?.match(/timeline-(\d{4}-\d{2}-\d{2})/)?.[1];
-      if (date && (date !== cards[0]?.dataset.galleryDate || !document.getElementById(savedId))) await jump(date, "", true, true);
-      const card = cardForAnchor(savedId);
-      restorePanePosition(card ? { ...saved, sectionId: card.id } : saved);
-    } else if (location.hash) {
-      const prefix = location.hash.match(/timeline-(\d{4}(?:-\d{2})?(?:-\d{2})?)/)?.[1];
-      const date = dates.find(date => date.startsWith(prefix || "!"));
-      if (date) await jump(date, location.hash, true);
+    try {
+      const saved = restoredReturnState || (isReloadNavigation() ? readTimelinePosition() : null);
+      if (saved) {
+        const savedId = saved.sectionId || saved.activeSection;
+        const date = saved.timelineDate || savedId?.match(/timeline-(\d{4}-\d{2}-\d{2})/)?.[1];
+        if (date && (date !== cards[0]?.dataset.galleryDate || !document.getElementById(savedId))) await jump(date, "", true, true);
+        const card = cardForAnchor(savedId);
+        restorePanePosition(card ? { ...saved, sectionId: card.id } : saved);
+      } else if (location.hash) {
+        const prefix = location.hash.match(/timeline-(\d{4}(?:-\d{2})?(?:-\d{2})?)/)?.[1];
+        const date = dates.find(date => date.startsWith(prefix || "!"));
+        if (date) await jump(date, location.hash, true);
+      }
+    } finally {
+      restoring = false;
+      updatePosition();
+      window.VideoRecBackLoading?.release();
     }
-    restoring = false;
-    updatePosition();
   })();
 })();

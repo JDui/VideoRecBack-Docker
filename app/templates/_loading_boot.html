@@ -1,0 +1,92 @@
+<style>
+  .page-loader { position:fixed; inset:0; z-index:10000; padding:28px clamp(16px,3vw,44px); box-sizing:border-box; background:linear-gradient(125deg,#dfe6ee,#ece8ef 55%,#eee5dc); color:#5d6471; font:14px system-ui,-apple-system,sans-serif; opacity:1; transition:opacity 180ms ease; pointer-events:auto; }
+  .page-loader.is-leaving { opacity:0; }
+  .page-loader.is-navigation { top:var(--site-header-height,76px); padding-top:20px; }
+  .loader-header { height:28px; width:min(440px,75%); border-radius:24px; background:rgba(255,255,255,.55); margin-bottom:40px; }
+  .is-navigation .loader-header { display:none; }
+  .loader-status { display:flex; align-items:center; gap:10px; margin:0 0 22px; }
+  .loader-status::before { content:""; width:14px; height:14px; border:2px solid rgba(100,120,145,.18); border-top-color:#879bad; border-radius:50%; animation:loader-spin 900ms linear infinite; }
+  .loader-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+  .loader-tile { border-radius:18px; aspect-ratio:1.6; background:linear-gradient(110deg,rgba(255,255,255,.25) 20%,rgba(255,255,255,.58) 45%,rgba(255,255,255,.25) 70%); background-size:250% 100%; animation:loader-shimmer 1.8s ease infinite; }
+  .page-loader[data-layout="library"] .loader-grid { grid-template-columns:repeat(auto-fit,minmax(min(var(--card-size,176px),100%),1fr)); }
+  .page-loader[data-layout="settings"] .loader-grid { grid-template-columns:190px minmax(0,1fr); }
+  .page-loader[data-layout="settings"] .loader-tile { aspect-ratio:auto; height:280px; }
+  .page-loader[data-layout="player"] .loader-grid { grid-template-columns:1fr; max-width:1100px; margin:auto; }
+  .page-loader[data-layout="player"] .loader-tile { aspect-ratio:16/9; }
+  .page-loader[data-layout="player"] .loader-tile:nth-child(n+2), .page-loader[data-layout="settings"] .loader-tile:nth-child(n+3) { display:none; }
+  @keyframes loader-shimmer { from { background-position:100% 0; } to { background-position:-100% 0; } }
+  @keyframes loader-spin { to { transform:rotate(360deg); } }
+  @media(max-width:700px) { .loader-grid { grid-template-columns:1fr; } .page-loader[data-layout="settings"] .loader-grid { grid-template-columns:1fr; } .page-loader[data-layout="settings"] .loader-tile:first-child { display:none; } }
+  @media(prefers-reduced-motion:reduce) { .page-loader,.loader-tile,.loader-status::before { animation:none; transition:none; } }
+</style>
+<script>
+(() => {
+  if (window.VideoRecBackLoading) return;
+  try {
+    const size = Number(localStorage.getItem('videorecback-card-size'));
+    if (size >= 80 && size <= 640) document.documentElement.style.setProperty('--card-size', size + 'px');
+  } catch {}
+  const loader = document.createElement('div');
+  loader.className = 'page-loader';
+  loader.setAttribute('role', 'status');
+  loader.setAttribute('aria-live', 'polite');
+  loader.innerHTML = '<div class="loader-header"></div><p class="loader-status">正在载入</p><div class="loader-grid" aria-hidden="true">' + '<div class="loader-tile"></div>'.repeat(6) + '</div>';
+  let hideTimer;
+  let holds = 0;
+  let ready = false;
+  const show = (target = location.href, navigation = false) => {
+    clearTimeout(hideTimer);
+    const url = new URL(target, location.href);
+    loader.dataset.layout = url.pathname === '/settings' ? 'settings' : url.pathname.startsWith('/video/') ? 'player' : url.pathname === '/library' || url.searchParams.has('view') ? 'library' : 'home';
+    loader.classList.toggle('is-navigation', navigation);
+    loader.classList.remove('is-leaving');
+    document.documentElement.append(loader);
+  };
+  const hide = () => {
+    if (holds || !ready) return;
+    loader.classList.add('is-leaving');
+    hideTimer = setTimeout(() => loader.remove(), matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 190);
+  };
+  window.VideoRecBackLoading = { show, hide, hold: () => holds++, release: () => { holds = Math.max(0, holds - 1); if (!holds && document.readyState !== 'loading') requestAnimationFrame(() => requestAnimationFrame(hide)); } };
+  show();
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (document.body.dataset.intranetPreflight === '1') return;
+    const scripts = [...document.querySelectorAll('script[data-page-script]')];
+    for (const source of scripts) {
+      const preload = document.createElement('link');
+      preload.rel = source.dataset.module ? 'modulepreload' : 'preload';
+      if (!source.dataset.module) preload.as = 'script';
+      preload.href = source.src;
+      document.head.append(preload);
+    }
+    try {
+      await Promise.all([...document.querySelectorAll('link[data-app-style]')].map(link => new Promise((resolve, reject) => {
+        if (link.dataset.failed) return reject(new Error('Styles unavailable'));
+        if (link.dataset.ready) return resolve();
+        link.addEventListener('load', resolve, { once: true });
+        link.addEventListener('error', reject, { once: true });
+      })));
+      for (const source of scripts) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = source.src;
+          if (source.dataset.module) script.type = 'module';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.body.append(script);
+        });
+      }
+      ready = true;
+      requestAnimationFrame(() => requestAnimationFrame(hide));
+    } catch {
+      loader.querySelector('.loader-status').textContent = '载入失败，请刷新重试';
+      const retry = document.createElement('button');
+      retry.type = 'button'; retry.textContent = '重新载入';
+      retry.style.cssText = 'padding:12px 20px;border:0;border-radius:24px;background:rgba(255,255,255,.8);font:inherit;cursor:pointer';
+      retry.onclick = () => location.reload();
+      loader.append(retry);
+    }
+  });
+  window.addEventListener('pageshow', event => { if (event.persisted) loader.remove(); });
+})();
+</script>

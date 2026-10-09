@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% from '_assets.html' import stylesheet %}
 {% block title %}{{ video.name }} - {{ settings.site_title }}{% endblock %}
 {% block body_class %}detail-page{% endblock %}
-{% block head %}<link rel="stylesheet" href="/static/site-shell.css?v=1">{% endblock %}
+{% block head %}{{ stylesheet('/static/site-shell.css?v=2') }}{% endblock %}
 {% block chrome %}
   {% from '_site_nav.html' import site_nav with context %}{{ site_nav('library') }}
 {% endblock %}

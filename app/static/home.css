@@ -6,7 +6,7 @@ body.home-page :focus-visible, body.preferences-page :focus-visible { outline: 2
 .preferences-page .site-navigation { display: flex; align-self: stretch; gap: 32px; }
 .preferences-page .site-navigation a { display: flex; align-items: center; position: relative; color: var(--muted); font-size: 15px; font-weight: 600; }
 .preferences-page .site-navigation a:hover, .preferences-page .site-navigation a[aria-current], .preferences-page .site-settings[aria-current] { color: var(--accent-deep); }
-.preferences-page .site-navigation a[aria-current] { border-bottom: 3px solid var(--accent); }
+
 .preferences-page .site-header-actions { margin-left: auto; display: flex; align-items: center; gap: 20px; }
 .preferences-page .site-date { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .preferences-page .site-settings { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }

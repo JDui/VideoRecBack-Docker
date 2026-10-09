@@ -702,7 +702,7 @@ const closePlayerPage = () => {
   }
 
   markReturningFromPlayer();
-  window.location.replace(target);
+  window.VideoRecBackNavigate(target, { replace: true });
   window.setTimeout(() => {
     try {
       video?.pause();

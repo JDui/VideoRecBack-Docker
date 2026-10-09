@@ -1,15 +1,17 @@
 {% extends 'base.html' %}
+{% from '_assets.html' import stylesheet %}
 {% block title %}首页 - {{ settings.site_title }}{% endblock %}
 {% block body_class %}home-page{% endblock %}
 {% block head %}
-  <link rel="stylesheet" href="/static/home.css?v=4">
-  <link rel="stylesheet" href="/static/site-shell.css?v=1">
+  {{ stylesheet('/static/home.css?v=5') }}
+  {{ stylesheet('/static/site-shell.css?v=2') }}
 {% endblock %}
 {% block chrome %}
   {% from '_site_nav.html' import site_nav with context %}
   {{ site_nav('home') }}
 {% endblock %}
 {% block content %}
+  <div class="home-player-shell"><div class="home-content">
   {% from '_home_card.html' import home_card with context %}
   <section class="home-discover" aria-labelledby="discover-title">
     <header class="home-section-head home-section-head--hero">
@@ -44,10 +46,17 @@
       <div><dt>视频</dt><dd>{{ '{:,}'.format(home.summary.total) }} <span>个视频</span></dd></div>
       <div><dt>全景</dt><dd>{{ home.summary.panorama }} <span>个全景</span></dd></div>
       <div><dt>收藏</dt><dd>{{ home.summary.favorites }} <span>个收藏</span></dd></div>
-      <div><dt>封面</dt><dd>{% if not home.summary.total %}等待影像{% elif home.summary.errors %}{{ home.summary.errors }} 个封面失败{% elif home.summary.pending %}{{ home.summary.pending }} 个封面待生成{% else %}封面就绪{% endif %}</dd></div>
+      <div><dt>封面</dt><dd>{% if not home.summary.total %}等待影像{% elif home.summary.errors %}<button type="button" class="thumbnail-errors-button" data-thumbnail-errors>{{ home.summary.errors }} 个封面失败</button>{% elif home.summary.pending %}{{ home.summary.pending }} 个封面待生成{% else %}封面就绪{% endif %}</dd></div>
       <div><dt>更新状态</dt><dd data-home-scan-status>{{ '正在更新' if scan_running else '扫描空闲' }}</dd></div>
     </dl>
     <form action="/scan" method="post" data-home-scan-form><button class="home-soft-button" type="submit" data-home-scan-button {% if scan_running %}disabled{% endif %}>{{ '正在更新' if scan_running else '更新影像库' }}</button></form>
   </footer>
+  </div>
+  {% include '_inline_player.html' %}
+  </div>
+  <dialog class="thumbnail-errors-dialog" data-thumbnail-errors-dialog aria-labelledby="thumbnail-errors-title">
+    <header><h2 id="thumbnail-errors-title">封面失败</h2><button type="button" data-errors-close aria-label="关闭">关闭</button></header>
+    <p data-errors-status role="status"></p><ul data-errors-list></ul><button type="button" data-errors-more hidden>加载更多</button>
+  </dialog>
 {% endblock %}
-{% block scripts %}<script src="/static/home.js?v=6" defer></script>{% endblock %}
+{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/home.js?v=7"></script><script type="application/x-vbr-script" data-page-script src="/static/home-player.js?v=1"></script><script type="application/x-vbr-script" data-page-script src="/static/thumbnail-errors.js?v=1"></script>{% endblock %}

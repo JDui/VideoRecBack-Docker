@@ -3,7 +3,6 @@ const WIDE_VIEWPORT_RATIO = 4 / 3;
 const shell = document.querySelector(".app-shell");
 const frame = document.querySelector("[data-player-frame]");
 const closePlayer = document.querySelector("[data-close-player]");
-const resizer = document.querySelector("[data-resizer]");
 const previewSize = document.querySelector("[data-preview-size]");
 const libraryPane = document.querySelector(".library-pane");
 const timelineRoot = document.querySelector("[data-timeline-root]");
@@ -264,9 +263,9 @@ favoriteContextMenu?.addEventListener("click", (event) => {
   const target = favoriteContextTarget;
   hideFavoriteContextMenu();
   if (action === "timeline") {
-    window.location.href = target.dataset.timelineUrl || "/?view=timeline";
+    window.VideoRecBackNavigate(target.dataset.timelineUrl || "/?view=timeline");
   } else if (action === "settings") {
-    window.location.href = target.dataset.settingsUrl || "#";
+    window.VideoRecBackNavigate(target.dataset.settingsUrl || "#");
   }
 });
 
@@ -367,8 +366,11 @@ const openInlinePlayer = (card, panePosition) => {
   if (inlineFrameClearTimer) window.clearTimeout(inlineFrameClearTimer);
   inlinePlayerCard = card;
   setPlayerTargetCard(card);
-  shell.classList.add("player-open");
-  restorePanePosition(panePosition);
+  shell.classList.add("player-loading");
+  window.VideoRecBackPlayer.transition(shell, () => {
+    shell.classList.add("player-open");
+    restorePanePosition(panePosition);
+  });
   frame.src = playerUrlForCard(card);
   if (inlinePlayerTitle) inlinePlayerTitle.textContent = titleForCard(card);
   if (inlineSettings) {
@@ -379,9 +381,9 @@ const openInlinePlayer = (card, panePosition) => {
   window.requestAnimationFrame(() => restorePanePosition(panePosition));
 };
 
-const closeInlinePlayer = () => {
+const closeInlinePlayer = async () => {
   const panePosition = capturePanePosition();
-  shell?.classList.remove("player-open");
+  if (await window.VideoRecBackPlayer.transition(shell, () => shell.classList.remove("player-open", "player-loading"), true) === false) return;
   setPlayerTargetCard(null);
   restorePanePosition(panePosition);
   if (frame) {
@@ -401,7 +403,7 @@ const closeInlinePlayer = () => {
 };
 
 const openPlayerPage = (card) => {
-  window.location.assign(playerPageUrlForCard(card));
+  window.VideoRecBackNavigate(playerPageUrlForCard(card));
 };
 
 let longPressTimer = null;
@@ -418,7 +420,7 @@ document.addEventListener("contextmenu", (event) => {
   if (!card) return;
   event.preventDefault();
   if (card.dataset.favoriteMenu === "1") openFavoriteContextMenu(card, event);
-  else window.location.href = card.dataset.settingsUrl;
+  else window.VideoRecBackNavigate(card.dataset.settingsUrl);
 });
 
 document.addEventListener("pointerdown", (event) => {
@@ -451,7 +453,7 @@ document.addEventListener("touchstart", (event) => {
   longPressTimer = window.setTimeout(() => {
     longPressTriggered = true;
     if (card.dataset.favoriteMenu === "1") openFavoriteContextMenu(card, point);
-    else window.location.href = card.dataset.settingsUrl;
+    else window.VideoRecBackNavigate(card.dataset.settingsUrl);
   }, LONG_PRESS_MS);
 }, { passive: true });
 
@@ -468,50 +470,11 @@ inlineSettings?.addEventListener("click", (event) => {
   const href = inlineSettings.getAttribute("href");
   if (!href || href === "#") return;
   event.preventDefault();
-  window.location.href = href;
+  window.VideoRecBackNavigate(href);
 });
 
-if (resizer && shell) {
-  let resizing = false;
-  const updatePlayerWidth = (fraction) => {
-    const ratio = Math.max(0.25, Math.min(0.75, fraction));
-    shell.style.setProperty("--player-width", `calc((100% - 8px) * ${ratio})`);
-    resizer.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
-    window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
-  };
-  resizer.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-    resizing = true;
-    shell.classList.add("is-resizing");
-    resizer.setPointerCapture(event.pointerId);
-  });
-  resizer.addEventListener("pointermove", (event) => {
-    if (!resizing) return;
-    const rect = shell.getBoundingClientRect();
-    updatePlayerWidth((rect.right - event.clientX) / Math.max(1, rect.width - 8));
-  });
-  const finishResize = () => {
-    resizing = false;
-    shell.classList.remove("is-resizing");
-    window.dispatchEvent(new CustomEvent("videorecback:timeline-layout"));
-  };
-  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
-    resizer.addEventListener(name, finishResize);
-  }
-  resizer.addEventListener("keydown", (event) => {
-    if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
-    event.preventDefault();
-    const rect = shell.getBoundingClientRect();
-    const current = frame.parentElement.getBoundingClientRect().width / Math.max(1, rect.width - 8);
-    updatePlayerWidth(event.key === "Home" ? 2 / 3 : current + (event.key === "ArrowLeft" ? 0.025 : -0.025));
-  });
-  resizer.addEventListener("dblclick", () => updatePlayerWidth(2 / 3));
-}
-
 if (libraryPane && shell) {
-  const syncScrolledState = () => {
-    shell.classList.toggle("is-scrolled", libraryPane.scrollTop > 8);
-  };
+  const syncScrolledState = () => shell.classList.toggle("is-scrolled", libraryPane.scrollTop > 8);
   libraryPane.addEventListener("scroll", syncScrolledState, { passive: true });
   syncScrolledState();
 }
@@ -936,3 +899,7 @@ if (timelineRail && libraryPane && !timelineRoot?.hasAttribute("data-timeline-ga
     else updateTimelineCurrent();
   }
 }
+
+window.addEventListener("resize", () => {
+  if (shell?.classList.contains("player-open") && !isWideViewport()) closeInlinePlayer();
+});

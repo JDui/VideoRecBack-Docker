@@ -158,6 +158,28 @@ def create_app() -> FastAPI:
         )
         return JSONResponse({"html": html}, headers={"Cache-Control": "no-store"})
 
+    @app.get("/home/thumbnail-errors")
+    async def thumbnail_errors(offset: int = 0):
+        if offset < 0:
+            raise HTTPException(status_code=400, detail="Invalid offset")
+        with db.connect() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE missing = 0 AND thumb_status = 'error'"
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT id, name, path, thumb_error FROM videos
+                WHERE missing = 0 AND thumb_status = 'error'
+                ORDER BY mtime DESC, id DESC LIMIT 50 OFFSET ?
+                """,
+                (offset,),
+            ).fetchall()
+        return JSONResponse({
+            "total": total,
+            "videos": [dict(row) for row in rows],
+            "next_offset": offset + len(rows) if offset + len(rows) < total else None,
+        }, headers={"Cache-Control": "no-store"})
+
     @app.get("/library", response_class=HTMLResponse)
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
@@ -165,6 +187,21 @@ def create_app() -> FastAPI:
         preflight = intranet_preflight(request, settings)
         if preflight is not None:
             return preflight
+
+        async def stream_page():
+            yield templates.get_template("_document_start.html").render()
+            try:
+                response = await asyncio.to_thread(render_index, request, settings)
+                yield response.body.decode("utf-8").split("<!-- page-content-head -->", 1)[1]
+            except Exception:
+                LOGGER.exception("Page rendering failed after loading shell was sent.")
+                yield templates.get_template("_loading_failure.html").render()
+
+        return StreamingResponse(stream_page(), media_type="text/html", headers={
+            "Cache-Control": "no-store", "X-Accel-Buffering": "no",
+        })
+
+    def render_index(request: Request, settings: Settings):
         library_params = {
             "view", "type", "duration", "aspect", "folder", "q",
             "calendar_zoom", "calendar_year", "calendar_month", "date_from", "date_to",

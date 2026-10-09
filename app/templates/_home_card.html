@@ -1,5 +1,5 @@
 {% macro home_card(video, hero=False, memory=False) %}
-  <article class="home-video{% if memory %} home-video--memory{% endif %}" data-home-timeline-url="/library#timeline-{{ video.mtime|date }}">
+  <article class="home-video{% if memory %} home-video--memory{% endif %}" data-home-card="{{ video.id }}" data-favorite-state="{{ 1 if video.favorite else 0 }}" data-home-timeline-url="/library#timeline-{{ video.mtime|date }}">
     <a class="home-cover" href="/video/{{ video.id }}/play" data-home-video="{{ video.id }}" aria-label="播放 {{ video.name }}">
       {% if video.thumb_status == 'ready' %}
         <img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="{{ video.name }}" loading="{{ 'eager' if hero else 'lazy' }}" decoding="async">

@@ -1,9 +1,5 @@
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>正在连接 - {{ settings.site_title }}</title>
+{% with preflight_loading=true %}{% include '_document_start.html' %}{% endwith %}
+    <title>正在载入 - {{ settings.site_title }}</title>
   </head>
   <body
     data-intranet-preflight="1"
@@ -13,7 +9,8 @@
     data-intranet-redirect-port="{{ settings.intranet_redirect_port }}"
     data-intranet-redirect-protocol="{{ settings.intranet_redirect_protocol }}"
   >
-    <p>正在检测内网连接，<a href="{{ fallback_url }}">继续访问当前地址</a>。</p>
+    <a class="loading-fallback" href="{{ fallback_url }}">继续访问当前地址</a>
+    <style>.loading-fallback { position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:10001; font:13px system-ui; color:#56657b; text-decoration:none; padding:12px 18px; border-radius:24px; background:rgba(255,255,255,.65); }</style>
     <script src="/static/intranet.js?v=2.6.9"></script>
   </body>
 </html>
