@@ -197,7 +197,7 @@
                   </div>
                 </div>
               {% endfor %}
-              {% if filters.view == 'timeline' %}</div><span class="timeline-rail-legend">{{ icon('heart') }}收藏</span>{% endif %}
+              {% if filters.view == 'timeline' %}</div>{% endif %}
             </aside>
           </section>
         {% endif %}
@@ -223,9 +223,10 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script src="/static/app.js?v=2.6.9" defer></script>
+  <script src="/static/app.js?v=2.6.11" defer></script>
+  <script src="/static/library-scan.js?v=1" defer></script>
   {% if filters.view == 'timeline' %}
     <script src="/static/timeline-density.js?v=1" defer></script>
-    <script src="/static/timeline.js?v=16" defer></script>
+    <script src="/static/timeline.js?v=17" defer></script>
   {% endif %}
 {% endblock %}

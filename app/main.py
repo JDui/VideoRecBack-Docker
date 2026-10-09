@@ -424,17 +424,27 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/scan")
-    async def trigger_scan():
-        if (
+    async def trigger_scan(request: Request):
+        busy = (
             is_scan_running(app)
             or bool(getattr(app.state, "thumbnail_refresh_pending", False))
             or bool(getattr(app.state, "metadata_recheck_pending", False))
-        ):
-            return RedirectResponse("/?scan=running", status_code=303)
-        settings = load_settings(config_dir)
-        app.state.manual_scan_pending = True
-        asyncio.create_task(run_manual_scan(app, settings))
-        return RedirectResponse("/?scan=running", status_code=303)
+        )
+        if not busy:
+            settings = load_settings(config_dir)
+            app.state.manual_scan_pending = True
+            asyncio.create_task(run_manual_scan(app, settings))
+        if "application/json" in request.headers.get("accept", ""):
+            return JSONResponse({"ok": True, "started": not busy, "scanning": is_scan_running(app)})
+        return_url = "/library?scan=running"
+        try:
+            referer = urlsplit(request.headers.get("referer", ""))
+            if referer.netloc == request.url.netloc and referer.path in {"/", "/library"}:
+                target = request.url.replace(path=referer.path, query=referer.query).include_query_params(scan="running")
+                return_url = f"{target.path}?{target.query}"
+        except ValueError:
+            pass
+        return RedirectResponse(return_url, status_code=303)
 
     @app.get("/scan/status")
     async def scan_status():

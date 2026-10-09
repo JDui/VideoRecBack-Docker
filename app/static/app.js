@@ -11,9 +11,6 @@ const timelineRail = document.querySelector("[data-timeline-jump]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
 const inlineFavorite = document.querySelector("[data-inline-favorite]");
-const scanForm = document.querySelector("[data-scan-form]");
-const scanButton = document.querySelector("[data-scan-button]");
-const scanLabel = document.querySelector("[data-scan-label]");
 const favoriteContextMenu = document.querySelector("[data-favorite-context-menu]");
 const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
@@ -164,33 +161,24 @@ const restoreReturnState = () => {
 
 restoreReturnState();
 
-scanForm?.addEventListener("submit", () => {
-  scanButton?.classList.add("is-scanning");
-  if (scanLabel) scanLabel.textContent = "更新中";
+let scanRefreshPending = false;
+const refreshAfterScan = () => {
+  if (!scanRefreshPending || document.hidden || shell?.classList.contains("player-open")) return;
+  scanRefreshPending = false;
+  saveTimelinePosition();
+  const url = new URL(window.location.href);
+  if (url.searchParams.has("scan")) {
+    url.searchParams.delete("scan");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }
+  window.location.reload();
+};
+window.addEventListener("videorecback:scan-complete", () => {
+  scanRefreshPending = true;
+  refreshAfterScan();
 });
-
-if (scanForm?.dataset.scanRunning === "1") {
-  const pollScanStatus = async () => {
-    try {
-      const response = await fetch("/scan/status", { cache: "no-store" });
-      if (!response.ok) throw new Error("Scan status request failed");
-      const status = await response.json();
-      if (!status.scanning) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete("scan");
-        window.location.replace(url.toString());
-        return;
-      }
-      if (scanLabel) {
-        scanLabel.textContent = status.indexing
-          ? "建立索引中"
-          : `处理媒体 ${Number(status.pending_media || 0)}`;
-      }
-    } catch {}
-    window.setTimeout(pollScanStatus, 750);
-  };
-  window.setTimeout(pollScanStatus, 300);
-}
+window.addEventListener("videorecback:player-closed", () => requestAnimationFrame(refreshAfterScan));
+document.addEventListener("visibilitychange", refreshAfterScan);
 
 if (previewSize) {
   const savedSize = localStorage.getItem("videorecback-card-size") || previewSize.value;
@@ -408,6 +396,7 @@ const closeInlinePlayer = () => {
   if (inlineFavorite) inlineFavorite.hidden = true;
   window.requestAnimationFrame(() => {
     restorePanePosition(panePosition);
+    window.dispatchEvent(new CustomEvent("videorecback:player-closed"));
   });
 };
 

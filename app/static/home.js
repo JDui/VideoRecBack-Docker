@@ -190,8 +190,8 @@ scanForm?.addEventListener('submit', async event => {
   scanButton.disabled = true;
   scanButton.textContent = '正在更新';
   try {
-    const response = await fetch(scanForm.action, { method: 'POST' });
-    if (!response.ok) throw new Error('Scan unavailable');
+    const response = await fetch(scanForm.action, { method: 'POST', headers: { Accept: 'application/json' } });
+    if (!response.ok || !(await response.json()).scanning) throw new Error('Scan unavailable');
     wasScanning = true;
     scanStatus.textContent = '正在更新';
   } catch {

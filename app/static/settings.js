@@ -6,19 +6,40 @@ const saveButton = document.querySelector('[data-settings-save]');
 const sectionLinks = [...document.querySelectorAll('.preferences-nav a[href^="#"]')];
 const preferenceSections = [...document.querySelectorAll('.preference-section')];
 
+let sectionPositions = [];
+let activeSectionId = null;
+let navigationFrame = 0;
+let measureSections = true;
 const syncSectionNavigation = () => {
-  const threshold = window.innerWidth <= 700 ? 120 : 100;
-  let current = preferenceSections[0];
-  for (const section of preferenceSections) {
-    if (section.getBoundingClientRect().top <= threshold) current = section;
+  navigationFrame = 0;
+  if (measureSections) {
+    sectionPositions = preferenceSections.map(section => ({ id: section.id, top: section.getBoundingClientRect().top + window.scrollY }));
+    measureSections = false;
   }
+  const threshold = window.scrollY + (window.innerWidth <= 700 ? 120 : 100);
+  let current = sectionPositions[0];
+  for (const section of sectionPositions) {
+    if (section.top <= threshold) current = section;
+  }
+  if (current?.id === activeSectionId) return;
+  activeSectionId = current?.id;
   for (const link of sectionLinks) {
-    if (link.hash === `#${current?.id}`) link.setAttribute('aria-current', 'location');
-    else link.removeAttribute('aria-current');
+    const active = link.hash === `#${activeSectionId}`;
+    if (active && !link.hasAttribute('aria-current')) link.setAttribute('aria-current', 'location');
+    else if (!active && link.hasAttribute('aria-current')) link.removeAttribute('aria-current');
   }
 };
-window.addEventListener('scroll', syncSectionNavigation, { passive: true });
-window.addEventListener('resize', syncSectionNavigation, { passive: true });
+const scheduleSectionNavigation = () => {
+  if (!navigationFrame) navigationFrame = requestAnimationFrame(syncSectionNavigation);
+};
+const invalidateSectionPositions = () => {
+  measureSections = true;
+  scheduleSectionNavigation();
+};
+window.addEventListener('scroll', scheduleSectionNavigation, { passive: true });
+window.addEventListener('resize', invalidateSectionPositions, { passive: true });
+new ResizeObserver(invalidateSectionPositions).observe(document.querySelector('.preferences-content'));
+window.addEventListener('pageshow', invalidateSectionPositions);
 syncSectionNavigation();
 
 preferencesForm?.addEventListener('input', () => { saveStatus.textContent = '已修改，保存后生效。'; });

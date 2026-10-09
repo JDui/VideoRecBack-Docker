@@ -25,6 +25,7 @@ body, body.home-page, body.library-page, body.preferences-page, body.player-page
   -webkit-font-smoothing: antialiased;
 }
 body::before { display: none; }
+body[data-intranet-access="local"]:not(.player-page--embed)::before { display: block; }
 .ambient-background {
   position: fixed;
   inset: 0;
@@ -36,8 +37,7 @@ body::before { display: none; }
 .ambient-background::before, .ambient-background::after {
   content: "";
   position: absolute;
-  inset: -25%;
-  filter: blur(60px);
+  inset: -12%;
   will-change: transform;
 }
 .ambient-background::before {
@@ -59,7 +59,7 @@ body::before { display: none; }
   from { transform: translate3d(4%, -3%, 0) scale(1.05); }
   to { transform: translate3d(-6%, 4%, 0) scale(1); }
 }
-.page-hidden .ambient-background::before, .page-hidden .ambient-background::after { animation-play-state: paused; }
+.page-hidden::before, .page-hidden .ambient-background::before, .page-hidden .ambient-background::after { animation-play-state: paused; }
 .player-page--embed .ambient-background { display: none; }
 ::selection { background: #d4e7ff; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -83,6 +83,16 @@ body .glass-surface.glass-surface {
   box-shadow: var(--glass-shadow);
   backdrop-filter: blur(24px) saturate(1.08);
   -webkit-backdrop-filter: blur(24px) saturate(1.08);
+}
+body .glass-selection.glass-surface,
+body .player-controls .glass-surface {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.preferences-page .preferences-content :is(input, select, textarea, .preference-input-unit),
+body.preferences-page .preferences-content .glass-surface {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .glass-interactive { transition: scale 160ms var(--ease-smooth), background-color 180ms, box-shadow 180ms; }
 body .glass-interactive:hover { background: rgba(255, 255, 255, .6); box-shadow: 0 5px 18px rgba(56, 64, 83, .065); }
@@ -213,6 +223,12 @@ body :is(.quality-menu-panel, .speed-strip) button.active.glass-surface { --glas
 .timeline-gallery .timeline-end-space { grid-column: 1; grid-row: 3; height: var(--gallery-end-space, 20px); pointer-events: none; }
 .timeline-gallery .timeline-position-bar { min-height: 56px; margin: 0 0 8px; padding: 4px 0 12px; gap: 12px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .timeline-gallery .timeline-position-bar > output { position: relative; padding: 8px 14px; border-radius: 999px; color: var(--text); font-size: 15px; font-weight: 500; }
+body .timeline-position-bar > output.glass-surface,
+body .timeline-scrub-date.glass-surface {
+  --glass-fill: rgba(250, 251, 254, .88);
+  backdrop-filter: blur(36px) saturate(1.04);
+  -webkit-backdrop-filter: blur(36px) saturate(1.04);
+}
 .timeline-gallery .timeline-position-bar .timeline-feedback { font-size: 11px; }
 .timeline-gallery .timeline-video, .timeline-gallery .timeline-video .asset-card { border-radius: 12px; }
 .timeline-gallery .timeline-video { background: #e7e7eb; box-shadow: none; }
@@ -222,7 +238,7 @@ body :is(.quality-menu-panel, .speed-strip) button.active.glass-surface { --glas
 .timeline-gallery .timeline-favorite { border-radius: 50%; top: 4px; right: 4px; }
 .timeline-gallery .timeline-favorite:hover, .timeline-gallery .timeline-favorite[aria-pressed="true"] { background: rgba(40, 40, 43, .25); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .timeline-gallery .timeline-favorite[aria-pressed="true"] { color: #fff0ca; }
-.timeline-gallery .timeline-jump-rail { margin-top: 4px; padding: 6px; height: calc(var(--rail-height) - 16px); border-radius: 26px; }
+.timeline-gallery .timeline-jump-rail { margin-top: 4px; padding: 6px; height: calc(var(--rail-height) - 16px); border-radius: 26px; width: 100%; max-width: none; }
 .timeline-gallery .timeline-latest { min-height: 40px; padding: 6px 0; font-size: 10px; border-radius: 999px; color: var(--muted); }
 .timeline-gallery .timeline-latest:hover { color: var(--text); background: rgba(255, 255, 255, .3); }
 .timeline-gallery .timeline-scrubber { margin: 6px 0; min-height: 0; }
@@ -232,9 +248,9 @@ body :is(.quality-menu-panel, .speed-strip) button.active.glass-surface { --glas
 .timeline-gallery .timeline-date-tick { left: 12px; width: 12px; background: #7c8493; opacity: .5; }
 .timeline-gallery .timeline-date-tick.is-favorite { left: 9px; width: 18px; background: #ac803b; opacity: 1; }
 .timeline-gallery .timeline-current-tick { left: 7px; width: 22px; height: 9px; border: 2px solid #fff; border-radius: 999px; background: var(--accent); box-shadow: 0 2px 6px rgba(0, 100, 210, .22); }
-.timeline-gallery .timeline-jump-mark[data-kind="year"] { left: 35px; padding: 10px 2px; font-size: 11px; font-weight: 400; }
+.timeline-gallery .timeline-jump-mark[data-kind="year"] { left: 35px; right: 2px; padding: 10px 2px; font-size: 11px; font-weight: 400; white-space: nowrap; transition: color 160ms; }
+.timeline-gallery .timeline-jump-mark[data-kind="year"]:hover { transform: translateY(-50%); }
 .timeline-gallery .timeline-jump-mark.is-current { color: var(--accent-deep); font-weight: 600; }
-.timeline-gallery .timeline-rail-legend { min-height: 24px; font-size: 10px; }
 .timeline-gallery .timeline-scrub-date { right: 86px; padding: 11px 15px; border-radius: 18px; color: var(--text); font-size: 12px; transition: opacity 160ms, translate 250ms var(--ease-snap); translate: 4px 0; }
 .timeline-gallery .timeline-scrubber.is-previewing .timeline-scrub-date, .timeline-gallery .timeline-scrubber.is-dragging .timeline-scrub-date, .timeline-gallery .timeline-date-axis:focus-visible + .timeline-scrub-date { translate: 0 0; }
 .timeline-gallery .timeline-load-sentinel { align-self: start; border-radius: 14px; background: #eeeeF0; margin-top: 12px; color: var(--muted); cursor: pointer; }
@@ -311,8 +327,8 @@ body :is(.quality-menu-panel, .speed-strip) button.active.glass-surface { --glas
 .detail-poster { border-radius: 22px; }
 .nav-button.secondary { color: var(--text); background: rgba(255, 255, 255, .6); border-color: transparent; }
 .app-shell.player-open .timeline-gallery { grid-template-columns: minmax(0, 1fr) 68px; gap: 0 10px; }
-.app-shell.player-open .timeline-gallery .timeline-jump-rail { padding: 4px; }
-.app-shell.player-open .timeline-gallery .timeline-jump-mark[data-kind="year"] { left: 29px; font-size: 10px; }
+.app-shell.player-open .timeline-gallery .timeline-jump-rail { padding: 4px; max-width: none; }
+.app-shell.player-open .timeline-gallery .timeline-jump-mark[data-kind="year"] { left: 27px; right: 0; padding: 10px 0; font-size: 10px; }
 .app-shell.player-open .timeline-gallery .timeline-date-axis::before { left: 11px; }
 .app-shell.player-open .timeline-gallery .timeline-density-segment { left: 9px; }
 .app-shell.player-open .timeline-gallery .timeline-date-tick { left: 7px; }
@@ -353,7 +369,6 @@ body :is(.quality-menu-panel, .speed-strip) button.active.glass-surface { --glas
   .timeline-gallery .timeline-jump-mark[data-kind="year"] { left: 21px; font-size: 9px; padding: 10px 0; }
   .timeline-gallery .timeline-scrub-date { right: 55px; font-size: 11px; }
   .timeline-gallery .timeline-video, .timeline-gallery .timeline-video .asset-card { border-radius: 10px; }
-  .timeline-gallery .timeline-rail-legend { font-size: 9px; }
   .home-section-head h1 { font-size: 25px; }
   .home-section-head h2 { font-size: 20px; }
   .home-soft-button { font-size: 12px; padding: 10px 15px; }
@@ -393,6 +408,7 @@ body :is(.quality-menu-panel, .speed-strip) button.active.glass-surface { --glas
   .ambient-background { display: none; }
   input:not([type="range"]), select, textarea, .preference-input-unit, .preference-section, .detail-panel { background: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; border-color: #85858b; }
   body .player-center-action.glass-surface { color: var(--text); }
+  body .timeline-position-bar > output.glass-surface, body .timeline-scrub-date.glass-surface { background: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; }
   .preview-size-control input::-webkit-slider-runnable-track { background: #85858b; }
   .preview-size-control input::-moz-range-track { background: #85858b; }
   .preview-size-control input::-webkit-slider-thumb { background: #fff; border-color: #515158; }

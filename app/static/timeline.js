@@ -49,8 +49,9 @@
     const entry = dateEntries.get(date);
     scrubDate.textContent = year + "年" + month + "月" + day + "日\n" + entry.count + " 个视频" +
       (entry.favorite_count ? " · " + entry.favorite_count + " 个收藏" : "");
-    const railHeight = scrubber.clientHeight - 16;
-    scrubDate.style.top = Math.max(28, Math.min(scrubber.clientHeight - 28, 8 + value / 1000 * railHeight)) + "px";
+    const height = scrubber.clientHeight;
+    const half = Math.min(height / 2, scrubDate.offsetHeight / 2 + 4);
+    scrubDate.style.top = Math.max(half, Math.min(height - half, 8 + value / 1000 * (height - 16))) + "px";
   };
   const refreshFavoriteTicks = () => {
     dateEntries.forEach((entry, date) => dateTicks.get(date)?.classList.toggle("is-favorite", entry.favorite_count > 0));
@@ -170,15 +171,18 @@
       libraryPane.clientHeight - position.parentElement.offsetHeight - lastRow[0].offsetHeight - bottomPadding) : 20;
     timelineRoot.style.setProperty("--gallery-end-space", endSpace + "px");
     timelineRoot.style.setProperty("--rail-height", Math.max(120, libraryPane.clientHeight - 12) + "px");
-    let lastLabelPosition = -Infinity;
+    let lastLabelBottom = -Infinity;
+    const axisHeight = scrubber.clientHeight;
     yearMarks.forEach(mark => {
       const date = mark.dataset.targetAnchor?.match(/timeline-(\d{4}-\d{2})/)?.[1];
       const target = dates.find(item => item.startsWith(date));
       const value = valueFor(target || dates[0]);
-      const labelPosition = value / 1000 * (scrubber.clientHeight - 16);
-      mark.hidden = labelPosition - lastLabelPosition < 36;
-      if (!mark.hidden) lastLabelPosition = labelPosition;
-      mark.style.top = "calc(8px + (100% - 16px) * " + value / 1000 + ")";
+      mark.hidden = false;
+      const half = mark.offsetHeight / 2;
+      const labelPosition = Math.max(half, Math.min(axisHeight - half, 8 + value / 1000 * (axisHeight - 16)));
+      mark.hidden = axisHeight < half * 2 || labelPosition - half < lastLabelBottom + 4;
+      if (!mark.hidden) lastLabelBottom = labelPosition + half;
+      mark.style.top = labelPosition + "px";
     });
     updatePosition();
   };
@@ -402,6 +406,7 @@
   });
   window.addEventListener("resize", scheduleLayout);
   new ResizeObserver(scheduleLayout).observe(timelineStack);
+  new ResizeObserver(scheduleLayout).observe(libraryPane);
   new MutationObserver(records => {
     for (const record of records) {
       const link = record.target;
