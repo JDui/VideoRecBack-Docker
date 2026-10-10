@@ -8,6 +8,8 @@
       data-settings-url="/video/{{ video.id }}"
       data-timeline-url="/?view=timeline{% if video.timeline_day_anchor %}#{{ video.timeline_day_anchor }}{% endif %}"
       data-favorite-state="{{ 1 if video.favorite else 0 }}"
+      data-exclude-random="{{ 1 if video.exclude_random else 0 }}"
+      data-exclude-memories="{{ 1 if video.exclude_memories else 0 }}"
       {% if favorite_context %}data-favorite-menu="1"{% endif %}
       aria-label="播放 {{ video.name }}"
     >

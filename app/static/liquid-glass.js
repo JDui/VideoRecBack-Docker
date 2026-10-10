@@ -56,7 +56,7 @@
     container.classList.add("glass-track-ready");
   }
 
-  const surfaceSelector = ".site-settings, .intranet-jump-button, .home-soft-button, .nav-button, .player-back-button, .timeline-position-bar > output, .timeline-jump-rail, .timeline-scrub-date, .filterbar, .player-controls, .preferences-savebar, .quality-menu-panel, .favorite-context-menu, .home-context-menu, button:not(.pane-resizer):not(.timeline-jump-mark):not(.timeline-favorite):not(.timeline-latest), summary";
+  const surfaceSelector = ".site-settings, .intranet-jump-button, .home-soft-button, .nav-button, .player-back-button, .timeline-position-bar > output, .timeline-jump-rail, .timeline-scrub-date, .filterbar, .player-controls, .preferences-savebar, .quality-menu-panel, .favorite-context-menu, .home-context-menu, button:not(.pane-resizer):not(.timeline-jump-mark):not(.timeline-favorite):not(.timeline-latest):not(.video-context-menu button), summary";
   document.querySelectorAll(surfaceSelector).forEach(register);
   document.querySelectorAll("button.glass-surface, a.glass-surface, summary.glass-surface").forEach(element => {
     element.classList.add("glass-interactive");

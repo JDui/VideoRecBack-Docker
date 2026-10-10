@@ -1,2 +1,2 @@
 {% from '_home_card.html' import home_card with context %}
-{% for video in videos %}{{ home_card(video, hero=True) }}{% endfor %}
+{% for video in videos %}{{ home_card(video, hero=True) }}{% else %}<p class="home-empty">暂无参与随机的视频，可在时间线右键菜单中恢复参与。</p>{% endfor %}

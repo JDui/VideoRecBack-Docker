@@ -10,24 +10,34 @@ let homeRefreshPending = false;
 const homeRandomStorageKey = 'videorecback-home-random';
 const homePreserveRandomKey = 'videorecback-home-preserve-random';
 const homeRandomIds = () => [...new Set([...randomGrid.querySelectorAll('[data-home-video]')].map(item => item.dataset.homeVideo))];
+let homeRandomRequestId = 0;
 const saveHomeRandom = () => {
   if (!randomGrid) return;
   try {
-    sessionStorage.setItem(homeRandomStorageKey, JSON.stringify({ version: 2, html: randomGrid.innerHTML, ids: homeRandomIds() }));
+    sessionStorage.setItem(homeRandomStorageKey, JSON.stringify({ version: 3, ids: homeRandomIds() }));
   } catch {}
 };
-const restoreHomeRandom = () => {
-  if (!randomGrid) return false;
+const replaceHomeRandom = html => {
+  randomGrid.innerHTML = html;
+  if (shuffleButton) shuffleButton.disabled = homeRandomIds().length === 0;
+  saveHomeRandom();
+};
+const restoreHomeRandom = async (validateCurrent = false) => {
+  if (!randomGrid) return;
+  let ids = validateCurrent ? homeRandomIds() : null;
   try {
     const cached = JSON.parse(sessionStorage.getItem(homeRandomStorageKey) || 'null');
-    if (cached?.version !== 2 || typeof cached?.html !== 'string' || !Array.isArray(cached.ids)
-        || cached.ids.length > 3 || !cached.ids.every(id => typeof id === 'string' && /^\d+$/.test(id))) return false;
-    randomGrid.innerHTML = cached.html;
-    if (shuffleButton) shuffleButton.disabled = cached.ids.length === 0;
-    return true;
-  } catch {
-    return false;
-  }
+    if ([2, 3].includes(cached?.version) && Array.isArray(cached.ids) && cached.ids.length
+        && cached.ids.length <= 3 && cached.ids.every(id => typeof id === 'string' && /^\d+$/.test(id))) ids = cached.ids;
+  } catch {}
+  if (!ids) return;
+  const requestId = ++homeRandomRequestId;
+  try {
+    const response = await fetch(`/home/random?selected=${encodeURIComponent(ids.join(','))}`, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return;
+    const result = await response.json();
+    if (requestId === homeRandomRequestId && typeof result.html === 'string') replaceHomeRandom(result.html);
+  } catch {}
 };
 
 if (randomGrid) {
@@ -38,47 +48,39 @@ if (randomGrid) {
     const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
     restoreRandom = !reloaded || preserveRandom;
   } catch {}
-  if (restoreRandom) restoreHomeRandom();
-  saveHomeRandom();
+  if (restoreRandom) {
+    window.VideoRecBackLoading?.hold();
+    restoreHomeRandom().finally(() => { saveHomeRandom(); window.VideoRecBackLoading?.release(); });
+  }
+  else saveHomeRandom();
 }
 
-let homeContextOrigin = null;
-let homeContextCard = null;
-const homeContextMenu = document.createElement('div');
-homeContextMenu.className = 'favorite-context-menu';
-homeContextMenu.dataset.homeContextMenu = '';
-homeContextMenu.setAttribute('role', 'menu');
-homeContextMenu.setAttribute('aria-label', '视频操作');
-homeContextMenu.hidden = true;
-const homeTimelineAction = document.createElement('button');
-homeTimelineAction.type = 'button';
-homeTimelineAction.setAttribute('role', 'menuitem');
-homeTimelineAction.textContent = '跳转到时间线位置';
-homeContextMenu.append(homeTimelineAction);
-if (randomGrid) document.body.append(homeContextMenu);
-
-const hideHomeContextMenu = (restoreFocus = true) => {
-  if (homeContextMenu.hidden) return;
-  homeContextMenu.hidden = true;
-  if (restoreFocus && homeContextOrigin?.isConnected) homeContextOrigin.focus({ preventScroll: true });
-  homeContextOrigin = null;
-  homeContextCard = null;
-};
+const homeContextMenu = window.VideoRecBackActions.createMenu('data-home-context-menu');
+const hideHomeContextMenu = () => homeContextMenu.hide();
 const homeRandomCard = target => target instanceof Element ? target.closest('.home-video[data-home-timeline-url]') : null;
 const openHomeContextMenu = (card, target, point) => {
-  homeContextCard = card;
-  homeContextOrigin = target instanceof Element ? target.closest('a, button') : null;
-  if (!homeContextOrigin || !card.contains(homeContextOrigin)) homeContextOrigin = card.querySelector('[data-home-video]');
-  const rect = homeContextOrigin.getBoundingClientRect();
-  const x = point?.x ?? rect.left + Math.min(rect.width / 2, 100);
-  const y = point?.y ?? rect.bottom;
-  homeContextMenu.hidden = false;
-  const menuRect = homeContextMenu.getBoundingClientRect();
-  homeContextMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - menuRect.width - 8))}px`;
-  homeContextMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menuRect.height - 8))}px`;
-  homeTimelineAction.focus({ preventScroll: true });
+  const origin = target.closest('a, button') || card.querySelector('[data-home-video]');
+  homeContextMenu.open(origin, point, [
+    { label: '跳转到时间线位置', icon: 'timeline', onSelect: () => window.VideoRecBackNavigate(card.dataset.homeTimelineUrl) },
+    { label: '不再出现在随机中', icon: 'exclude', divider: true, onSelect: async () => {
+      const result = await window.VideoRecBackActions.setParticipation(card, true);
+      if (!result) return;
+      const requestId = ++homeRandomRequestId;
+      randomGrid.querySelector(`[data-home-card="${card.dataset.homeCard}"]`)?.remove();
+      if (!homeRandomIds().length) randomGrid.innerHTML = '<p class="home-empty">暂无参与随机的视频，可在时间线右键菜单中恢复参与。</p>';
+      saveHomeRandom();
+      try {
+        const response = await fetch(`/home/random?selected=${encodeURIComponent(homeRandomIds().join(','))}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Random videos unavailable');
+        const refreshed = await response.json();
+        if (requestId === homeRandomRequestId && typeof refreshed.html === 'string') replaceHomeRandom(refreshed.html);
+      } catch {
+        if (shuffleButton) shuffleButton.disabled = false;
+        feedback.textContent = '已保存排除设置，补充随机视频失败，可点击换一组重试。';
+      }
+    } },
+  ]);
 };
-
 randomGrid?.addEventListener('contextmenu', event => {
   const card = homeRandomCard(event.target);
   if (!card || !randomGrid.contains(card)) return;
@@ -92,41 +94,38 @@ randomGrid?.addEventListener('keydown', event => {
   event.preventDefault();
   openHomeContextMenu(card, event.target);
 });
-homeTimelineAction.addEventListener('click', event => {
-  event.preventDefault();
-  const url = homeContextCard?.dataset.homeTimelineUrl;
-  hideHomeContextMenu(false);
-  if (url) window.VideoRecBackNavigate(url);
-});
-for (const name of ['pointerdown', 'click']) {
-  document.addEventListener(name, event => {
-    if (!(event.target instanceof Node) || homeContextMenu.contains(event.target)) return;
-    hideHomeContextMenu();
-  });
+let homeLongPressTimer;
+let homeLongPressCard;
+randomGrid?.addEventListener('touchstart', event => {
+  clearTimeout(homeLongPressTimer);
+  homeLongPressCard = null;
+  const card = homeRandomCard(event.target);
+  if (!card) return;
+  const touch = event.touches[0];
+  homeLongPressTimer = setTimeout(() => {
+    homeLongPressCard = card;
+    openHomeContextMenu(card, event.target, { x: touch.clientX, y: touch.clientY });
+  }, 520);
+}, { passive: true });
+for (const name of ['touchend', 'touchmove', 'touchcancel']) {
+  randomGrid?.addEventListener(name, () => clearTimeout(homeLongPressTimer), { passive: true });
 }
-document.addEventListener('keydown', event => {
-  if (homeContextMenu.hidden) return;
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    hideHomeContextMenu();
-  } else if (event.key === 'Tab') {
-    hideHomeContextMenu();
-  } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-    event.preventDefault();
-    homeTimelineAction.focus({ preventScroll: true });
-  }
-});
-document.addEventListener('scroll', () => hideHomeContextMenu(), true);
-window.addEventListener('resize', () => hideHomeContextMenu());
+randomGrid?.addEventListener('click', event => {
+  if (homeRandomCard(event.target) !== homeLongPressCard) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  homeLongPressCard = null;
+}, true);
 window.addEventListener('pageshow', event => {
   if (!event.persisted) return;
-  hideHomeContextMenu(false);
-  restoreHomeRandom();
+  hideHomeContextMenu();
+  restoreHomeRandom(true);
 });
 
 shuffleButton?.addEventListener('click', async () => {
   hideHomeContextMenu();
   const ids = homeRandomIds();
+  const requestId = ++homeRandomRequestId;
   shuffleButton.disabled = true;
   shuffleButton.textContent = '加载中';
   randomGrid.style.minHeight = randomGrid.getBoundingClientRect().height + 'px';
@@ -147,6 +146,7 @@ shuffleButton?.addEventListener('click', async () => {
     });
     await Promise.race([Promise.all(preload), new Promise(resolve => setTimeout(resolve, 1200))]);
     await outgoing?.finished;
+    if (requestId !== homeRandomRequestId) return;
     randomGrid.replaceChildren(template.content);
     outgoing?.cancel();
     if (!reduced) await Promise.all([...randomGrid.children].map((card, index) => card.animate(
@@ -158,7 +158,7 @@ shuffleButton?.addEventListener('click', async () => {
   } catch {
     feedback.textContent = '加载失败，请重试。';
   } finally {
-    shuffleButton.disabled = false;
+    shuffleButton.disabled = homeRandomIds().length === 0;
     shuffleButton.textContent = '换一组';
     outgoing?.cancel();
     randomGrid.removeAttribute('aria-busy');

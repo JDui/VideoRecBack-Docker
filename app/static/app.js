@@ -10,14 +10,13 @@ const timelineRail = document.querySelector("[data-timeline-jump]");
 const inlinePlayerTitle = document.querySelector("[data-inline-player-title]");
 const inlineSettings = document.querySelector("[data-inline-settings]");
 const inlineFavorite = document.querySelector("[data-inline-favorite]");
-const favoriteContextMenu = document.querySelector("[data-favorite-context-menu]");
+const favoriteContextMenu = window.VideoRecBackActions.createMenu("data-favorite-context-menu");
 const RETURN_STATE_KEY = "videorecback-return-state";
 const RETURNING_FROM_PLAYER_KEY = "videorecback-returning-from-player";
 const TIMELINE_POSITION_KEY = "videorecback-timeline-position";
 let inlineFrameClearTimer = null;
 let restoredReturnState = null;
 let pendingReturnPosition = null;
-let favoriteContextTarget = null;
 let inlinePlayerCard = null;
 
 const timelineCache = (() => {
@@ -235,53 +234,29 @@ const eventPoint = (event, fallbackElement = null) => {
   };
 };
 
-const hideFavoriteContextMenu = () => {
-  if (!favoriteContextMenu) return;
-  favoriteContextMenu.hidden = true;
-  favoriteContextTarget = null;
-};
-
+const hideFavoriteContextMenu = () => favoriteContextMenu.hide();
 const openFavoriteContextMenu = (card, eventOrPoint) => {
-  if (!favoriteContextMenu) return;
   const point = Number.isFinite(eventOrPoint?.x) && Number.isFinite(eventOrPoint?.y)
-    ? eventOrPoint
-    : eventPoint(eventOrPoint, card);
-  favoriteContextTarget = card;
-  favoriteContextMenu.hidden = false;
-  const rect = favoriteContextMenu.getBoundingClientRect();
-  const left = Math.max(8, Math.min(point.x, window.innerWidth - rect.width - 8));
-  const top = Math.max(8, Math.min(point.y, window.innerHeight - rect.height - 8));
-  favoriteContextMenu.style.left = `${left}px`;
-  favoriteContextMenu.style.top = `${top}px`;
-};
-
-favoriteContextMenu?.addEventListener("click", (event) => {
-  const targetElement = event.target instanceof Element ? event.target : null;
-  const action = targetElement?.closest("[data-favorite-action]")?.dataset.favoriteAction;
-  if (!action || !favoriteContextTarget) return;
-  event.preventDefault();
-  const target = favoriteContextTarget;
-  hideFavoriteContextMenu();
-  if (action === "timeline") {
-    window.VideoRecBackNavigate(target.dataset.timelineUrl || "/?view=timeline");
-  } else if (action === "settings") {
-    window.VideoRecBackNavigate(target.dataset.settingsUrl || "#");
+    ? eventOrPoint : eventOrPoint ? eventPoint(eventOrPoint, card) : null;
+  const items = [];
+  if (card.dataset.favoriteMenu === "1") items.push({
+    label: "跳转到时间线位置", icon: "timeline",
+    onSelect: () => window.VideoRecBackNavigate(card.dataset.timelineUrl || "/?view=timeline"),
+  });
+  items.push({ label: "视频设置", icon: "settings", onSelect: () => window.VideoRecBackNavigate(card.dataset.settingsUrl) });
+  if (card.closest(".timeline-video")) {
+    const state = window.VideoRecBackActions.participationFor(card);
+    if (!state.exclude_random || !state.exclude_memories) items.push({
+      label: "不参与随机与每日", icon: "exclude", divider: true,
+      onSelect: () => window.VideoRecBackActions.setParticipation(card, true, true),
+    });
+    if (state.exclude_random || state.exclude_memories) items.push({
+      label: "恢复参与随机与每日", icon: "restore", divider: state.exclude_random && state.exclude_memories,
+      onSelect: () => window.VideoRecBackActions.setParticipation(card, false, false),
+    });
   }
-});
-
-document.addEventListener("click", (event) => {
-  if (!favoriteContextMenu || favoriteContextMenu.hidden) return;
-  const targetElement = event.target instanceof Element ? event.target : null;
-  if (!targetElement) return;
-  if (favoriteContextMenu.contains(targetElement) || targetElement.closest("[data-favorite-menu]")) return;
-  hideFavoriteContextMenu();
-});
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") hideFavoriteContextMenu();
-});
-
-window.addEventListener("resize", hideFavoriteContextMenu);
+  favoriteContextMenu.open(card, point, items);
+};
 
 const favoriteLabelFor = (button) => button?.querySelector("[data-favorite-label]");
 
@@ -419,8 +394,16 @@ document.addEventListener("contextmenu", (event) => {
   const card = eventCard(event);
   if (!card) return;
   event.preventDefault();
-  if (card.dataset.favoriteMenu === "1") openFavoriteContextMenu(card, event);
+  if (card.dataset.favoriteMenu === "1" || card.closest(".timeline-video")) openFavoriteContextMenu(card, event);
   else window.VideoRecBackNavigate(card.dataset.settingsUrl);
+});
+
+document.addEventListener("keydown", event => {
+  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+  const card = eventCard(event);
+  if (!card || (card.dataset.favoriteMenu !== "1" && !card.closest(".timeline-video"))) return;
+  event.preventDefault();
+  openFavoriteContextMenu(card);
 });
 
 document.addEventListener("pointerdown", (event) => {
@@ -452,7 +435,7 @@ document.addEventListener("touchstart", (event) => {
   const point = eventPoint(event, card);
   longPressTimer = window.setTimeout(() => {
     longPressTriggered = true;
-    if (card.dataset.favoriteMenu === "1") openFavoriteContextMenu(card, point);
+    if (card.dataset.favoriteMenu === "1" || card.closest(".timeline-video")) openFavoriteContextMenu(card, point);
     else window.VideoRecBackNavigate(card.dataset.settingsUrl);
   }, LONG_PRESS_MS);
 }, { passive: true });

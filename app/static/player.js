@@ -557,7 +557,10 @@ if (video) {
   }
   video.addEventListener("timeupdate", syncProgressUi);
   video.addEventListener("durationchange", syncProgressUi);
-  video.addEventListener("loadedmetadata", syncProgressUi);
+  video.addEventListener("loadedmetadata", () => {
+    if (video.videoWidth && video.videoHeight) shell?.style.setProperty("--video-aspect-ratio", String(video.videoWidth / video.videoHeight));
+    syncProgressUi();
+  });
   video.addEventListener("canplay", markPlaybackResponsive);
   video.addEventListener("playing", markPlaybackResponsive);
   video.addEventListener("waiting", schedulePlaybackRecovery);
@@ -711,13 +714,39 @@ const closePlayerPage = () => {
   }, 0);
 };
 
+const playerMenus = [...document.querySelectorAll('[data-quality-menu], [data-download-menu]')];
+const downloadStatus = document.querySelector('[data-download-status]');
+document.querySelectorAll('[data-download-quality]').forEach(link => {
+  link.addEventListener('click', () => {
+    if (downloadStatus) {
+      downloadStatus.hidden = false;
+      downloadStatus.textContent = link.dataset.downloadQuality === 'original' ?
+        '已请求原画下载，请查看浏览器下载列表。' :
+        `正在准备${qualityLabels[link.dataset.downloadQuality]}完整视频，准备完成后浏览器将开始下载。`;
+    }
+    link.closest('details').open = false;
+  });
+});
+document.querySelector('[data-download-frame]')?.addEventListener('load', event => {
+  try {
+    const body = event.target.contentDocument?.body?.textContent || '';
+    if (body && JSON.parse(body).detail && downloadStatus) {
+      downloadStatus.hidden = false;
+      downloadStatus.textContent = '下载未能开始，请重试或选择其他画质。';
+    }
+  } catch {}
+});
+for (const menu of playerMenus) {
+  menu.addEventListener('toggle', () => {
+    if (menu.open) for (const other of playerMenus) if (other !== menu) other.open = false;
+  });
+}
 document.addEventListener("click", (event) => {
-  const menu = document.querySelector("[data-quality-menu]");
-  if (menu?.open && !menu.contains(event.target)) menu.open = false;
+  for (const menu of playerMenus) if (menu.open && !menu.contains(event.target)) menu.open = false;
 });
 document.addEventListener("keydown", (event) => {
-  const menu = document.querySelector("[data-quality-menu]");
-  if (event.key === "Escape" && menu?.open) {
+  const menu = playerMenus.find(item => item.open);
+  if (event.key === "Escape" && menu) {
     menu.open = false;
     menu.querySelector("summary")?.focus();
   }

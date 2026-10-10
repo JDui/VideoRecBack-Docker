@@ -145,14 +145,14 @@ def create_app() -> FastAPI:
 
     @app.get("/home/random")
     async def home_random(request: Request):
-        raw_ids = request.query_params.get("exclude", "")
+        raw_ids = request.query_params.get("selected", request.query_params.get("exclude", ""))
         try:
             ids = [int(value) for value in raw_ids.split(",") if value]
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid video IDs")
         if len(ids) > 3 or any(value < 1 for value in ids):
             raise HTTPException(status_code=400, detail="Invalid video IDs")
-        videos = random_videos(db, ids)
+        videos = random_videos(db, selected=ids) if "selected" in request.query_params else random_videos(db, ids)
         html = templates.get_template("_home_random.html").render(
             videos=videos, settings=load_settings(config_dir)
         )
@@ -569,6 +569,52 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=404, detail="Video not found")
         return {"ok": True, "favorite": bool(next_value)}
 
+    @app.post("/video/{video_id}/participation")
+    async def update_video_participation(
+        video_id: int,
+        exclude_random: int = Form(...),
+        exclude_memories: int | None = Form(None),
+    ):
+        if exclude_random not in {0, 1} or exclude_memories not in {None, 0, 1}:
+            raise HTTPException(status_code=400, detail="Invalid participation value")
+        with db.connect() as conn:
+            result = conn.execute(
+                """
+                UPDATE videos SET exclude_random = ?,
+                    exclude_memories = COALESCE(?, exclude_memories), updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (exclude_random, exclude_memories, video_id),
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Video not found")
+            row = conn.execute(
+                "SELECT exclude_random, exclude_memories FROM videos WHERE id = ?", (video_id,)
+            ).fetchone()
+        return {
+            "ok": True,
+            "exclude_random": bool(row["exclude_random"]),
+            "exclude_memories": bool(row["exclude_memories"]),
+        }
+
+    @app.get("/video/{video_id}/download")
+    async def download_video(video_id: int, quality: str = "original"):
+        video = await asyncio.to_thread(get_video, db, video_id)
+        stream_path = await asyncio.to_thread(resolve_stream_path, video, data_dir, quality)
+        if not stream_path.is_file():
+            raise HTTPException(status_code=404, detail="Video file is missing")
+        labels = {"ultra": "超清", "low": "高清", "high": "流畅"}
+        filename = (
+            Path(video["path"]).name if quality == "original"
+            else f"{Path(video['name']).stem}-{labels[quality]}.mp4"
+        )
+        return FileResponse(
+            stream_path,
+            filename=filename,
+            media_type="video/mp4" if quality != "original" else None,
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.get("/video/{video_id}/play", response_class=HTMLResponse)
     async def play_page(request: Request, video_id: int):
         settings = load_settings(config_dir)
@@ -903,6 +949,7 @@ def query_videos(
         clauses.append("favorite = 1")
     if filters["view"] == "memories":
         month_day, year_start = memory_date_values()
+        clauses.append("exclude_memories = 0")
         clauses.append("mtime < ? AND strftime('%m-%d', mtime, 'unixepoch', 'localtime') = ?")
         values.extend([year_start, month_day])
     if filters["q"]:

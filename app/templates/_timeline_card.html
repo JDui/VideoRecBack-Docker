@@ -1,7 +1,7 @@
 {% from "_icons.html" import icon %}
 {% macro timeline_card(video) %}
   <article class="asset-item timeline-video" id="timeline-video-{{ video.id }}" data-gallery-date="{{ video.mtime|date }}" data-gallery-mtime="{{ video.mtime }}" data-gallery-id="{{ video.id }}" data-gallery-ratio="{{ (video.width / video.height) if video.width and video.height else 1.777777 }}">
-    <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-video-id="{{ video.id }}" data-video-type="{{ video.type }}" data-settings-url="/video/{{ video.id }}" data-timeline-url="/?view=timeline#timeline-{{ video.mtime|date }}" data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-label="播放 {{ video.name }}">
+    <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-video-id="{{ video.id }}" data-video-type="{{ video.type }}" data-settings-url="/video/{{ video.id }}" data-timeline-url="/?view=timeline#timeline-{{ video.mtime|date }}" data-exclude-random="{{ 1 if video.exclude_random else 0 }}" data-exclude-memories="{{ 1 if video.exclude_memories else 0 }}" data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-label="播放 {{ video.name }}">
       <span class="asset-thumb">
         {% if video.thumb_status == 'ready' %}
           <img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="{{ video.name }}" loading="lazy" decoding="async">

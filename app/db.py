@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS videos (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     missing INTEGER NOT NULL DEFAULT 0,
     favorite INTEGER NOT NULL DEFAULT 0,
+    exclude_random INTEGER NOT NULL DEFAULT 0,
+    exclude_memories INTEGER NOT NULL DEFAULT 0,
     thumb_status TEXT NOT NULL DEFAULT 'pending',
     thumb_error TEXT,
     thumb_path TEXT,
@@ -92,6 +94,8 @@ MIGRATIONS = {
     "mtime_ns": "ALTER TABLE videos ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0",
     "thumb_version": "ALTER TABLE videos ADD COLUMN thumb_version INTEGER NOT NULL DEFAULT 0",
     "favorite": "ALTER TABLE videos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
+    "exclude_random": "ALTER TABLE videos ADD COLUMN exclude_random INTEGER NOT NULL DEFAULT 0",
+    "exclude_memories": "ALTER TABLE videos ADD COLUMN exclude_memories INTEGER NOT NULL DEFAULT 0",
     "media_version": "ALTER TABLE videos ADD COLUMN media_version INTEGER NOT NULL DEFAULT 0",
 }
 

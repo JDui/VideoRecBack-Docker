@@ -115,6 +115,7 @@ class HlsJob:
 _HLS_JOBS: dict[str, HlsJob] = {}
 _HLS_JOBS_LOCK = threading.Lock()
 _HLS_WATCHDOG_STARTED = False
+_STREAM_CACHE_LOCKS = [threading.Lock() for _ in range(32)]
 
 
 def resolve_stream_path(video, data_dir: Path, quality: str) -> Path:
@@ -128,18 +129,20 @@ def resolve_stream_path(video, data_dir: Path, quality: str) -> Path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video file is missing")
 
     output = stream_cache_path(video, source, data_dir, quality)
-    if output.exists() and output.stat().st_size > 0:
-        return output
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temp_output = output.with_suffix(".tmp.mp4")
-    temp_output.unlink(missing_ok=True)
-    try:
-        generate_stream_cache(source, temp_output, STREAM_QUALITIES[quality])
-        temp_output.replace(output)
-    except OSError as exc:
+    lock_index = int(hashlib.sha1(str(output).encode()).hexdigest(), 16) % len(_STREAM_CACHE_LOCKS)
+    lock = _STREAM_CACHE_LOCKS[lock_index]
+    with lock:
+        if output.exists() and output.stat().st_size > 0:
+            return output
+        output.parent.mkdir(parents=True, exist_ok=True)
+        temp_output = output.with_suffix(".tmp.mp4")
         temp_output.unlink(missing_ok=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        try:
+            generate_stream_cache(source, temp_output, STREAM_QUALITIES[quality])
+            temp_output.replace(output)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            temp_output.unlink(missing_ok=True)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return output
 
 

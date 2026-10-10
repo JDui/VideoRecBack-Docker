@@ -103,9 +103,9 @@
               {% for video in videos %}{{ asset_card(video, False, True) }}{% endfor %}
             </div>
           </section>
-          <div class="favorite-context-menu" data-favorite-context-menu hidden>
-            <button type="button" data-favorite-action="timeline">跳转到时间线位置</button>
-            <button type="button" data-favorite-action="settings">视频设置</button>
+          <div class="video-context-menu" data-favorite-context-menu role="menu" aria-label="视频操作" hidden>
+            <button type="button" role="menuitem">跳转到时间线位置</button>
+            <button type="button" role="menuitem">视频设置</button>
           </div>
         {% elif filters.view == "folders" %}
           <section class="finder-view">
@@ -211,7 +211,7 @@
   </div>
 {% endblock %}
 {% block scripts %}
-  <script type="application/x-vbr-script" data-page-script src="/static/app.js?v=2.6.12"></script>
+  <script type="application/x-vbr-script" data-page-script src="/static/app.js?v=2.6.13"></script>
   <script type="application/x-vbr-script" data-page-script src="/static/library-scan.js?v=1"></script>
   {% if filters.view == 'timeline' %}
     <script type="application/x-vbr-script" data-page-script src="/static/timeline-density.js?v=1"></script>

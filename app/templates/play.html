@@ -5,7 +5,7 @@
 {% block content %}
   {% from "_icons.html" import icon %}
   {% set default_quality = settings.default_panorama_quality if video.type == "panorama" else settings.default_flat_quality %}
-  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-video-bit-depth="{{ video.bit_depth or 8 }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ default_quality }}" data-embed="{{ '1' if embed else '0' }}">
+  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-video-bit-depth="{{ video.bit_depth or 8 }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ default_quality }}" data-embed="{{ '1' if embed else '0' }}" style="--video-aspect-ratio: {{ (video.width / video.height) if video.width and video.height else 1.7777777778 }}">
     <header class="player-toolbar {% if embed %}player-toolbar--embed{% endif %}">
       {% if not embed %}
       <button class="player-back-button" type="button" data-player-close aria-label="返回视频列表" title="返回视频列表">{{ icon('back') }}</button>
@@ -24,6 +24,16 @@
             <button type="button" data-quality-option="high">流畅</button>
           </div>
         </details>
+        <details class="quality-menu download-menu" data-download-menu>
+          <summary class="nav-button secondary">{{ icon('download') }}<span>下载</span></summary>
+          <div class="quality-menu-panel download-menu-panel">
+            <p class="download-menu-caption">下载画质</p>
+            {% for quality, label, hint in [('original', '原画', '原始文件'), ('ultra', '超清', '原分辨率 · 8 Mbps'), ('low', '高清', '最高 1080P · 3 Mbps'), ('high', '流畅', '最高 720P · 1 Mbps')] %}
+            <a href="/video/{{ video.id }}/download?quality={{ quality }}" download target="video-download-frame" data-download-quality="{{ quality }}"><span>{{ label }}</span><small>{{ hint }}</small></a>
+            {% endfor %}
+            <p class="download-menu-hint">转码画质需先准备完整视频，完成后开始下载。</p>
+          </div>
+        </details>
         {% if not embed %}
         <button class="nav-button secondary favorite-toggle {% if video.favorite %}active{% endif %}" type="button" data-favorite-toggle data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-pressed="{{ 'true' if video.favorite else 'false' }}" aria-label="{{ '取消收藏' if video.favorite else '收藏视频' }}">
           {{ icon('heart') }}<span data-favorite-label>{{ '已收藏' if video.favorite else '收藏' }}</span>
@@ -31,22 +41,26 @@
         <a class="nav-button secondary player-settings-link" href="/video/{{ video.id }}" aria-label="视频设置" title="视频设置">{{ icon('settings') }}<span>设置</span></a>
         {% endif %}
       </div>
+      <p class="player-download-status" data-download-status role="status" aria-live="polite" hidden></p>
     </header>
-    <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
-      {% if video.thumb_status == "ready" %}
-        <img class="player-poster" src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}" data-player-poster>
-      {% else %}
-        <div class="player-poster player-poster--empty" role="img" aria-label="{{ video.name }}" data-player-poster></div>
-      {% endif %}
-      {% if video.type == "panorama" %}
-        <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
-        <video id="videoPlayer" class="source-video hidden-video" playsinline preload="none" data-media-base="/media/{{ video.id }}"></video>
-      {% else %}
-        <video id="videoPlayer" class="player" playsinline preload="none" data-media-base="/media/{{ video.id }}"></video>
-      {% endif %}
-      <button class="player-center-action" type="button" data-player-center-action aria-label="播放"><span class="flat-play-glyph" aria-hidden="true"></span></button>
-      <div class="player-feedback" data-player-feedback role="status" aria-live="polite"></div>
-      <div class="transcode-overlay" data-transcode-overlay hidden>正在切换转码中...</div>
+    <iframe name="video-download-frame" title="视频下载" data-download-frame hidden></iframe>
+    <div class="player-viewport">
+      <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
+        {% if video.thumb_status == "ready" %}
+          <img class="player-poster" src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}" data-player-poster>
+        {% else %}
+          <div class="player-poster player-poster--empty" role="img" aria-label="{{ video.name }}" data-player-poster></div>
+        {% endif %}
+        {% if video.type == "panorama" %}
+          <canvas id="panoramaCanvas" class="pano-canvas" aria-label="全景视频画布"></canvas>
+          <video id="videoPlayer" class="source-video hidden-video" playsinline preload="none" data-media-base="/media/{{ video.id }}"></video>
+        {% else %}
+          <video id="videoPlayer" class="player" playsinline preload="none" data-media-base="/media/{{ video.id }}"></video>
+        {% endif %}
+        <button class="player-center-action" type="button" data-player-center-action aria-label="播放"><span class="flat-play-glyph" aria-hidden="true"></span></button>
+        <div class="player-feedback" data-player-feedback role="status" aria-live="polite"></div>
+        <div class="transcode-overlay" data-transcode-overlay hidden>正在切换转码中...</div>
+      </div>
     </div>
     <div class="player-controls">
       <div class="flat-player-bar{% if video.type == 'panorama' %} progress-strip{% endif %}" data-flat-controls>
@@ -95,5 +109,5 @@
 {% endblock %}
 {% block scripts %}
   <script type="application/x-vbr-script" data-page-script src="/static/vendor/hls.min.js"></script>
-  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.6.7"></script>
+  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.6.13"></script>
 {% endblock %}

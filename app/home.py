@@ -10,17 +10,27 @@ def memory_date_values(now: datetime | None = None) -> tuple[str, float]:
     return today.strftime("%m-%d"), datetime(today.year, 1, 1).timestamp()
 
 
-def random_videos(db: Database, exclude: list[int] | None = None):
+def random_videos(db: Database, exclude: list[int] | None = None, selected: list[int] | None = None):
     previous = list(dict.fromkeys(exclude or []))[:3]
+    preferred = list(dict.fromkeys(selected or []))[:3]
     with db.connect() as conn:
+        if preferred:
+            ordering = " ".join(f"WHEN ? THEN {index}" for index in range(len(preferred)))
+            return conn.execute(
+                f"""
+                SELECT * FROM videos WHERE missing = 0 AND exclude_random = 0
+                ORDER BY CASE id {ordering} ELSE 3 END, RANDOM() LIMIT 3
+                """,
+                preferred,
+            ).fetchall()
         if not previous:
             return conn.execute(
-                "SELECT * FROM videos WHERE missing = 0 ORDER BY RANDOM() LIMIT 3"
+                "SELECT * FROM videos WHERE missing = 0 AND exclude_random = 0 ORDER BY RANDOM() LIMIT 3"
             ).fetchall()
         placeholders = ",".join("?" for _ in previous)
         return conn.execute(
             f"""
-            SELECT * FROM videos WHERE missing = 0
+            SELECT * FROM videos WHERE missing = 0 AND exclude_random = 0
             ORDER BY (id IN ({placeholders})), RANDOM() LIMIT 3
             """,
             previous,
@@ -59,7 +69,7 @@ def home_content(db: Database, now: datetime | None = None) -> dict:
         ).fetchall()
         memories = conn.execute(
             """
-            SELECT * FROM videos WHERE missing = 0 AND mtime < ?
+            SELECT * FROM videos WHERE missing = 0 AND exclude_memories = 0 AND mtime < ?
                 AND strftime('%m-%d', mtime, 'unixepoch', 'localtime') = ?
             ORDER BY mtime DESC, id DESC LIMIT 2
             """,

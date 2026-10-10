@@ -19,10 +19,10 @@
       <button class="home-soft-button" type="button" data-home-shuffle {% if not home.random %}disabled{% endif %} aria-controls="home-random">换一组</button>
     </header>
     <div class="home-grid home-grid--random" id="home-random" data-home-random>
-      {% with videos=home.random %}{% include '_home_random.html' %}{% endwith %}
+      {% if home.summary.total %}{% with videos=home.random %}{% include '_home_random.html' %}{% endwith %}{% endif %}
     </div>
     <p class="home-feedback" data-home-feedback role="status"></p>
-    {% if not home.random %}
+    {% if not home.summary.total %}
       <div class="home-empty home-empty--welcome"><h2>暂无视频</h2><p>设置视频目录后扫描即可。</p><a class="home-soft-button" href="/settings#library">设置视频目录</a></div>
     {% endif %}
   </section>
@@ -59,4 +59,4 @@
     <p data-errors-status role="status"></p><ul data-errors-list></ul><button type="button" data-errors-more hidden>加载更多</button>
   </dialog>
 {% endblock %}
-{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/home.js?v=7"></script><script type="application/x-vbr-script" data-page-script src="/static/home-player.js?v=1"></script><script type="application/x-vbr-script" data-page-script src="/static/thumbnail-errors.js?v=1"></script>{% endblock %}
+{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/home.js?v=8"></script><script type="application/x-vbr-script" data-page-script src="/static/home-player.js?v=1"></script><script type="application/x-vbr-script" data-page-script src="/static/thumbnail-errors.js?v=1"></script>{% endblock %}

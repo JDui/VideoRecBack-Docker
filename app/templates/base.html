@@ -8,9 +8,9 @@
       window.history.replaceState(window.history.state, "", pageUrl.toString());
     </script>
     {% endif %}
-    {{ stylesheet('/static/styles.css?v=2.6.6') }}
+    {{ stylesheet('/static/styles.css?v=2.6.13') }}
     {% block head %}{% endblock %}
-    {{ stylesheet('/static/liquid-glass.css?v=6') }}
+    {{ stylesheet('/static/liquid-glass.css?v=7') }}
   </head>
   <body
     class="{% block body_class %}{% endblock %}"
@@ -39,6 +39,7 @@
     </main>
     <script type="application/x-vbr-script" data-page-script src="/static/intranet.js?v=2.6.9"></script>
     <script type="application/x-vbr-script" data-page-script src="/static/inline-player.js?v=1"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/video-actions.js?v=1"></script>
     {% block scripts %}{% endblock %}
     <script type="application/x-vbr-script" data-page-script src="/static/liquid-glass.js?v=5"></script>
     <script type="application/x-vbr-script" data-page-script src="/static/navigation.js?v=1"></script>
