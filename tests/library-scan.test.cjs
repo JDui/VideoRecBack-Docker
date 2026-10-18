@@ -11,14 +11,15 @@ function setup(responses, initiallyRunning = false) {
   const button = { disabled: false, classList: { toggle(name, enabled) { enabled ? classes.add(name) : classes.delete(name); } }, setAttribute() {}, removeAttribute() {} };
   const form = { action: '/scan', dataset: { scanRunning: initiallyRunning ? '1' : '0' }, querySelector: selector => selector.includes('button') ? button : label, addEventListener: (name, handler) => events[name] = handler };
   const document = { hidden: false, querySelector: () => form, addEventListener: (name, handler) => events[name] = handler };
-  const context = { document, window: { dispatchEvent: event => completed.push(event.type) }, CustomEvent: class { constructor(type) { this.type = type; } }, fetch: async (url, options) => {
+  const windowEvents = {};
+  const context = { document, window: { dispatchEvent: event => completed.push(event.type), addEventListener: (name, handler) => windowEvents[name] = handler }, CustomEvent: class { constructor(type) { this.type = type; } }, fetch: async (url, options) => {
     requests.push({ url, options });
     const response = responses.shift();
     if (response instanceof Error) throw response;
     return { ok: response.ok !== false, json: async () => response };
   }, setTimeout: callback => { const id = {}; timers.set(id, callback); return id; }, clearTimeout: id => timers.delete(id) };
   vm.runInNewContext(source, context);
-  return { events, requests, completed, timers, button, label, document, submit: () => events.submit({ preventDefault() {} }) };
+  return { events, windowEvents, requests, completed, timers, button, label, document, submit: () => events.submit({ preventDefault() {} }) };
 }
 
 test('scan stays asynchronous, prevents duplicate submissions and reports completion once', async () => {
@@ -31,7 +32,7 @@ test('scan stays asynchronous, prevents duplicate submissions and reports comple
   await ui.submit();
   assert.equal(ui.requests.filter(request => request.url === '/scan').length, 1);
   await [...ui.timers.values()][0]();
-  assert.deepEqual(ui.completed, ['videorecback:scan-complete']);
+  assert.deepEqual(ui.completed, ['videorecback:scan-started', 'videorecback:scan-complete']);
   assert.equal(ui.button.disabled, false);
   assert.equal(ui.timers.size, 0);
 });
@@ -44,9 +45,9 @@ test('failed submission can retry and transient polling failure does not report 
   await ui.submit();
   await tick();
   assert.equal(ui.button.disabled, true);
-  assert.equal(ui.completed.length, 0);
+  assert.deepEqual(ui.completed, ['videorecback:scan-started']);
   await [...ui.timers.values()][0]();
-  assert.equal(ui.completed.length, 1);
+  assert.deepEqual(ui.completed, ['videorecback:scan-started', 'videorecback:scan-complete']);
 });
 
 test('hidden page pauses polling and resumes the existing scan when visible', async () => {
@@ -60,4 +61,16 @@ test('hidden page pauses polling and resumes the existing scan when visible', as
   ui.events.visibilitychange();
   await tick();
   assert.equal(ui.completed.length, 1);
+});
+
+test('external scan state disables duplicate submission and schedules completion polling', async () => {
+  const ui = setup([{ scanning: false }]);
+  ui.windowEvents['videorecback:scan-state']({ detail: { scanning: true } });
+  assert.equal(ui.button.disabled, true);
+  await ui.submit();
+  assert.equal(ui.requests.length, 0);
+  await [...ui.timers.values()][0]();
+  assert.deepEqual(ui.completed, ['videorecback:scan-complete']);
+  assert.equal(ui.button.disabled, false);
+  assert.equal(ui.timers.size, 0);
 });

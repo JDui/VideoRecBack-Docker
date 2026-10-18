@@ -3,13 +3,14 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../app/static/navigation.js'), 'utf8');
+const tick = () => new Promise(setImmediate);
 
 function setup() {
-  const listeners = new Map(), windowListeners = new Map(), frames = [], shown = [], destinations = [];
+  const listeners = new Map(), windowListeners = new Map(), departures = [], shown = [], destinations = [];
   const location = { href: 'http://local/', origin: 'http://local', pathname: '/', search: '', assign: target => destinations.push(target), replace: target => destinations.push(['replace', target]) };
-  const window = { VideoRecBackLoading: { show: (...args) => shown.push(args) }, dispatchEvent() {}, addEventListener: (name, listener) => windowListeners.set(name, listener) };
+  const window = { VideoRecBackLoading: { show: (...args) => shown.push(args) }, VideoRecBackMotion: { leave: () => new Promise(resolve => departures.push(resolve)) }, dispatchEvent() {}, addEventListener: (name, listener) => windowListeners.set(name, listener) };
   const document = { addEventListener: (name, listener) => listeners.set(name, listener), querySelectorAll: () => [] };
-  vm.runInNewContext(source, { window, document, location, URL, CustomEvent: class {}, requestAnimationFrame: callback => frames.push(callback) });
+  vm.runInNewContext(source, { window, document, location, URL, CustomEvent: class {} });
   const click = (href, extras = {}) => {
     const attrs = new Map();
     const link = { href, target: '', hasAttribute: () => false, setAttribute: (name, value) => attrs.set(name, value) };
@@ -17,10 +18,10 @@ function setup() {
     listeners.get('click')(event);
     return { event, attrs };
   };
-  return { click, frames, shown, destinations, window, windowListeners };
+  return { click, departures, shown, destinations, window, windowListeners };
 }
 
-test('navigation paints target loading feedback before leaving, deduplicates clicks and resets on back', () => {
+test('navigation paints target loading feedback before leaving, deduplicates clicks and resets on back', async () => {
   const state = setup();
   const { event, attrs } = state.click('http://local/library');
   assert.equal(event.defaultPrevented, true);
@@ -28,10 +29,11 @@ test('navigation paints target loading feedback before leaving, deduplicates cli
   assert.deepEqual(state.shown, [['http://local/library', true]]);
   assert.deepEqual(state.destinations, []);
   state.click('http://local/settings');
-  assert.equal(state.frames.length, 1);
-  state.frames.shift()();
+  assert.equal(state.departures.length, 1);
+  await tick();
   assert.deepEqual(state.destinations, []);
-  state.frames.shift()();
+  state.departures.shift()();
+  await tick();
   assert.deepEqual(state.destinations, ['http://local/library']);
   state.windowListeners.get('pageshow')();
   state.click('http://local/settings');
@@ -44,14 +46,24 @@ test('modified clicks, external links, same-page anchors and prevented player cl
     state.click(url, options);
   }
   assert.deepEqual(state.shown, []);
-  assert.equal(state.frames.length, 0);
+  assert.equal(state.departures.length, 0);
 });
 
 
-test('player return can replace its history entry while retaining immediate loading feedback', () => {
+test('player return can replace its history entry while retaining immediate loading feedback', async () => {
   const state = setup();
   state.window.VideoRecBackNavigate('http://local/library', { replace: true });
   assert.equal(state.shown.length, 1);
-  state.frames.shift()(); state.frames.shift()();
+  state.departures.shift()();
+  await tick();
   assert.deepEqual(state.destinations, [['replace', 'http://local/library']]);
+});
+
+test('navigation still completes when the motion controller is unavailable', async () => {
+  const state = setup();
+  delete state.window.VideoRecBackMotion;
+  state.click('http://local/library');
+  await tick();
+  assert.deepEqual(state.shown, [['http://local/library', true]]);
+  assert.deepEqual(state.destinations, ['http://local/library']);
 });
