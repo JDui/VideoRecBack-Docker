@@ -2762,6 +2762,8 @@ textarea {
 
 @supports (interpolate-size: allow-keywords) {
   .playback-settings::details-content {
+    /* Keep panel margins inside the animated height at both endpoints. */
+    display: flow-root;
     interpolate-size: allow-keywords;
     height: 0;
     overflow: clip;

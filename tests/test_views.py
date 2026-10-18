@@ -709,7 +709,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert "/static/app.js?v=2.6.13" in response.text
+    assert "/static/app.js?v=2.7.5" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text
@@ -828,12 +828,16 @@ def test_timeline_gallery_is_scoped_to_timeline(monkeypatch, tmp_path):
         assert 'data-gallery-date="2026-07-08"' in timeline
         assert re.search(r'<div\b[^>]*role="slider"[^>]*data-gallery-scrubber', timeline)
         assert re.search(r'<input\b[^>]*data-gallery-scrubber', timeline) is None
+        assert timeline.index('</main>') < timeline.index('data-timeline-rail-host')
+        assert timeline.count('id="timeline-date-rail"') == 1
+        assert 'data-gallery-latest' not in timeline
         for url in ("/", "/settings", "/?view=folders", "/?view=calendar", "/?view=favorites", "/?view=memories"):
             page = client.get(url).text
             assert "/static/timeline.css" not in page
             assert "/static/timeline.js" not in page
             assert "data-timeline-gallery" not in page
             assert "data-gallery-date-index" not in page
+            assert 'data-timeline-rail-host' not in page
 
 
 def test_timeline_jump_loads_target_date_and_preserves_filters(monkeypatch, tmp_path):

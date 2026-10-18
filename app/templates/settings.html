@@ -3,7 +3,8 @@
 {% block title %}设置 - {{ settings.site_title }}{% endblock %}
 {% block body_class %}preferences-page{% endblock %}
 {% block head %}
-  {{ stylesheet('/static/home.css?v=5') }}
+  {{ stylesheet('/static/home.css?v=6') }}
+  {{ stylesheet('/static/site-shell.css?v=2') }}
   {{ stylesheet('/static/settings-layout.css?v=2') }}
 {% endblock %}
 {% block chrome %}
@@ -75,7 +76,8 @@
             <label class="preference-field">服务地址<input name="intranet_redirect_host" value="{{ settings.intranet_redirect_host }}" placeholder="192.168.31.20" spellcheck="false"><small>填写 IP 或主机名，不包含协议与路径。</small></label>
             <label class="preference-field">服务端口<input name="intranet_redirect_port" type="number" min="1" max="65535" value="{{ settings.intranet_redirect_port }}" placeholder="8080"></label>
             <label class="preference-field">连接协议<select name="intranet_redirect_protocol"><option value="http" {% if settings.intranet_redirect_protocol == 'http' %}selected{% endif %}>HTTP</option><option value="https" {% if settings.intranet_redirect_protocol == 'https' %}selected{% endif %}>HTTPS</option></select></label>
-            <p class="preference-hint">浏览器会自动探测内网服务。若被安全策略拦截，可点击“检测内网”进行一次性确认，成功后即可“跳转内网”。</p>
+            <p class="preference-hint" data-intranet-current-status role="status">保存后，浏览器会根据当前地址显示内网连接状态。</p>
+            <p class="preference-hint" data-intranet-external-hint hidden>当前未通过目标内网地址访问。检测操作位于页面顶部；若服务可达，可通过“跳转内网”切换。浏览器限制自动检测时，可手动点击“检测内网”。</p>
             <p class="preference-hint">自动跳转默认关闭。开启后需同时启用检测并填写内网地址；连接成功会保留当前页面位置直接切换，检测失败或超时会继续载入当前页面。</p>
           </div>
         </section>

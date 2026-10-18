@@ -4,9 +4,10 @@
   const tracks = [];
   const releases = [];
 
+  const easing = getComputedStyle(document.documentElement).getPropertyValue("--ease-enter").trim();
   const animate = (element, frames, duration) => {
     if (motion.matches) return null;
-    const animation = element.animate(frames, { duration, easing: "cubic-bezier(.2, .8, .2, 1)" });
+    const animation = element.animate(frames, { duration, easing });
     animations.add(animation);
     animation.finished.then(() => animations.delete(animation), () => animations.delete(animation));
     return animation;
@@ -56,7 +57,7 @@
     container.classList.add("glass-track-ready");
   }
 
-  const surfaceSelector = ".site-settings, .intranet-jump-button, .home-soft-button, .nav-button, .player-back-button, .timeline-position-bar > output, .timeline-jump-rail, .timeline-scrub-date, .filterbar, .player-controls, .preferences-savebar, .quality-menu-panel, .favorite-context-menu, .home-context-menu, button:not(.pane-resizer):not(.timeline-jump-mark):not(.timeline-favorite):not(.timeline-latest):not(.video-context-menu button), summary";
+  const surfaceSelector = ".site-settings, .intranet-jump-button, .home-soft-button, .nav-button, .player-back-button, .timeline-position-bar > output, .timeline-jump-rail, .timeline-scrub-date, .filterbar, .player-controls, .preferences-savebar, .quality-menu-panel, .favorite-context-menu, .home-context-menu, button:not(.pane-resizer):not(.timeline-jump-mark):not(.timeline-favorite):not(.timeline-latest):not(.thumbnail-errors-button):not(.video-context-menu button), summary";
   document.querySelectorAll(surfaceSelector).forEach(register);
   document.querySelectorAll("button.glass-surface, a.glass-surface, summary.glass-surface").forEach(element => {
     element.classList.add("glass-interactive");
@@ -76,7 +77,18 @@
   window.addEventListener("pointercancel", releaseAll, { passive: true });
   window.addEventListener("blur", releaseAll);
 
-  document.querySelectorAll(".filter-menu, .quality-menu").forEach(details => {
+  const filterMenu = document.querySelector('.filter-menu');
+  document.addEventListener('pointerdown', event => {
+    if (filterMenu?.open && !filterMenu.contains(event.target)) filterMenu.open = false;
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !filterMenu?.open) return;
+    event.preventDefault();
+    filterMenu.open = false;
+    filterMenu.querySelector('summary').focus();
+  });
+  const nativeMenus = CSS.supports("interpolate-size: allow-keywords") && CSS.supports("transition-behavior: allow-discrete") && CSS.supports("selector(details::details-content)");
+  if (!nativeMenus) document.querySelectorAll(".filter-menu, .quality-menu").forEach(details => {
     const trigger = details.querySelector("summary");
     const panel = details.querySelector(".filterbar, .quality-menu-panel");
     let menuAnimation;

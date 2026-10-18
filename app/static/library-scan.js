@@ -47,6 +47,7 @@
       const status = await response.json();
       if (!status.scanning) throw new Error("Maintenance busy");
       running = true;
+      window.dispatchEvent(new CustomEvent("videorecback:scan-started"));
     } catch {
       button.title = "扫描未能开始，请稍后重试";
       label.textContent = "启动失败，重试";
@@ -55,6 +56,11 @@
       render(running ? "更新中" : "启动失败，重试");
       if (running) poll();
     }
+  });
+  window.addEventListener("videorecback:scan-state", event => {
+    running = Boolean(event.detail.scanning);
+    render();
+    schedule();
   });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);

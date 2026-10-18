@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from app.dates import archive_date
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS videos (
@@ -34,6 +36,7 @@ CREATE TABLE IF NOT EXISTS videos (
     exclude_memories INTEGER NOT NULL DEFAULT 0,
     thumb_status TEXT NOT NULL DEFAULT 'pending',
     thumb_error TEXT,
+    thumb_failed_at TEXT,
     thumb_path TEXT,
     thumb_version INTEGER NOT NULL DEFAULT 2,
     media_version INTEGER NOT NULL DEFAULT 0
@@ -81,6 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_media_jobs_pending ON media_jobs(status, created_
 """
 
 MIGRATIONS = {
+    "thumb_failed_at": "ALTER TABLE videos ADD COLUMN thumb_failed_at TEXT",
     "relative_path": "ALTER TABLE videos ADD COLUMN relative_path TEXT",
     "folder": "ALTER TABLE videos ADD COLUMN folder TEXT",
     "width": "ALTER TABLE videos ADD COLUMN width INTEGER",
@@ -151,6 +155,7 @@ class Database:
     def connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
+        conn.create_function("archive_date", 2, archive_date, deterministic=True)
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA synchronous=NORMAL")

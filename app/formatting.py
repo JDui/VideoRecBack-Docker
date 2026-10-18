@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from app.dates import archive_date
 
 
 def format_duration(seconds: float | None) -> str:
@@ -45,4 +45,4 @@ def format_bitrate(bits_per_second: int | None) -> str:
 def format_date(timestamp: float | None) -> str:
     if not timestamp:
         return "未知日期"
-    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+    return archive_date(timestamp)

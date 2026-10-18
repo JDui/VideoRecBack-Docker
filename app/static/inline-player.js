@@ -1,11 +1,12 @@
 (() => {
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   const active = new WeakMap();
+  const easing = getComputedStyle(document.documentElement).getPropertyValue("--ease-layout").trim();
   const transition = async (shell, change, closing = false) => {
     (active.get(shell) || []).forEach(animation => animation.cancel());
     const pane = shell.querySelector('.preview-pane');
     if (closing && !motion.matches) {
-      const animation = pane.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(18px)' }], { duration: 150, easing: 'ease-out', fill: 'forwards' });
+      const animation = pane.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(18px)' }], { duration: 150, easing, fill: 'forwards' });
       active.set(shell, [animation]);
       try { await animation.finished; } catch { return false; }
       animation.cancel();
@@ -14,16 +15,22 @@
     window.dispatchEvent(new CustomEvent('videorecback:timeline-layout-now'));
     pane.getBoundingClientRect();
     if (!motion.matches && shell.classList.contains('player-open')) {
-      const animation = pane.animate([{ opacity: 0, transform: 'translateX(18px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      const animation = pane.animate([{ opacity: 0, transform: 'translateX(18px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing });
       active.set(shell, [animation]);
     }
     const content = shell.querySelector('.library-pane, .home-content');
     if (content && !motion.matches) {
-      const animation = content.animate([{ opacity: .35, transform: 'translateX(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
+      const animation = content.animate([{ opacity: .35, transform: 'translateX(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing });
       active.set(shell, [...(active.get(shell) || []), animation]);
     }
     return true;
   };
+  motion.addEventListener('change', () => {
+    if (!motion.matches) return;
+    for (const shell of document.querySelectorAll('.app-shell, .home-player-shell')) {
+      (active.get(shell) || []).forEach(animation => { if (animation.playState === 'running') animation.finish(); });
+    }
+  });
   window.VideoRecBackPlayer = { transition, isWide: () => innerWidth / Math.max(innerHeight, 1) > 4 / 3 };
   for (const shell of document.querySelectorAll('.app-shell, .home-player-shell')) {
     const frame = shell.querySelector('[data-player-frame]');

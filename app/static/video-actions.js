@@ -1,5 +1,6 @@
 (() => {
   const icons = {
+    sparkle: '<path d="M12 2Q14 10 22 12Q14 14 12 22Q10 14 2 12Q10 10 12 2Z"/>',
     timeline: '<path d="M5 4v16M9 7h10M9 12h7M9 17h10"/><circle cx="5" cy="7" r="1"/><circle cx="5" cy="17" r="1"/>',
     settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>',
     exclude: '<circle cx="12" cy="12" r="8"/><path d="m6.5 6.5 11 11"/>',
@@ -14,11 +15,17 @@
   status.hidden = true;
   document.body.append(status);
   let statusTimer;
-  const announce = message => {
+  const announce = (message, action = null) => {
     clearTimeout(statusTimer);
     status.textContent = message;
+    if (action) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = action.label;
+      button.addEventListener('click', () => { status.hidden = true; action.onSelect(); });
+      status.append(button);
+    }
     status.hidden = false;
-    statusTimer = setTimeout(() => { status.hidden = true; }, 5000);
+    statusTimer = setTimeout(() => { if (!status.contains(document.activeElement)) status.hidden = true; }, action ? 10000 : 5000);
   };
   const participationFor = card => confirmed.get(card.dataset.videoId || card.dataset.homeCard) || {
     exclude_random: card.dataset.excludeRandom === '1',
@@ -65,12 +72,14 @@
     const hide = (restoreFocus = false) => {
       if (menu.hidden) return;
       menu.hidden = true;
+      if (origin?.getAttribute('aria-haspopup') === 'menu') origin.setAttribute('aria-expanded', 'false');
       if (restoreFocus && origin?.isConnected) origin.focus({ preventScroll: true });
       origin = null;
     };
     const open = (target, point, items) => {
       for (const other of menus) other.hide();
       origin = target;
+      if (origin.getAttribute('aria-haspopup') === 'menu') origin.setAttribute('aria-expanded', 'true');
       menu.replaceChildren();
       for (const item of items) {
         const button = document.createElement('button');

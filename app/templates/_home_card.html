@@ -9,15 +9,15 @@
       {% if settings.show_duration and video.duration_seconds %}<span class="home-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
       {% if video.type == 'panorama' %}<span class="home-kind">全景</span>{% endif %}
       {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="home-bit-depth">10bit</span>{% endif %}
+      <span class="home-video-caption">
+        {% if memory %}<span class="home-memory-year">{{ video.mtime|memory_year }} 年的今天</span>{% endif %}
+        <strong class="home-video-title" title="{{ video.name }}">{{ video.name }}</strong>
+        <span class="home-video-meta">
+          {% if settings.show_date %}<span>{{ video.mtime|date }}</span>{% endif %}
+          {% if video.folder %}<span class="home-video-event" title="{{ video.folder }}">{{ video.folder.split('/')[-2:]|join(' / ') }}</span>{% endif %}
+          {% if settings.show_size %}<span>{{ video.size_bytes|size }}</span>{% endif %}
+        </span>
+      </span>
     </a>
-    <div class="home-video-caption">
-      {% if memory %}<span class="home-memory-year">{{ video.mtime|memory_year }} 年的今天</span>{% endif %}
-      <a class="home-video-title" href="/video/{{ video.id }}/play" data-home-video="{{ video.id }}" title="{{ video.name }}">{{ video.name }}</a>
-      <p class="home-video-meta">
-        {% if settings.show_date %}<span>{{ video.mtime|date }}</span>{% endif %}
-        {% if video.folder %}<span title="{{ video.folder }}">{{ video.folder }}</span>{% endif %}
-        {% if settings.show_size %}<span>{{ video.size_bytes|size }}</span>{% endif %}
-      </p>
-    </div>
   </article>
 {% endmacro %}

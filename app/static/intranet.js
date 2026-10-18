@@ -24,6 +24,11 @@ const configuredRedirectProtocol = () => {
 
 const markAccess = () => {
   document.body.dataset.intranetAccess = isLocalAccess() ? LOCAL_ACCESS : EXTERNAL_ACCESS;
+  const status = document.querySelector('[data-intranet-current-status]');
+  const hint = document.querySelector('[data-intranet-external-hint]');
+  const enabled = intranetConfig.intranetEnabled === '1' && Boolean(configuredRedirectHost());
+  if (status) status.textContent = isLocalAccess() ? '当前已通过内网访问。' : enabled ? '当前通过其他地址访问，正在检测目标内网服务。' : '内网直连检测未启用或目标地址尚未配置；修改后请保存设置。';
+  if (hint) hint.hidden = !enabled || isLocalAccess();
 };
 
 const intranetOrigin = () => {

@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前版本：**2.6.13**。从 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest) 下载 Docker 镜像包，或从源码构建。
+当前版本：**2.7.5**。从 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest) 下载 Docker 镜像包，或从源码构建。
 
 ## 页面展示
 
@@ -43,10 +43,10 @@ VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线�
 
 ### 1. 下载并加载镜像
 
-在 [v2.6.13 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.6.13) 下载 `videorecback-2.6.13-amd64.tar`。发布包适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
+在 [v2.7.5 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.5) 下载 `videorecback-2.7.5-amd64.tar`。发布包适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
 
 ```bash
-docker load -i videorecback-2.6.13-amd64.tar
+docker load -i videorecback-2.7.5-amd64.tar
 ```
 
 Release 同时提供 `SHA256SUMS`，可在保存这两个文件的目录中校验：
@@ -62,10 +62,12 @@ sha256sum -c SHA256SUMS
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.6.13
+    image: videorecback:2.7.5
     container_name: videorecback
     ports:
       - "8080:8080"
+    environment:
+      TZ: Asia/Shanghai
     volumes:
       - ./config:/config
       - ./data:/data
@@ -84,12 +86,12 @@ docker compose up -d
 ```bash
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
-git checkout v2.6.13
-docker build -t videorecback:2.6.13 .
+git checkout v2.7.5
+docker build -t videorecback:2.7.5 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.6.13 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.5 .`。
 
 ## 升级与数据目录
 
@@ -103,20 +105,33 @@ docker compose up -d
 
 扫描会读取原视频目录并更新索引。发现文件被删除时，会移除对应数据库记录、封面及串流缓存。
 
+## 日期与时区
+
+归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
+
+## 本轮源码界面改进
+
+- 视频库增加文件名和目录搜索；切换视图保留关键词。筛选统一点击“应用”后生效，显示条件数量，并支持清空和日期范围校验。
+- 手机首页逐张切换随机视频；手机时间线默认收起密度轴，提供日期跳转。名称与目录显示、时间轴展开状态会在当前浏览器中记住。
+- 卡片通过右键或长按打开操作菜单，支持收藏与撤销；键盘可使用菜单键或 Shift+F10。播放页将标题与画质、下载、收藏、设置集中为紧凑工具栏，日期与目录收纳在设置菜单中。
+- 页面切换、菜单、弹窗、折叠内容与播放器侧栏使用分层缓动；自动遵循系统“减少动态效果”设置。
+- 封面失败列表提供原因摘要、折叠日志、单项重试及仅重试失败项；任务在后台队列处理，不清空其他封面。旧失败记录首次显示时可能没有失败时间，后续失败会自动记录。
+- 日历禁用层级使用明确的不可操作状态；内网设置根据当前访问地址显示连接说明；回忆为空时可直接浏览日历。
+
 ## 主要功能
 
 ### 浏览与回忆
 
 - 首页包含随机三个视频、最近记录、收藏、那年今日和影像库概览。随机支持换组；最近记录按文件时间排序，那年今日匹配往年同月同日的文件时间。
 - 首页、时间线、文件夹、日历、收藏使用统一导航。视频库支持按类型、时长、画幅筛选，切换视图保留筛选条件，可调整封面预览大小。
-- 时间线按 180 条分批加载，时间轴基于完整筛选索引，以每日视频数量的平方根分配长度；支持拖动、方向键、Home/End 和跨批次跳转。
+- 时间线按 180 条分批加载，时间轴基于完整筛选索引，纵向以削峰后每日数量的平方根分配长度，避免极端高峰挤压其余日期。每日刻度左侧对齐，长度与柔和彩虹色按当前筛选内的数量自适应：先按四分位范围对极端数量削峰，再经对数与平滑曲线映射，突出中段差异、缓和两端；紫色表示较少、红色表示较多，数量相同时使用中间色。年份位于轴内，收藏以金色小点标记；支持拖动、方向键、Home/End 和跨批次跳转。
 - 平面封面使用四个时间点合成 WebP 四宫格，全景封面使用鱼眼球面预览；可选择 480P、576P 或 720P 封面高度。10bit 视频显示标记，带全景标记或接近 2:1 的视频默认识别为全景。
 - 封面失败数量可点击查看文件名、路径与失败原因，支持分页和重试。
 
 ### 播放与下载
 
 - 点击封面即可播放。页面宽高比大于 4:3 时在右侧展开内嵌播放器，默认占可用宽度的 2/3；可拖动分隔条或用键盘调节，Home 或双击恢复默认比例。其他画幅进入完整播放页，关闭后恢复列表位置。
-- 可分别设置平面/全景默认画质，并设置默认音量；播放器可收藏视频、切换画质、全屏和调节播放。全景支持拖动、触控板滑动与缩放、触屏双指缩放。
+- 可分别设置平面/全景默认画质，并设置默认音量；播放器可收藏视频、切换画质、全屏和调节播放。播放倍速支持 0.25×–4×，音量支持 0–150%（超过 100% 使用浏览器音频增益，不支持时保持最高 100%）。全景支持拖动、触控板滑动与缩放、触屏双指缩放。
 - 10bit 原画在浏览器无法直接播放时自动切到超清 HLS；播放卡住时尝试恢复当前时间点。HLS 暂停或页面短暂隐藏不会立即删除当前转码流。
 - 下载菜单可独立选择画质：原画直接下载源文件，其他画质先生成完整 MP4，再保存到浏览器；生成后的文件复用缓存。播放和下载接口支持 HTTP Range。
 

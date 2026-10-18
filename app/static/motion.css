@@ -1,0 +1,78 @@
+:root {
+  --ease-enter: cubic-bezier(.16, 1, .3, 1);
+  --ease-exit: cubic-bezier(.4, 0, 1, 1);
+  --ease-layout: cubic-bezier(.22, .8, .25, 1);
+  --ease-smooth: var(--ease-layout);
+  --ease-snap: var(--ease-enter);
+  --motion-fast: 160ms;
+  --motion-med: 280ms;
+  --motion-slow: 380ms;
+}
+.player-shell.is-closing { opacity: 1; }
+.glass-interactive { transition-timing-function: var(--ease-enter); }
+.page-loader { transition: opacity 180ms var(--ease-exit); }
+
+/* Native discrete transitions retain the visual layer while focus closes immediately. */
+.video-context-menu, .video-action-status, .thumbnail-errors-dialog {
+  opacity: 0;
+  transform: translateY(6px) scale(.98);
+  transition: opacity 160ms var(--ease-exit), transform 160ms var(--ease-exit),
+    display 160ms allow-discrete, overlay 160ms allow-discrete;
+}
+.video-context-menu:not([hidden]), .video-action-status:not([hidden]), .thumbnail-errors-dialog[open] {
+  opacity: 1;
+  transform: none;
+  transition-duration: 220ms;
+  transition-timing-function: var(--ease-enter);
+}
+.thumbnail-errors-dialog::backdrop {
+  background: rgba(55,65,85,0);
+  transition: background-color 180ms var(--ease-exit), display 180ms allow-discrete, overlay 180ms allow-discrete;
+}
+.thumbnail-errors-dialog[open]::backdrop { background: rgba(55,65,85,.2); }
+@starting-style {
+  .video-context-menu:not([hidden]), .video-action-status:not([hidden]), .thumbnail-errors-dialog[open] { opacity: 0; transform: translateY(6px) scale(.98); }
+  .thumbnail-errors-dialog[open]::backdrop { background: rgba(55,65,85,0); }
+}
+
+@supports (interpolate-size: allow-keywords) and (transition-behavior: allow-discrete) and selector(details::details-content) {
+  details:not(.filter-menu):not(.quality-menu)::details-content {
+    display: flow-root;
+    interpolate-size: allow-keywords;
+    height: 0;
+    overflow: clip;
+    transition: height var(--motion-med) var(--ease-layout), content-visibility var(--motion-med) allow-discrete;
+  }
+  details:not(.filter-menu):not(.quality-menu)[open]::details-content { height: auto; }
+  :is(.filter-menu, .quality-menu)::details-content {
+    content-visibility: hidden;
+    transition: content-visibility 180ms allow-discrete;
+  }
+  :is(.filter-menu, .quality-menu)[open]::details-content { content-visibility: visible; }
+  .filter-menu .filterbar, .quality-menu .quality-menu-panel {
+    opacity: 0;
+    transform: translateY(-6px) scale(.98);
+    transform-origin: top right;
+    transition: opacity 180ms var(--ease-exit), transform 180ms var(--ease-exit);
+    pointer-events: none;
+  }
+  .filter-menu:not([open]) .filterbar, .quality-menu:not([open]) .quality-menu-panel { display: grid; }
+  .filter-menu[open] .filterbar, .quality-menu[open] .quality-menu-panel {
+    opacity: 1;
+    transform: none;
+    transition-duration: 240ms;
+    transition-timing-function: var(--ease-enter);
+    pointer-events: auto;
+    animation: none;
+  }
+  @starting-style {
+    .filter-menu[open] .filterbar, .quality-menu[open] .quality-menu-panel { opacity: 0; transform: translateY(-6px) scale(.98); }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, details::details-content, dialog::backdrop {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

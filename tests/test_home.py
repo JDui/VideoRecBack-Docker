@@ -39,7 +39,7 @@ def test_home_limits_and_memories_exclude_today_future_and_missing(tmp_path):
     content = home_content(make_library(tmp_path), datetime(2026, 10, 2, 16))
     assert [row["name"] for row in content["memories"]] == ["last-year.mp4", "two-years.mp4"]
     assert content["recent"][0]["name"] == "future.mp4"
-    assert len(content["recent"]) == 6
+    assert len(content["recent"]) == 3
     assert {row["name"] for row in content["favorites"]} == {"favorite.mp4", "last-year.mp4"}
     assert content["summary"]["total"] == 6
     assert content["summary"]["favorites"] == 2
@@ -204,7 +204,9 @@ def test_home_and_library_share_navigation_without_duplicate_library_actions(mon
             assert 'data-intranet-jump' not in toolbar
             assert 'data-preview-size' in toolbar
             assert 'class="filter-menu"' in toolbar
-            assert 'data-scan-form' in toolbar
+            assert 'data-scan-form' not in toolbar
+            assert page.text.count('data-scan-form') == 1
+            assert header.index('data-scan-form') < header.index('class="site-settings"')
         timeline = client.get("/library").text
         assert 'data-gallery-previous' in timeline
         assert 'data-player-frame' in timeline

@@ -254,6 +254,22 @@ class Scanner:
                 self._enqueue_media_job(video_id, conn=conn)
         return len(snapshots)
 
+    def retry_failed_thumbnails(self, video_id: int | None = None) -> list[int]:
+        with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                """SELECT videos.id FROM videos
+                   LEFT JOIN media_jobs ON media_jobs.video_id = videos.id
+                   WHERE videos.missing = 0 AND videos.thumb_status = 'error'
+                     AND (media_jobs.status IS NULL OR media_jobs.status NOT IN ('pending', 'running'))
+                     AND (? IS NULL OR videos.id = ?)""", (video_id, video_id),
+            ).fetchall()
+            ids = [int(row["id"]) for row in rows]
+            for item in ids:
+                self._enqueue_media_job(item, conn=conn)
+                conn.execute("UPDATE videos SET thumb_status = 'pending' WHERE id = ?", (item,))
+        return ids
+
     def _enqueue_media_job(self, video_id: int, conn=None) -> None:
         def execute(connection) -> None:
             connection.execute(
@@ -470,6 +486,12 @@ class Scanner:
                 summary.errors += 1
                 with self.db.connect() as conn:
                     conn.execute(
+                        """UPDATE videos SET thumb_error = CASE WHEN thumb_status = 'error'
+                                THEN COALESCE(thumb_error, ?) ELSE ? END,
+                            thumb_status = 'error', thumb_failed_at = CURRENT_TIMESTAMP
+                            WHERE id = ?""", (str(exc), str(exc), video_id),
+                    )
+                    conn.execute(
                         """
                         UPDATE media_jobs
                         SET status = CASE WHEN attempts >= 3 THEN 'error' ELSE 'pending' END,
@@ -568,9 +590,9 @@ class Scanner:
                     path, name, relative_path, folder, type, size_bytes, duration_seconds,
                     width, height, aspect_ratio, bit_depth, is_10bit, chroma_subsampling,
                     average_bitrate, video_codec, mtime,
-                    missing, thumb_status, thumb_error, thumb_path, thumb_version, media_version, updated_at
+                    missing, thumb_status, thumb_error, thumb_failed_at, thumb_path, thumb_version, media_version, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, CASE WHEN ? = 'error' THEN CURRENT_TIMESTAMP ELSE NULL END, ?, ?, 0, CURRENT_TIMESTAMP)
                 ON CONFLICT(path) DO UPDATE SET
                     name = excluded.name,
                     relative_path = excluded.relative_path,
@@ -590,6 +612,7 @@ class Scanner:
                     missing = 0,
                     thumb_status = excluded.thumb_status,
                     thumb_error = excluded.thumb_error,
+                    thumb_failed_at = excluded.thumb_failed_at,
                     thumb_path = excluded.thumb_path,
                     thumb_version = excluded.thumb_version,
                     media_version = 0,
@@ -614,6 +637,7 @@ class Scanner:
                     stat.st_mtime,
                     thumb_status,
                     thumb_error,
+                    thumb_status,
                     thumb_path,
                     THUMBNAIL_VERSION,
                 ),
@@ -799,7 +823,7 @@ class Scanner:
                 conn.execute(
                     """
                     UPDATE videos
-                    SET thumb_status = 'ready', thumb_error = NULL, thumb_path = ?, thumb_version = ?, updated_at = CURRENT_TIMESTAMP
+                    SET thumb_status = 'ready', thumb_error = NULL, thumb_failed_at = NULL, thumb_path = ?, thumb_version = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
                     (str(final_thumb_path), THUMBNAIL_VERSION, video_id),
@@ -810,7 +834,7 @@ class Scanner:
                 conn.execute(
                     """
                     UPDATE videos
-                    SET thumb_status = 'error', thumb_error = ?, updated_at = CURRENT_TIMESTAMP
+                    SET thumb_status = 'error', thumb_error = ?, thumb_failed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
                     (str(exc), video_id),

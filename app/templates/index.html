@@ -16,7 +16,7 @@
   {% from "_video_macros.html" import asset_card with context %}
 
   {% macro cover_tile(item, kind) %}
-    <a class="folder-tile" href="{{ item.url if item.url is defined else '#' }}">
+    <a class="folder-tile" href="{{ item.url if item.url is defined else '#' }}" aria-label="{{ item.label if item.label is defined else item.name }}，{{ item.count }} 个视频，{{ kind }}">
       <span class="folder-cover">
         {% if item.cover and item.cover.thumb_status == "ready" %}
           <img src="/thumb/{{ item.cover.id }}.webp?v={{ item.cover.thumb_version }}&amp;preview=1" alt="{{ item.label if item.label is defined else item.name }}" loading="lazy" decoding="async">
@@ -30,17 +30,29 @@
     </a>
   {% endmacro %}
 
-  <h1 class="visually-hidden">{{ '收藏' if filters.view == 'favorites' else '视频库' }}</h1>
-  <div class="app-shell">
+
+  <div class="app-shell{% if filters.view == 'timeline' %} is-timeline{% endif %}">
     <header class="library-topbar">
-      <span class="library-stats">{{ stats.total }} 个视频 · {{ stats.flat }} 平面 · {{ stats.panorama }} 全景</span>
-      <label class="preview-size-control">
-        预览大小
-        <input type="range" min="132" max="280" step="4" value="176" data-preview-size>
-      </label>
+      {% if filters.view == 'timeline' and videos %}
+      <div class="timeline-position-bar">
+        <output class="visually-hidden" data-gallery-position aria-label="当前浏览日期">{{ videos[0].mtime|date }}</output>
+        <label class="timeline-date-picker"><span class="visually-hidden">选择日期</span><input type="date" data-gallery-date-picker aria-label="跳转到日期" value="{{ videos[0].mtime|date }}" min="{{ timeline_date_index[-1].date }}" max="{{ timeline_date_index[0].date }}"></label>
+        <span class="timeline-feedback" data-gallery-feedback role="status"></span>
+      </div>
+      {% endif %}
+      <form class="library-search" action="/" method="get" role="search" data-library-search>
+        {% for key, value in filters.items() %}{% if key != 'q' and value %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+        <label class="visually-hidden" for="library-query">搜索文件名或目录</label>
+        <input id="library-query" type="search" name="q" value="{{ filters.q }}" placeholder="搜索文件名或目录" autocomplete="off">
+        <button type="submit" aria-label="搜索">{{ icon('search') }}<span class="search-submit-label">搜索</span></button>
+      </form>
+      <div class="library-tools">
+        <label class="preview-size-control"><span class="preview-size-caption">预览大小</span><input aria-label="预览大小" type="range" min="132" max="280" step="4" value="176" data-preview-size></label>
+      </div>
       <details class="filter-menu">
-        <summary>筛选</summary>
-        <form class="filterbar" method="get" action="/">
+        <summary>筛选{% if filter_count %} · {{ filter_count }}{% endif %}</summary>
+        <form class="filterbar" method="get" action="/" data-library-filters>
+          {% if filters.q %}<input type="hidden" name="q" value="{{ filters.q }}">{% endif %}
           <input type="hidden" name="view" value="{{ filters.view }}">
           {% if filters.view == "folders" and filters.folder %}<input type="hidden" name="folder" value="{{ filters.folder }}">{% endif %}
           {% if filters.view == "calendar" %}<input type="hidden" name="calendar_zoom" value="{{ filters.calendar_zoom }}">{% endif %}
@@ -48,7 +60,7 @@
           {% if filters.view == "calendar" and filters.calendar_month %}<input type="hidden" name="calendar_month" value="{{ filters.calendar_month }}">{% endif %}
           <label>
             视频类型
-            <select name="type" onchange="this.form.submit()">
+            <select name="type">
               <option value="all" {% if filters.type == 'all' %}selected{% endif %}>全部</option>
               <option value="flat" {% if filters.type == 'flat' %}selected{% endif %}>平面</option>
               <option value="panorama" {% if filters.type == 'panorama' %}selected{% endif %}>全景</option>
@@ -56,7 +68,7 @@
           </label>
           <label>
             视频时长
-            <select name="duration" onchange="this.form.submit()">
+            <select name="duration">
               <option value="all" {% if filters.duration == 'all' %}selected{% endif %}>任意时长</option>
               <option value="short" {% if filters.duration == 'short' %}selected{% endif %}>短于 1 分钟</option>
               <option value="medium" {% if filters.duration == 'medium' %}selected{% endif %}>1 到 10 分钟</option>
@@ -65,7 +77,7 @@
           </label>
           <label>
             宽高比
-            <select name="aspect" onchange="this.form.submit()">
+            <select name="aspect">
               <option value="all" {% if filters.aspect == 'all' %}selected{% endif %}>全部</option>
               <option value="wide" {% if filters.aspect == 'wide' %}selected{% endif %}>横向</option>
               <option value="vertical" {% if filters.aspect == 'vertical' %}selected{% endif %}>竖向</option>
@@ -80,17 +92,23 @@
             结束日期
             <input name="date_to" type="date" value="{{ filters.date_to }}">
           </label>
-          <button type="submit">应用</button>
+          <p class="filter-date-note">日期按文件修改时间归档 · {{ archive_timezone }}</p>
+          <p class="filter-error" data-date-error role="alert" hidden>开始日期不能晚于结束日期。</p>
+          {% if filters.view == 'timeline' %}<label class="card-info-control"><input type="checkbox" data-card-info checked>悬停显示名称与目录</label>{% endif %}
+          {% if filters.view == 'timeline' and (filters.q or filter_count) %}<p class="filter-result-status" role="status">当前{% if filters.q %}搜索“{{ filters.q }}”{% endif %}{% if filter_count %} · {{ filter_count }} 项筛选{% endif %} · {{ stats.total }} 个结果</p>{% endif %}
+          <div class="filter-actions"><button type="submit">应用</button><a href="{{ clear_filters_url }}">清空搜索与筛选</a></div>
         </form>
       </details>
-      <form class="topbar-scan" action="/scan" method="post" data-scan-form data-scan-running="{{ '1' if scan_running else '0' }}">
-        <button type="submit" data-scan-button class="{% if scan_running %}is-scanning{% endif %}">
-          <span data-scan-label>{% if scan_running %}更新中{% else %}扫描{% endif %}</span>
-        </button>
-      </form>
+      {% if filters.view == 'timeline' and videos %}
+        <button type="button" class="timeline-rail-toggle" data-rail-toggle aria-expanded="true" aria-controls="timeline-date-rail" aria-label="收起时间轴" title="收起时间轴">{{ icon('timeline') }}</button>
+      {% endif %}
     </header>
 
     <section class="library-pane">
+      {% if filters.view != 'timeline' %}<header class="library-context">
+        <h1>{{ {'timeline': '时间线', 'folders': '文件夹', 'calendar': '日历', 'favorites': '收藏', 'memories': '那年今日'}[filters.view] }}{% if filters.view == 'folders' %} / {{ filters.folder or '全部文件' }}{% elif filters.view == 'calendar' %} / {{ (filters.calendar_year ~ '年') if filters.calendar_year else '全部年份' }}{% if filters.calendar_month %} / {{ filters.calendar_month }}月{% endif %}{% endif %}</h1>
+        {% if filters.q or filter_count %}<p>当前{% if filters.q %}搜索“{{ filters.q }}”{% endif %}{% if filter_count %} · {{ filter_count }} 项筛选{% endif %} · {{ stats.total }} 个结果 <a href="{{ clear_filters_url }}">清空</a></p>{% endif %}
+      </header>{% endif %}
       {% if filters.view == 'memories' %}<header class="asset-section-head"><h2>那年今日</h2><span>重温往年同一天的记录</span></header>{% endif %}
       {% if videos %}
         {% if filters.view == "favorites" %}
@@ -127,8 +145,10 @@
           <section class="calendar-view">
             <div class="calendar-zoom">
               <a class="{% if calendar_model.zoom == 'year' %}active{% endif %}" href="{{ calendar_model.zoom_urls.year }}" {% if calendar_model.zoom == 'year' %}aria-current="page"{% endif %}>年</a>
-              <a class="{% if calendar_model.zoom == 'month' %}active{% endif %} {% if calendar_model.zoom_urls.month == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.month }}" {% if calendar_model.zoom == 'month' %}aria-current="page"{% endif %}>月</a>
-              <a class="{% if calendar_model.zoom == 'day' %}active{% endif %} {% if calendar_model.zoom_urls.day == '#' %}disabled{% endif %}" href="{{ calendar_model.zoom_urls.day }}" {% if calendar_model.zoom == 'day' %}aria-current="page"{% endif %}>日</a>
+              {% for level, label in [('month', '月'), ('day', '日')] %}
+                {% if calendar_model.zoom_urls[level] == '#' %}<span class="disabled" aria-disabled="true" title="请先选择{{ '年份' if level == 'month' else '年份和月份' }}">{{ label }}</span>
+                {% else %}<a class="{% if calendar_model.zoom == level %}active{% endif %}" href="{{ calendar_model.zoom_urls[level] }}" {% if calendar_model.zoom == level %}aria-current="page"{% endif %}>{{ label }}</a>{% endif %}
+              {% endfor %}
             </div>
             {% if calendar_model.zoom == "day" %}
               {% for month in calendar_model.months %}
@@ -147,7 +167,7 @@
             {% else %}
               <div class="calendar-aggregate-grid">
                 {% for item in calendar_model.groups %}
-                  {{ cover_tile(item, "日" if calendar_model.zoom == "month" else "月") }}
+                  {{ cover_tile(item, "查看日期" if calendar_model.zoom == "month" else "查看月份") }}
                 {% endfor %}
               </div>
             {% endif %}
@@ -163,10 +183,6 @@
             {% if timeline_next_cursor %}data-next-mtime="{{ timeline_next_cursor.mtime }}" data-next-id="{{ timeline_next_cursor.id }}"{% endif %}
           >
             {% if filters.view == 'timeline' %}
-              <header class="timeline-position-bar">
-                <output data-gallery-position aria-label="当前浏览日期">{{ videos[0].mtime|date }}</output>
-                <span class="timeline-feedback" data-gallery-feedback role="status"></span>
-              </header>
               <div class="timeline-previous-sentinel" data-gallery-previous aria-hidden="true"></div>
               <script type="application/json" data-gallery-date-index>{{ timeline_date_index|tojson }}</script>
             {% endif %}
@@ -176,45 +192,28 @@
             </div>
             {% if filters.view == 'timeline' %}<div class="timeline-end-space" aria-hidden="true"></div>{% endif %}
             <div class="timeline-load-sentinel" data-timeline-load {% if not timeline_has_more %}hidden{% endif %}>继续加载</div>
-            <aside class="timeline-jump-rail" aria-label="快速跳转时间线" data-timeline-jump>
-              {% if filters.view == 'timeline' %}
-                <button class="timeline-latest" type="button" data-gallery-latest>{{ icon('back') }}<span>回到最新</span></button>
-                <div class="timeline-scrubber">
-                  <div class="timeline-date-axis" role="slider" tabindex="0" aria-label="时间轴，方向键选择日期" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0" data-gallery-scrubber>
-                    <div class="timeline-date-ticks" data-gallery-date-ticks aria-hidden="true"></div>
-                    <span class="timeline-current-tick" data-gallery-current-tick aria-hidden="true"></span>
-                  </div>
-                  <output class="timeline-scrub-date" data-gallery-scrub-date role="tooltip"></output>
-              {% endif %}
-              {% for year in timeline_rail %}
-                <div class="timeline-jump-year">
-                  <span>{{ year.year }}</span>
-                  <div>
-                    {% for mark in year.marks %}
-                      <a class="timeline-jump-mark" href="{{ mark.href }}" data-kind="{{ mark.kind }}" data-year="{{ mark.year }}" data-month="{{ mark.month }}" data-day="{{ mark.day }}" data-period="{{ mark.period }}" data-target-anchor="{{ mark.target }}" data-count="{{ mark.count }}" aria-label="{{ mark.label }}，{{ mark.count }} 个视频">
-                        <span>{{ mark.label }}</span>
-                      </a>
-                    {% endfor %}
-                  </div>
-                </div>
-              {% endfor %}
-              {% if filters.view == 'timeline' %}</div>{% endif %}
-            </aside>
+            {% if filters.view != 'timeline' %}{% include '_timeline_rail.html' %}{% endif %}
           </section>
         {% endif %}
       {% else %}
-        <section class="empty">没有匹配的视频。可以调整筛选条件，或确认设置里的目标路径后点击扫描。</section>
+        <section class="empty"><h2>没有匹配的视频</h2><p>{% if filters.date_from and filters.date_to and filters.date_from > filters.date_to %}开始日期不能晚于结束日期。{% elif filters.q or filter_count %}试试更短的关键词，或放宽筛选条件。{% else %}可以调整筛选条件，或确认设置里的目标路径后点击扫描。{% endif %}</p><a href="{{ clear_filters_url }}">清空搜索与筛选</a>{% if filters.view == 'memories' %} · <a href="/?view=calendar">浏览日历</a>{% endif %}</section>
       {% endif %}
     </section>
 
     {% include '_inline_player.html' %}
   </div>
 {% endblock %}
+{% block overlays %}
+  {% if filters.view == 'timeline' and videos %}
+    <div class="timeline-gallery timeline-rail-host" data-timeline-rail-host hidden>
+      {% include '_timeline_rail.html' %}
+    </div>
+  {% endif %}
+{% endblock %}
 {% block scripts %}
-  <script type="application/x-vbr-script" data-page-script src="/static/app.js?v=2.6.13"></script>
-  <script type="application/x-vbr-script" data-page-script src="/static/library-scan.js?v=1"></script>
+  <script type="application/x-vbr-script" data-page-script src="/static/app.js?v=2.7.5&amp;revision=3"></script>
   {% if filters.view == 'timeline' %}
-    <script type="application/x-vbr-script" data-page-script src="/static/timeline-density.js?v=1"></script>
-    <script type="application/x-vbr-script" data-page-script src="/static/timeline.js?v=18"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/timeline-density.js?v=4"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/timeline.js?v=18&amp;revision=7"></script>
   {% endif %}
 {% endblock %}

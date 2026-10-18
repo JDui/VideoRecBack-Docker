@@ -1,12 +1,14 @@
 (() => {
   if (!timelineRoot?.hasAttribute("data-timeline-gallery") || !libraryPane) return;
-  const position = timelineRoot.querySelector("[data-gallery-position]");
-  const feedback = timelineRoot.querySelector("[data-gallery-feedback]");
-  const scrubber = timelineRoot.querySelector("[data-gallery-scrubber]");
-  const scrubDate = timelineRoot.querySelector("[data-gallery-scrub-date]");
+  const position = document.querySelector("[data-gallery-position]");
+  const feedback = document.querySelector("[data-gallery-feedback]");
+  const datePicker = document.querySelector('[data-gallery-date-picker]');
+  const railHost = document.querySelector('[data-timeline-rail-host]');
+  const scrubber = timelineRail.querySelector("[data-gallery-scrubber]");
+  const scrubDate = timelineRail.querySelector("[data-gallery-scrub-date]");
   const scrubArea = scrubber.parentElement;
-  const currentTick = timelineRoot.querySelector("[data-gallery-current-tick]");
-  const tickContainer = timelineRoot.querySelector("[data-gallery-date-ticks]");
+  const currentTick = timelineRail.querySelector("[data-gallery-current-tick]");
+  const tickContainer = timelineRail.querySelector("[data-gallery-date-ticks]");
   const previousSentinel = timelineRoot.querySelector("[data-gallery-previous]");
   const yearMarks = [...timelineRail.querySelectorAll('[data-kind="year"]')];
   const dateIndex = JSON.parse(timelineRoot.querySelector("[data-gallery-date-index]").textContent);
@@ -36,10 +38,13 @@
   let windowStartId = "";
 
   const { valueFor, dateFor } = densityAxis;
+  const densityColor = heat => `hsl(${280 * (1 - heat)} 46% 62%)`;
   const setCurrentValue = date => {
     currentDate = date;
     const value = valueFor(date);
     scrubber.setAttribute("aria-valuenow", String(value));
+    currentTick.style.setProperty("--density-ratio", String(densityAxis.densityFor(date)));
+    currentTick.style.setProperty("--density-color", densityColor(densityAxis.heatFor(date)));
     currentTick.style.top = "calc(8px + (100% - 16px) * " + value / 1000 + ")";
     scrubber.setAttribute("aria-valuetext", date.replace(/-/g, "/"));
   };
@@ -67,18 +72,14 @@
     favoriteStates.set(id, favorite);
   };
   const syncFavorite = link => syncFavoriteState(link.dataset.videoId, link.parentElement.dataset.galleryDate, link.dataset.favoriteState === "1");
-  const maximumCount = dateIndex.reduce((maximum, entry) => Math.max(maximum, entry.count), 1);
   densityAxis.bands.forEach((band, index) => {
     const entry = dateIndex[index];
-    const segment = document.createElement("span");
-    segment.className = "timeline-density-segment";
-    segment.style.top = band.start / 10 + "%";
-    segment.style.height = (band.end - band.start) / 10 + "%";
-    segment.style.opacity = String(0.18 + Math.sqrt(entry.count / maximumCount) * 0.55);
-    tickContainer.append(segment);
     const tick = document.createElement("span");
     tick.className = "timeline-date-tick";
     tick.dataset.date = entry.date;
+    tick.dataset.count = String(entry.count);
+    tick.style.setProperty("--density-ratio", String(band.density));
+    tick.style.setProperty("--density-color", densityColor(band.heat));
     tick.style.top = valueFor(entry.date) / 10 + "%";
     tickContainer.append(tick);
     dateTicks.set(entry.date, tick);
@@ -95,12 +96,14 @@
   };
   const updatePosition = () => {
     if (!cards.length || !rows.length) return;
-    const cutoff = libraryPane.getBoundingClientRect().top + position.parentElement.offsetHeight + 8;
+    const cutoff = libraryPane.getBoundingClientRect().top + 8;
     const row = rows.find(row => row[0].getBoundingClientRect().bottom > cutoff) || rows.at(-1);
     const card = row[0];
     const date = card.dataset.galleryDate;
-    const [year, month, day] = date.split("-").map(Number);
-    position.textContent = year + " / " + month + "月 / " + day + "日";
+    const year = Number(date.slice(0, 4));
+    position.textContent = date;
+    if (document.activeElement !== datePicker) datePicker.value = date;
+    datePicker.title = date;
     timelineRoot.dataset.currentPage = card.id;
     if (!dragging) {
       setCurrentValue(date);
@@ -138,7 +141,7 @@
     const width = timelineStack.getBoundingClientRect().width;
     if (!width) return;
     const gap = parseFloat(getComputedStyle(timelineStack).gap) || 10;
-    const target = Math.min(width / (16 / 9), Number(previewSize?.value || 176) * (window.innerWidth <= 600 ? 0.57 : 1.25));
+    const target = Math.min(width / (16 / 9), Number(previewSize?.value || 176) * (window.innerWidth <= 600 ? 0.85 : 1.25));
     rows = [];
     let row = [];
     let sum = 0;
@@ -168,15 +171,22 @@
     const lastRow = rows.at(-1);
     const bottomPadding = parseFloat(getComputedStyle(libraryPane).paddingBottom) || 0;
     const endSpace = windowStartId && lastRow ? Math.max(20,
-      libraryPane.clientHeight - position.parentElement.offsetHeight - lastRow[0].offsetHeight - bottomPadding) : 20;
+      libraryPane.clientHeight - lastRow[0].offsetHeight - bottomPadding) : 20;
     timelineRoot.style.setProperty("--gallery-end-space", endSpace + "px");
-    timelineRoot.style.setProperty("--rail-height", Math.max(120, libraryPane.clientHeight - 12) + "px");
+    const paneBounds = libraryPane.getBoundingClientRect();
+    const toolbarBounds = document.querySelector('.library-topbar')?.getBoundingClientRect();
+    const top = toolbarBounds?.top ?? paneBounds.top;
+    const railWidth = parseFloat(getComputedStyle(railHost).width) || 36;
+    railHost.style.left = timelineRoot.getBoundingClientRect().right - railWidth + 'px';
+    railHost.style.top = top + 'px';
+    railHost.style.setProperty('--rail-height', Math.max(0, paneBounds.bottom - top) + 'px');
+    railHost.style.visibility = 'visible';
     let lastLabelBottom = -Infinity;
     const axisHeight = scrubber.clientHeight;
     yearMarks.forEach(mark => {
       const date = mark.dataset.targetAnchor?.match(/timeline-(\d{4}-\d{2})/)?.[1];
       const target = dates.find(item => item.startsWith(date));
-      const value = valueFor(target || dates[0]);
+      const value = densityAxis.bands.find(band => band.date === target)?.start ?? 0;
       mark.hidden = false;
       const half = mark.offsetHeight / 2;
       const labelPosition = Math.max(half, Math.min(axisHeight - half, 8 + value / 1000 * (axisHeight - 16)));
@@ -192,7 +202,7 @@
   };
   const scrollToCard = card => {
     if (!card) return;
-    libraryPane.scrollTop += card.getBoundingClientRect().top - libraryPane.getBoundingClientRect().top - position.parentElement.offsetHeight;
+    libraryPane.scrollTop += card.getBoundingClientRect().top - libraryPane.getBoundingClientRect().top;
     updatePosition();
     saveTimelinePosition();
   };
@@ -369,7 +379,35 @@
     const target = dates.find(item => item.startsWith(date)) || dates[0];
     jump(target, mark.dataset.targetAnchor);
   }));
-  timelineRoot.querySelector("[data-gallery-latest]").addEventListener("click", () => jump(dates[0], "", false));
+  const railToggle = document.querySelector('[data-rail-toggle]');
+  const setRail = collapsed => {
+    timelineRoot.classList.toggle('is-rail-collapsed', collapsed);
+    timelineRail.hidden = collapsed;
+    railHost.hidden = collapsed;
+    railToggle.setAttribute('aria-expanded', String(!collapsed));
+    const label = collapsed ? '展开时间轴' : '收起时间轴';
+    railToggle.setAttribute('aria-label', label);
+    railToggle.title = label;
+    scheduleLayout();
+  };
+  let collapsed = window.innerWidth <= 600;
+  try {
+    const saved = localStorage.getItem('videorecback-timeline-rail');
+    if (saved !== null) collapsed = saved === '0';
+  } catch {}
+  setRail(collapsed);
+  railToggle.addEventListener('click', () => {
+    const next = !timelineRoot.classList.contains('is-rail-collapsed');
+    setRail(next);
+    try { localStorage.setItem('videorecback-timeline-rail', next ? '0' : '1'); } catch {}
+  });
+  datePicker.addEventListener('change', async () => {
+    if (!datePicker.value || !datePicker.checkValidity()) return;
+    const requestedDate = datePicker.value;
+    const date = dates.find(value => value <= requestedDate) || dates.at(-1);
+    await commitDate(date);
+    if (date !== requestedDate && currentDate === date && !feedback.textContent) feedback.textContent = `所选日期无视频，已定位到 ${date}`;
+  });
   timelineLoadSentinel.addEventListener("click", () => loadNextTimelineBatch());
   libraryPane.addEventListener("scroll", () => {
     if (!scrolling) {

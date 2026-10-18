@@ -1,11 +1,12 @@
 (() => {
   let navigating = false;
-  const navigate = (target, options = {}) => {
+  const navigate = async (target, options = {}) => {
     if (navigating) return;
     navigating = true;
     window.dispatchEvent(new CustomEvent('videorecback:navigate', { detail: { url: target } }));
     window.VideoRecBackLoading?.show(target, true);
-    requestAnimationFrame(() => requestAnimationFrame(() => location[options.replace ? 'replace' : 'assign'](target)));
+    await window.VideoRecBackMotion?.leave();
+    location[options.replace ? 'replace' : 'assign'](target);
   };
   window.VideoRecBackNavigate = navigate;
   document.addEventListener('click', event => {
@@ -18,6 +19,17 @@
     event.preventDefault();
     if (url.href === location.href) return;
     link.setAttribute('aria-busy', 'true');
+    navigate(url.href);
+  });
+  document.addEventListener('submit', event => {
+    const form = event.target;
+    if (event.defaultPrevented || !form.matches('[data-library-search], [data-library-filters]') || form.method.toLowerCase() !== 'get') return;
+    const url = new URL(form.action, location.href);
+    if (url.origin !== location.origin) return;
+    const params = new URLSearchParams(new FormData(form));
+    if (event.submitter?.name) params.append(event.submitter.name, event.submitter.value);
+    url.search = params.toString();
+    event.preventDefault();
     navigate(url.href);
   });
   window.addEventListener('pageshow', () => {

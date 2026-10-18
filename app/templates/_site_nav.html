@@ -11,6 +11,11 @@
       </nav>
       <div class="site-header-actions">
         <button class="intranet-jump-button{% if settings.intranet_keepalive_enabled and settings.intranet_redirect_host %} is-visible{% endif %}" type="button" data-intranet-jump aria-live="polite" {% if not settings.intranet_keepalive_enabled or not settings.intranet_redirect_host %}hidden{% endif %}>检测内网</button>
+        {% if library_urls or active in ['home', 'settings'] %}
+        <form class="topbar-scan" action="/scan" method="post" data-scan-form data-scan-running="{{ '1' if scan_running else '0' }}">
+          <button type="submit" data-scan-button class="{% if scan_running %}is-scanning{% endif %}"><span data-scan-label>{{ '更新中' if scan_running else '扫描' }}</span></button>
+        </form>
+        {% endif %}
         <a class="site-settings" href="/settings" {% if active == 'settings' %}aria-current="page"{% endif %} aria-label="设置" title="设置">{{ icon('settings') }}<span>设置</span></a>
       </div>
     </div>

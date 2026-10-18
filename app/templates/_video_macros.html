@@ -26,17 +26,9 @@
       {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
       {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
       <span class="asset-overlay">
-        <strong>{{ video.name }}</strong>
-        <span>{% if video.width and video.height %}{{ video.width }}×{{ video.height }}{% endif %}</span>
+        <strong>{{ video.name }}</strong>{% if video.folder %}<span class="asset-event">{{ video.folder }}</span>{% endif %}
+        <span>{% if settings.show_date %}{{ video.mtime|date }}{% endif %}{% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}{% if video.width and video.height %} · {{ video.width }}×{{ video.height }}{% endif %}</span>
       </span>
     </a>
-    <div class="asset-caption">
-      <strong title="{{ video.name }}">{{ video.name }}</strong>
-      <span>
-        {% if settings.show_date %}{{ video.mtime|date }}{% endif %}
-        {% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}
-        {% if settings.show_duration %}{% if settings.show_date or settings.show_size %} · {% endif %}{{ video.duration_seconds|duration }}{% endif %}
-      </span>
-    </div>
   </article>
 {% endmacro %}

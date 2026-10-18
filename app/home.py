@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.db import Database
+from app.dates import archive_now
 
 
 def memory_date_values(now: datetime | None = None) -> tuple[str, float]:
-    today = now or datetime.now()
-    return today.strftime("%m-%d"), datetime(today.year, 1, 1).timestamp()
+    today = archive_now(now)
+    return today.strftime("%m-%d"), today.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
 def random_videos(db: Database, exclude: list[int] | None = None, selected: list[int] | None = None):
@@ -55,11 +56,11 @@ def library_summary(db: Database) -> dict[str, int]:
 
 
 def home_content(db: Database, now: datetime | None = None) -> dict:
-    today = now or datetime.now()
+    today = archive_now(now)
     month_day, year_start = memory_date_values(today)
     with db.connect() as conn:
         recent = conn.execute(
-            "SELECT * FROM videos WHERE missing = 0 ORDER BY mtime DESC, id DESC LIMIT 6"
+            "SELECT * FROM videos WHERE missing = 0 ORDER BY mtime DESC, id DESC LIMIT 3"
         ).fetchall()
         favorites = conn.execute(
             """
@@ -70,7 +71,7 @@ def home_content(db: Database, now: datetime | None = None) -> dict:
         memories = conn.execute(
             """
             SELECT * FROM videos WHERE missing = 0 AND exclude_memories = 0 AND mtime < ?
-                AND strftime('%m-%d', mtime, 'unixepoch', 'localtime') = ?
+                AND archive_date(mtime, '%m-%d') = ?
             ORDER BY mtime DESC, id DESC LIMIT 2
             """,
             (year_start, month_day),

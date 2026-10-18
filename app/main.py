@@ -6,7 +6,7 @@ import os
 import re
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
@@ -32,6 +32,8 @@ from app.config import (
     save_settings,
 )
 from app.db import Database
+from app.dates import archive_datetime, archive_timezone, date_boundary
+from app.thumbnail_errors import describe_thumbnail_error
 from app.formatting import format_bitrate, format_date, format_duration, format_size
 from app.home import home_content, memory_date_values, random_videos
 from app.media import (
@@ -105,7 +107,7 @@ def create_app() -> FastAPI:
     templates.env.filters["size"] = format_size
     templates.env.filters["date"] = format_date
     templates.env.filters["bitrate"] = format_bitrate
-    templates.env.filters["memory_year"] = lambda value: datetime.fromtimestamp(value).year
+    templates.env.filters["memory_year"] = lambda value: archive_datetime(value).year
 
     def intranet_preflight(request: Request, settings: Settings):
         if (
@@ -168,17 +170,46 @@ def create_app() -> FastAPI:
             ).fetchone()[0]
             rows = conn.execute(
                 """
-                SELECT id, name, path, thumb_error FROM videos
-                WHERE missing = 0 AND thumb_status = 'error'
-                ORDER BY mtime DESC, id DESC LIMIT 50 OFFSET ?
+                SELECT videos.id, videos.name, videos.path, videos.thumb_error, videos.thumb_failed_at,
+                    videos.thumb_status, media_jobs.status AS job_status
+                FROM videos LEFT JOIN media_jobs ON media_jobs.video_id = videos.id
+                WHERE videos.missing = 0 AND videos.thumb_status = 'error'
+                ORDER BY videos.mtime DESC, videos.id DESC LIMIT 50 OFFSET ?
                 """,
                 (offset,),
             ).fetchall()
         return JSONResponse({
             "total": total,
-            "videos": [dict(row) for row in rows],
+            "videos": [thumbnail_error_payload(row) for row in rows],
             "next_offset": offset + len(rows) if offset + len(rows) < total else None,
         }, headers={"Cache-Control": "no-store"})
+
+    @app.post("/home/thumbnail-errors/retry")
+    async def retry_thumbnail_errors(video_id: int | None = Form(None)):
+        if video_id is not None:
+            get_video(db, video_id)
+        queued = await asyncio.to_thread(scanner.retry_failed_thumbnails, video_id)
+        return {"ok": True, "queued": len(queued), "video_ids": queued}
+
+    @app.get("/home/thumbnail-status")
+    async def thumbnail_status(ids: str):
+        try:
+            video_ids = list(dict.fromkeys(int(value) for value in ids.split(",")))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid video IDs")
+        if not video_ids or len(video_ids) > 100 or any(value < 1 for value in video_ids):
+            raise HTTPException(status_code=400, detail="Invalid video IDs")
+        placeholders = ",".join("?" for _ in video_ids)
+        with db.connect() as conn:
+            rows = conn.execute(
+                f"""SELECT videos.id, videos.thumb_status, videos.thumb_error, videos.thumb_failed_at,
+                    media_jobs.status AS job_status
+                    FROM videos LEFT JOIN media_jobs ON media_jobs.video_id = videos.id
+                    WHERE videos.missing = 0 AND videos.id IN ({placeholders})""", video_ids,
+            ).fetchall()
+            total = conn.execute("SELECT COUNT(*) FROM videos WHERE missing = 0 AND thumb_status = 'error'").fetchone()[0]
+        return JSONResponse({"videos": [thumbnail_error_payload(row) for row in rows], "total": total},
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/library", response_class=HTMLResponse)
     @app.get("/", response_class=HTMLResponse)
@@ -233,6 +264,9 @@ def create_app() -> FastAPI:
                 "filters": filters,
                 "stats": stats,
                 "view_urls": build_view_urls(filters),
+                "clear_filters_url": clear_filters_url(filters),
+                "filter_count": sum(bool(filters[key] and filters[key] != "all") for key in ("type", "duration", "aspect", "date_from", "date_to")),
+                "archive_timezone": str(archive_timezone()),
                 "timeline_groups": timeline_groups,
                 "timeline_rail": timeline_rail,
                 "timeline_date_index": build_timeline_date_index(all_rows) if filters["view"] == "timeline" else [],
@@ -297,7 +331,7 @@ def create_app() -> FastAPI:
         if start_date is not None:
             newer_cursor = (previous_cursor["mtime"], previous_cursor["id"]) if previous_cursor else None
             if newer_cursor is None and filters["date_to"]:
-                newer_cursor = (datetime.strptime(filters["date_to"], "%Y-%m-%d").timestamp() + 86400, 0)
+                newer_cursor = (date_boundary(filters["date_to"], next_day=True), 0)
             result["has_newer"] = bool(
                 newer_cursor is not None
                 and query_videos(db, original_filters, cursor=newer_cursor, limit=1, direction="newer")
@@ -315,6 +349,7 @@ def create_app() -> FastAPI:
             "settings.html",
             {
                 "settings": settings,
+                "scan_running": is_scan_running(app),
                 "thumbnail_refresh": request.query_params.get("thumbnail_refresh"),
                 "panorama_recheck": request.query_params.get("panorama_recheck"),
                 "metadata_recheck": request.query_params.get("metadata_recheck"),
@@ -629,6 +664,7 @@ def create_app() -> FastAPI:
                 "video": video,
                 "settings": settings,
                 "embed": request.query_params.get("embed") == "1",
+                "return_url": safe_return_url(request.query_params["return"]) if request.query_params.get("return") else "",
             },
         )
 
@@ -890,6 +926,42 @@ def ensure_tenbit_status(db: Database, video_id: int):
     return get_video(db, video_id)
 
 
+def thumbnail_error_payload(row) -> dict:
+    result = dict(row)
+    result.update(describe_thumbnail_error(result.get("thumb_error")))
+    failed_at = result.get("thumb_failed_at")
+    if failed_at:
+        result["failed_at_label"] = datetime.fromisoformat(failed_at).replace(tzinfo=timezone.utc).astimezone(archive_timezone()).strftime("%Y-%m-%d %H:%M")
+    else:
+        result["failed_at_label"] = "此前失败，时间未记录"
+    return result
+
+
+def clear_filters_url(filters: dict[str, str]) -> str:
+    values = {key: filters[key] for key in ("view", "folder", "calendar_zoom", "calendar_year", "calendar_month") if filters.get(key)}
+    return "/?" + urlencode(values)
+
+
+def safe_return_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return "/library"
+    if parsed.scheme or parsed.netloc or not value.startswith("/") or value.startswith("//") or "\\" in value or any(ord(char) < 32 for char in value):
+        return "/library"
+    return value
+
+
+def valid_date(value: str) -> str:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return ""
+    try:
+        date_boundary(value, next_day=True)
+    except (ValueError, OverflowError):
+        return ""
+    return value
+
+
 def read_filters(request: Request) -> dict[str, str]:
     params = request.query_params
     view = (
@@ -910,10 +982,10 @@ def read_filters(request: Request) -> dict[str, str]:
         "aspect": params.get("aspect", "all") if params.get("aspect", "all") in {"all", "wide", "vertical", "square"} else "all",
         "folder": params.get("folder", "").strip("/"),
         "calendar_zoom": calendar_zoom,
-        "calendar_year": calendar_year if calendar_year.isdigit() and len(calendar_year) == 4 else "",
+        "calendar_year": calendar_year if calendar_year.isdigit() and len(calendar_year) == 4 and 1 <= int(calendar_year) <= 9998 else "",
         "calendar_month": calendar_month if calendar_month.isdigit() and 1 <= int(calendar_month) <= 12 else "",
-        "date_from": date_from if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_from) else "",
-        "date_to": date_to if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_to) else "",
+        "date_from": valid_date(date_from),
+        "date_to": valid_date(date_to),
         "q": params.get("q", "").strip(),
     }
 
@@ -945,26 +1017,32 @@ def query_videos(
         clauses.append("aspect_ratio IS NOT NULL AND aspect_ratio < 0.8")
     elif filters["aspect"] == "square":
         clauses.append("aspect_ratio IS NOT NULL AND aspect_ratio >= 0.8 AND aspect_ratio < 1.4")
+    if filters["view"] == "folders" and filters.get("folder"):
+        folder = filters["folder"].strip("/")
+        prefix = folder + "/"
+        clauses.append("(trim(folder, '/') = ? OR substr(trim(folder, '/'), 1, ?) = ?)")
+        values.extend([folder, len(prefix), prefix])
     if filters["view"] == "favorites":
         clauses.append("favorite = 1")
     if filters["view"] == "memories":
         month_day, year_start = memory_date_values()
         clauses.append("exclude_memories = 0")
-        clauses.append("mtime < ? AND strftime('%m-%d', mtime, 'unixepoch', 'localtime') = ?")
+        clauses.append("mtime < ? AND archive_date(mtime, '%m-%d') = ?")
         values.extend([year_start, month_day])
     if filters["q"]:
-        clauses.append("(name LIKE ? OR folder LIKE ? OR relative_path LIKE ?)")
-        like = f"%{filters['q']}%"
+        clauses.append("(name LIKE ? ESCAPE '\\' OR folder LIKE ? ESCAPE '\\' OR relative_path LIKE ? ESCAPE '\\')")
+        literal = filters['q'].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{literal}%"
         values.extend([like, like, like])
     if filters.get("date_from"):
         clauses.append("mtime >= ?")
-        values.append(datetime.strptime(filters["date_from"], "%Y-%m-%d").timestamp())
+        values.append(date_boundary(filters["date_from"]))
     if filters.get("date_to"):
         clauses.append("mtime < ?")
-        values.append((datetime.strptime(filters["date_to"], "%Y-%m-%d").timestamp() + 86400))
+        values.append(date_boundary(filters["date_to"], next_day=True))
     if filters["view"] == "calendar" and filters["calendar_year"]:
-        year_start = datetime(int(filters["calendar_year"]), 1, 1).timestamp()
-        year_end = datetime(int(filters["calendar_year"]) + 1, 1, 1).timestamp()
+        year_start = date_boundary(f"{int(filters['calendar_year']):04d}-01-01")
+        year_end = date_boundary(f"{int(filters['calendar_year']) + 1:04d}-01-01")
         clauses.append("mtime >= ? AND mtime < ?")
         values.extend([year_start, year_end])
         if filters["calendar_month"]:
@@ -972,8 +1050,8 @@ def query_videos(
             month = int(filters["calendar_month"])
             next_year = year + 1 if month == 12 else year
             next_month = 1 if month == 12 else month + 1
-            month_start = datetime(year, month, 1).timestamp()
-            month_end = datetime(next_year, next_month, 1).timestamp()
+            month_start = date_boundary(f"{year:04d}-{month:02d}-01")
+            month_end = date_boundary(f"{next_year:04d}-{next_month:02d}-01")
             clauses.append("mtime >= ? AND mtime < ?")
             values.extend([month_start, month_end])
     if cursor is not None:
@@ -984,7 +1062,7 @@ def query_videos(
     order = "ASC" if direction == "newer" else "DESC"
     sql = f"""
         SELECT *,
-            strftime('timeline-%Y-%m-%d', mtime, 'unixepoch', 'localtime') AS timeline_day_anchor
+            archive_date(mtime, 'timeline-%Y-%m-%d') AS timeline_day_anchor
         FROM videos
         WHERE {' AND '.join(clauses)}
         ORDER BY mtime {order}, id {order}
@@ -1040,7 +1118,7 @@ def build_timeline_groups(rows):
 
     groups: dict[str, dict[str, object]] = {}
     for row in rows:
-        date = datetime.fromtimestamp(row["mtime"])
+        date = archive_datetime(row["mtime"])
         key = date.strftime(key_format)
         label = date.strftime(label_format)
         day_key = date.strftime("%Y-%m-%d")
@@ -1086,7 +1164,7 @@ def group_by_date(rows):
 def build_timeline_date_index(rows) -> list[dict[str, str | int]]:
     dates: dict[str, dict[str, int]] = {}
     for row in rows:
-        date = datetime.fromtimestamp(row["mtime"]).date().isoformat()
+        date = archive_datetime(row["mtime"]).date().isoformat()
         entry = dates.setdefault(date, {"count": 0, "favorite_count": 0})
         entry["count"] += 1
         if "favorite" in row.keys() and row["favorite"]:
@@ -1115,7 +1193,7 @@ def build_timeline_rail(rows) -> list[dict[str, object]]:
         return target_anchors.get((kind, key), (0, fallback))[1]
 
     for row in rows:
-        date = datetime.fromtimestamp(row["mtime"])
+        date = archive_datetime(row["mtime"])
         year = date.year if date.year >= TIMELINE_MIN_YEAR else TIMELINE_MIN_YEAR
         month = date.month if date.year >= TIMELINE_MIN_YEAR else 1
         day = date.day if date.year >= TIMELINE_MIN_YEAR else 1
@@ -1283,7 +1361,7 @@ def build_calendar_model(rows, filters: dict[str, str]) -> dict[str, object]:
     if zoom == "year":
         years: dict[str, list] = defaultdict(list)
         for row in rows:
-            years[datetime.fromtimestamp(row["mtime"]).strftime("%Y")].append(row)
+            years[archive_datetime(row["mtime"]).strftime("%Y")].append(row)
         return {
             "zoom": zoom,
             "zoom_urls": calendar_zoom_urls(filters),
@@ -1303,7 +1381,7 @@ def build_calendar_model(rows, filters: dict[str, str]) -> dict[str, object]:
     if zoom == "month":
         months: dict[str, list] = defaultdict(list)
         for row in rows:
-            date = datetime.fromtimestamp(row["mtime"])
+            date = archive_datetime(row["mtime"])
             months[date.strftime("%m")].append(row)
         return {
             "zoom": zoom,
@@ -1323,7 +1401,7 @@ def build_calendar_model(rows, filters: dict[str, str]) -> dict[str, object]:
 
     months: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
-        date = datetime.fromtimestamp(row["mtime"])
+        date = archive_datetime(row["mtime"])
         months[date.strftime("%Y年%m月")][date.strftime("%d日")].append(row)
     return {
         "zoom": zoom,

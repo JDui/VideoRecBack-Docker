@@ -8,9 +8,11 @@
       window.history.replaceState(window.history.state, "", pageUrl.toString());
     </script>
     {% endif %}
-    {{ stylesheet('/static/styles.css?v=2.6.13') }}
+    {{ stylesheet('/static/styles.css?v=2.7.5&revision=2') }}
     {% block head %}{% endblock %}
-    {{ stylesheet('/static/liquid-glass.css?v=7') }}
+    {{ stylesheet('/static/liquid-glass.css?v=8') }}
+    {{ stylesheet('/static/archive-ui.css?v=19') }}
+    {{ stylesheet('/static/motion.css?v=2') }}
   </head>
   <body
     class="{% block body_class %}{% endblock %}"
@@ -37,11 +39,15 @@
     <main class="page">
       {% block content %}{% endblock %}
     </main>
-    <script type="application/x-vbr-script" data-page-script src="/static/intranet.js?v=2.6.9"></script>
-    <script type="application/x-vbr-script" data-page-script src="/static/inline-player.js?v=1"></script>
-    <script type="application/x-vbr-script" data-page-script src="/static/video-actions.js?v=1"></script>
+    {% block overlays %}{% endblock %}
+    <script type="application/x-vbr-script" data-page-script src="/static/intranet.js?v=2.6.9&amp;revision=1"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/inline-player.js?v=3"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/video-actions.js?v=1&amp;revision=2"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/library-scan.js?v=2"></script>
     {% block scripts %}{% endblock %}
-    <script type="application/x-vbr-script" data-page-script src="/static/liquid-glass.js?v=5"></script>
-    <script type="application/x-vbr-script" data-page-script src="/static/navigation.js?v=1"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/archive-ui.js?v=3"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/liquid-glass.js?v=8"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/motion.js?v=4"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/navigation.js?v=4"></script>
   </body>
 </html>

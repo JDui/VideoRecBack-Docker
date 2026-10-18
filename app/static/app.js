@@ -235,10 +235,10 @@ const eventPoint = (event, fallbackElement = null) => {
 };
 
 const hideFavoriteContextMenu = () => favoriteContextMenu.hide();
-const openFavoriteContextMenu = (card, eventOrPoint) => {
+const openFavoriteContextMenu = (card, eventOrPoint, origin = card) => {
   const point = Number.isFinite(eventOrPoint?.x) && Number.isFinite(eventOrPoint?.y)
     ? eventOrPoint : eventOrPoint ? eventPoint(eventOrPoint, card) : null;
-  const items = [];
+  const items = [{ label: card.dataset.favoriteState === '1' ? '取消收藏' : '收藏视频', icon: 'sparkle', onSelect: () => toggleMenuFavorite(card) }];
   if (card.dataset.favoriteMenu === "1") items.push({
     label: "跳转到时间线位置", icon: "timeline",
     onSelect: () => window.VideoRecBackNavigate(card.dataset.timelineUrl || "/?view=timeline"),
@@ -255,7 +255,7 @@ const openFavoriteContextMenu = (card, eventOrPoint) => {
       onSelect: () => window.VideoRecBackActions.setParticipation(card, false, false),
     });
   }
-  favoriteContextMenu.open(card, point, items);
+  favoriteContextMenu.open(origin, point, items);
 };
 
 const favoriteLabelFor = (button) => button?.querySelector("[data-favorite-label]");
@@ -385,23 +385,44 @@ let longPressTimer = null;
 let longPressCard = null;
 let longPressTriggered = false;
 
+const toggleMenuFavorite = async (card, desired = card.dataset.favoriteState !== '1') => {
+  if (card.dataset.favoritePending === '1') return;
+  card.dataset.favoritePending = '1';
+  try {
+    const response = await fetch(`/video/${card.dataset.videoId}/favorite`, {
+      method: 'POST', body: new URLSearchParams({ favorite: desired ? '1' : '0' }),
+    });
+    if (!response.ok) throw new Error('Favorite update failed');
+    const result = await response.json();
+    for (const item of document.querySelectorAll('.asset-card[data-video-id]')) {
+      if (item.dataset.videoId === card.dataset.videoId) setCardFavoriteState(item, Boolean(result.favorite));
+    }
+    window.VideoRecBackActions.announce(result.favorite ? '已收藏' : '已取消收藏，刷新后从收藏列表移除。', {
+      label: '撤销', onSelect: () => toggleMenuFavorite(card, !result.favorite),
+    });
+  } catch { window.VideoRecBackActions.announce('收藏未能更新，请重试。'); }
+  finally { delete card.dataset.favoritePending; }
+};
+
 const eventCard = (event) => {
   const target = event.target instanceof Element ? event.target : null;
   return target?.closest("[data-settings-url]") || null;
 };
 
+const contextCard = event => eventCard(event) || (event.target instanceof Element
+  ? event.target.closest('.asset-item')?.querySelector('.asset-card[data-settings-url]') : null);
+
 document.addEventListener("contextmenu", (event) => {
-  const card = eventCard(event);
+  const card = contextCard(event);
   if (!card) return;
   event.preventDefault();
-  if (card.dataset.favoriteMenu === "1" || card.closest(".timeline-video")) openFavoriteContextMenu(card, event);
-  else window.VideoRecBackNavigate(card.dataset.settingsUrl);
+  openFavoriteContextMenu(card, event);
 });
 
 document.addEventListener("keydown", event => {
   if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-  const card = eventCard(event);
-  if (!card || (card.dataset.favoriteMenu !== "1" && !card.closest(".timeline-video"))) return;
+  const card = contextCard(event);
+  if (!card) return;
   event.preventDefault();
   openFavoriteContextMenu(card);
 });
@@ -428,15 +449,15 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("touchstart", (event) => {
-  const card = eventCard(event);
-  if (!card) return;
+  window.clearTimeout(longPressTimer);
+  const card = contextCard(event);
+  if (!card || event.touches.length !== 1 || event.target.closest('button, input, select, textarea')) return;
   longPressCard = card;
   longPressTriggered = false;
   const point = eventPoint(event, card);
   longPressTimer = window.setTimeout(() => {
     longPressTriggered = true;
-    if (card.dataset.favoriteMenu === "1" || card.closest(".timeline-video")) openFavoriteContextMenu(card, point);
-    else window.VideoRecBackNavigate(card.dataset.settingsUrl);
+    openFavoriteContextMenu(card, point);
   }, LONG_PRESS_MS);
 }, { passive: true });
 

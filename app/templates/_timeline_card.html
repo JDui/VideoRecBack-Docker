@@ -11,10 +11,10 @@
       {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
       <span class="timeline-year-badge" data-gallery-year hidden>{{ (video.mtime|date)[:4] }}</span>
       <span class="asset-overlay">
-        <strong>{{ video.name }}</strong>
+        <strong>{{ video.name }}</strong>{% if video.folder %}<span class="asset-event">{{ video.folder }}</span>{% endif %}
         <span>{% if settings.show_date %}{{ video.mtime|date }}{% endif %}{% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}{% if video.type == 'panorama' %} · 全景{% endif %}</span>
       </span>
     </a>
-    <button class="timeline-favorite" type="button" data-gallery-favorite data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-pressed="{{ 'true' if video.favorite else 'false' }}" aria-label="{{ '取消收藏' if video.favorite else '收藏视频' }}">{{ icon('heart') }}</button>
+    <button class="timeline-favorite" type="button" data-gallery-favorite data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-pressed="{{ 'true' if video.favorite else 'false' }}" aria-label="{{ '取消收藏' if video.favorite else '收藏视频' }}">{{ icon('sparkle') }}</button>
   </article>
 {% endmacro %}

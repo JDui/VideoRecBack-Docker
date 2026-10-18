@@ -1,7 +1,12 @@
 <style>
+  html[data-page-pending] { background:#f0f1f4; }
+  html[data-page-pending] body:not([data-intranet-preflight]) { visibility:hidden; }
   .page-loader { position:fixed; inset:0; z-index:10000; padding:28px clamp(16px,3vw,44px); box-sizing:border-box; background:linear-gradient(125deg,#dfe6ee,#ece8ef 55%,#eee5dc); color:#5d6471; font:14px system-ui,-apple-system,sans-serif; opacity:1; transition:opacity 180ms ease; pointer-events:auto; }
   .page-loader.is-leaving { opacity:0; }
-  .page-loader.is-navigation { top:var(--site-header-height,76px); padding-top:20px; }
+  .page-loader.is-navigation { inset:0 0 auto; height:3px; padding:0; overflow:hidden; background:transparent; pointer-events:none; }
+  .page-loader.is-navigation::before { content:""; display:block; width:40%; height:100%; background:#007aff; animation:loader-progress 1.2s cubic-bezier(.4,0,.2,1) infinite; }
+  .is-navigation .loader-grid { display:none; }
+  .is-navigation .loader-status { position:absolute; width:1px; height:1px; padding:0; margin:0; overflow:hidden; clip-path:inset(50%); }
   .loader-header { height:28px; width:min(440px,75%); border-radius:24px; background:rgba(255,255,255,.55); margin-bottom:40px; }
   .is-navigation .loader-header { display:none; }
   .loader-status { display:flex; align-items:center; gap:10px; margin:0 0 22px; }
@@ -15,9 +20,10 @@
   .page-loader[data-layout="player"] .loader-tile { aspect-ratio:16/9; }
   .page-loader[data-layout="player"] .loader-tile:nth-child(n+2), .page-loader[data-layout="settings"] .loader-tile:nth-child(n+3) { display:none; }
   @keyframes loader-shimmer { from { background-position:100% 0; } to { background-position:-100% 0; } }
+  @keyframes loader-progress { from { transform:translateX(-100%); } to { transform:translateX(350%); } }
   @keyframes loader-spin { to { transform:rotate(360deg); } }
   @media(max-width:700px) { .loader-grid { grid-template-columns:1fr; } .page-loader[data-layout="settings"] .loader-grid { grid-template-columns:1fr; } .page-loader[data-layout="settings"] .loader-tile:first-child { display:none; } }
-  @media(prefers-reduced-motion:reduce) { .page-loader,.loader-tile,.loader-status::before { animation:none; transition:none; } }
+  @media(prefers-reduced-motion:reduce) { .page-loader,.page-loader::before,.loader-tile,.loader-status::before { animation:none; transition:none; } .page-loader.is-navigation::before { width:100%; } }
 </style>
 <script>
 (() => {
@@ -32,22 +38,37 @@
   loader.setAttribute('aria-live', 'polite');
   loader.innerHTML = '<div class="loader-header"></div><p class="loader-status">正在载入</p><div class="loader-grid" aria-hidden="true">' + '<div class="loader-tile"></div>'.repeat(6) + '</div>';
   let hideTimer;
+  let showTimer;
   let holds = 0;
   let ready = false;
+  let revealed = false;
   const show = (target = location.href, navigation = false) => {
     clearTimeout(hideTimer);
+    clearTimeout(showTimer);
     const url = new URL(target, location.href);
     loader.dataset.layout = url.pathname === '/settings' ? 'settings' : url.pathname.startsWith('/video/') ? 'player' : url.pathname === '/library' || url.searchParams.has('view') ? 'library' : 'home';
     loader.classList.toggle('is-navigation', navigation);
     loader.classList.remove('is-leaving');
+    if (!navigation) document.documentElement.dataset.pagePending = '1';
+    showTimer = setTimeout(() => document.documentElement.append(loader), 220);
+  };
+  const fail = (message = '载入失败，请刷新重试') => {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    loader.classList.remove('is-navigation', 'is-leaving');
+    loader.querySelector('.loader-status').textContent = message;
     document.documentElement.append(loader);
   };
   const hide = () => {
     if (holds || !ready) return;
+    clearTimeout(showTimer);
+    delete document.documentElement.dataset.pagePending;
+    if (!revealed) { revealed = true; window.dispatchEvent(new Event('videorecback:ready')); }
+    if (!loader.isConnected) return;
     loader.classList.add('is-leaving');
     hideTimer = setTimeout(() => loader.remove(), matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 190);
   };
-  window.VideoRecBackLoading = { show, hide, hold: () => holds++, release: () => { holds = Math.max(0, holds - 1); if (!holds && document.readyState !== 'loading') requestAnimationFrame(() => requestAnimationFrame(hide)); } };
+  window.VideoRecBackLoading = { show, hide, fail, hold: () => holds++, release: () => { holds = Math.max(0, holds - 1); if (!holds && document.readyState !== 'loading') requestAnimationFrame(() => requestAnimationFrame(hide)); } };
   show();
   document.addEventListener('DOMContentLoaded', async () => {
     if (document.body.dataset.intranetPreflight === '1') return;
@@ -79,7 +100,7 @@
       ready = true;
       requestAnimationFrame(() => requestAnimationFrame(hide));
     } catch {
-      loader.querySelector('.loader-status').textContent = '载入失败，请刷新重试';
+      fail();
       const retry = document.createElement('button');
       retry.type = 'button'; retry.textContent = '重新载入';
       retry.style.cssText = 'padding:12px 20px;border:0;border-radius:24px;background:rgba(255,255,255,.8);font:inherit;cursor:pointer';
@@ -87,6 +108,12 @@
       loader.append(retry);
     }
   });
-  window.addEventListener('pageshow', event => { if (event.persisted) loader.remove(); });
+  window.addEventListener('pageshow', event => {
+    if (!event.persisted) return;
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    delete document.documentElement.dataset.pagePending;
+    loader.remove();
+  });
 })();
 </script>

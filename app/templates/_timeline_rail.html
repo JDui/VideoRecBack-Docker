@@ -1,0 +1,23 @@
+<aside id="timeline-date-rail" class="timeline-jump-rail" aria-label="快速跳转时间线" data-timeline-jump>
+  {% if filters.view == 'timeline' %}
+    <div class="timeline-scrubber">
+      <div class="timeline-date-axis" role="slider" tabindex="0" aria-label="时间轴，方向键选择日期" aria-description="刻度长度与柔和彩虹色经过非线性映射，越长、越接近红色表示视频越多；紫色表示较少，金色小点表示有收藏" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0" data-gallery-scrubber>
+        <div class="timeline-date-ticks" data-gallery-date-ticks aria-hidden="true"></div>
+        <span class="timeline-current-tick" data-gallery-current-tick aria-hidden="true"></span>
+      </div>
+      <output class="timeline-scrub-date" data-gallery-scrub-date role="tooltip"></output>
+  {% endif %}
+  {% for year in timeline_rail %}
+    <div class="timeline-jump-year">
+      <span>{{ year.year }}</span>
+      <div>
+        {% for mark in year.marks %}
+          <a class="timeline-jump-mark" href="{{ mark.href }}" data-kind="{{ mark.kind }}" data-year="{{ mark.year }}" data-month="{{ mark.month }}" data-day="{{ mark.day }}" data-period="{{ mark.period }}" data-target-anchor="{{ mark.target }}" data-count="{{ mark.count }}" aria-label="{{ mark.label }}，{{ mark.count }} 个视频">
+            <span>{{ mark.label }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+  {% if filters.view == 'timeline' %}</div>{% endif %}
+</aside>

@@ -1,4 +1,7 @@
+import { createPlayerAudio } from "./player-audio.js?v=1";
+
 const video = document.getElementById("videoPlayer");
+const audio = video ? createPlayerAudio(video) : null;
 const shell = document.querySelector(".player-shell");
 const stage = document.querySelector(".player-stage");
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -26,6 +29,7 @@ const videoBitDepth = Number(shell?.dataset.videoBitDepth || 8);
 const isTenBitVideo = Number.isFinite(videoBitDepth) && videoBitDepth >= 10;
 const transcodeOverlay = document.querySelector("[data-transcode-overlay]");
 const seekControl = document.querySelector("[data-seek-control]");
+const seekTrack = document.querySelector("[data-seek-track]");
 const timeValue = document.querySelector("[data-time-value]");
 const flatPlayButton = document.querySelector("[data-flat-play]");
 const centerAction = document.querySelector("[data-player-center-action]");
@@ -126,28 +130,30 @@ const clearStallRecovery = () => {
 
 const syncVolumeUi = () => {
   if (!video || !volumeControl) return;
-  const percent = String(Math.round(video.volume * 100));
+  const level = audio.getVolume();
+  const percent = String(Math.round((video.muted ? 0 : level) * 100));
   volumeControl.value = percent;
   if (volumeValue) volumeValue.textContent = `${percent}%`;
-  video.dataset.appliedVolume = String(video.volume);
+  volumeControl.setAttribute("aria-valuetext", `${percent}%${level > 1 && !video.muted ? "，音量增强" : ""}`);
+  volumeControl.closest("[data-volume-ramp]")?.style.setProperty("--volume-fill", `${Number(percent) / 1.5}%`);
+  video.dataset.appliedVolume = String(level);
 };
 
 const setVideoVolume = (nextVolume) => {
   if (!video) return;
-  video.volume = clamp(nextVolume, 0, 1);
-  video.muted = video.volume === 0;
+  const applied = audio.setVolume(nextVolume);
+  if (nextVolume > 1 && applied <= 1) showPlayerFeedback("当前浏览器不支持音量增强，最高为 100%");
   syncVolumeUi();
 };
 
 const toggleMute = () => {
   if (!video) return;
   if (!video.muted && video.volume > 0) {
-    video.dataset.previousVolume = String(video.volume);
+    video.dataset.previousVolume = String(audio.getVolume());
     video.muted = true;
   } else {
     const previousVolume = Number(video.dataset.previousVolume || video.dataset.appliedVolume || 0.6);
-    video.muted = false;
-    video.volume = clamp(Number.isFinite(previousVolume) && previousVolume > 0 ? previousVolume : 0.6, 0, 1);
+    audio.setVolume(Number.isFinite(previousVolume) && previousVolume > 0 ? previousVolume : 0.6);
   }
   syncVolumeUi();
   syncMuteUi();
@@ -155,6 +161,7 @@ const toggleMute = () => {
 
 const togglePlayback = () => {
   if (!video) return;
+  void audio.resume();
   if (!mediaLoaded) {
     const quality = video.dataset.currentQuality || "original";
     applyQualityAt?.(quality, getLogicalCurrentTime(), true);
@@ -175,7 +182,7 @@ const seekBy = (seconds) => {
 
 const changeVolumeBy = (delta) => {
   if (!video) return;
-  const baseVolume = video.muted ? Number(video.dataset.appliedVolume || 0.2) : video.volume;
+  const baseVolume = audio.getVolume();
   video.muted = false;
   setVideoVolume(baseVolume + delta);
   syncMuteUi();
@@ -260,9 +267,17 @@ const syncProgressUi = () => {
   if (seekControl && !seekingWithControl && document.activeElement !== seekControl) {
     seekControl.value = String(Math.round(progress * 1000));
   }
-  if (seekControl?.classList.contains("flat-player-progress")) {
-    seekControl.style.backgroundSize = `${Math.round(progress * 100)}% 100%, 100% 100%`;
+  const displayedProgress = seekControl ? Number(seekControl.value) / 1000 : progress;
+  seekTrack?.style.setProperty("--seek-progress", `${displayedProgress * 100}%`);
+  let buffered = 0;
+  for (let index = 0; index < (video?.buffered.length || 0); index++) {
+    if (video.buffered.start(index) <= video.currentTime && video.buffered.end(index) >= video.currentTime) {
+      buffered = (mediaTimeOffset + video.buffered.end(index)) / duration;
+      break;
+    }
   }
+  seekTrack?.style.setProperty("--seek-buffer", `${clamp(buffered, 0, 1) * 100}%`);
+  seekControl?.setAttribute("aria-valuetext", `${formatClock(displayedProgress * duration)} / ${formatClock(duration)}`);
   if (timeValue) {
     const current = formatClock(getLogicalCurrentTime());
     const total = Number.isFinite(duration) ? formatClock(duration) : "00:00";
@@ -319,9 +334,7 @@ if (video) {
     syncVolumeUi();
     volumeControl.addEventListener("input", () => {
       const nextVolume = Number(volumeControl.value) / 100;
-      video.muted = nextVolume === 0;
-      video.volume = clamp(nextVolume, 0, 1);
-      syncVolumeUi();
+      setVideoVolume(nextVolume);
     });
   }
   exposureControl = document.querySelector("[data-exposure-control]");
@@ -536,7 +549,7 @@ if (video) {
     }
   }
   if (speedSlider) {
-    const speedValues = (speedSlider.dataset.speedValues || "0.5,1,1.5,2,4")
+    const speedValues = (speedSlider.dataset.speedValues || "0.25,0.5,1,1.5,2,4")
       .split(",")
       .map((item) => Number(item))
       .filter((item) => Number.isFinite(item) && item > 0);
@@ -545,6 +558,7 @@ if (video) {
       const nextRate = speedValues[index] || 1;
       speedSlider.value = String(index);
       speedSlider.style.setProperty("--speed-index", String(index));
+      speedSlider.setAttribute("aria-valuetext", `${nextRate} 倍速`);
       if (speedValue) speedValue.textContent = `${nextRate}×`;
       if (video.playbackRate !== nextRate) {
         video.playbackRate = nextRate;
@@ -556,6 +570,7 @@ if (video) {
     speedSlider.addEventListener("change", applySpeed);
   }
   video.addEventListener("timeupdate", syncProgressUi);
+  video.addEventListener("progress", syncProgressUi);
   video.addEventListener("durationchange", syncProgressUi);
   video.addEventListener("loadedmetadata", () => {
     if (video.videoWidth && video.videoHeight) shell?.style.setProperty("--video-aspect-ratio", String(video.videoWidth / video.videoHeight));
@@ -574,6 +589,7 @@ if (video) {
   });
   video.addEventListener("play", syncPlayUi);
   video.addEventListener("play", () => {
+    void audio.resume();
     syncPlayUi();
     clearScheduledHlsStop();
     if (video.dataset.currentQuality !== "original" && !activeHlsSession) {
@@ -604,7 +620,8 @@ if (video) {
     if (!Number.isFinite(duration) || duration <= 0) return;
     const nextTime = duration * (Number(seekControl.value) / 1000);
     if (timeValue) timeValue.textContent = `${formatClock(nextTime)} / ${formatClock(duration)}`;
-    seekControl.style.backgroundSize = `${Number(seekControl.value) / 10}% 100%, 100% 100%`;
+    seekTrack?.style.setProperty("--seek-progress", `${Number(seekControl.value) / 10}%`);
+    seekControl.setAttribute("aria-valuetext", `${formatClock(nextTime)} / ${formatClock(duration)}`);
   });
   seekControl?.addEventListener("change", () => {
     const duration = getLogicalDuration();
@@ -659,6 +676,17 @@ if (video) {
   syncMuteUi();
 }
 
+const playbackSettings = document.querySelector("[data-playback-settings]");
+const playbackToggle = document.querySelector("[data-playback-toggle]");
+playbackToggle?.addEventListener("click", () => { playbackSettings.open = !playbackSettings.open; });
+playbackSettings?.addEventListener("toggle", () => {
+  playbackToggle?.setAttribute("aria-expanded", String(playbackSettings.open));
+});
+window.addEventListener("pagehide", event => { if (event.persisted) void audio?.suspend(); else void audio?.close(); });
+window.addEventListener("pageshow", event => { if (event.persisted) void audio?.resume(); });
+document.addEventListener("pointerdown", () => { void audio?.resume(); }, { passive: true });
+document.addEventListener("keydown", () => { void audio?.resume(); });
+
 if (shell?.dataset.videoType === "panorama" && video) {
   queueMicrotask(() => {
     initPanorama().catch(() => {
@@ -692,17 +720,17 @@ const markReturningFromPlayer = () => {
   }
 };
 
+const playerReturnTarget = () => {
+  const state = readReturnState();
+  const target = shell?.dataset.returnUrl || (state?.url ? state.url + (state.hash || '') : '/');
+  try {
+    const parsed = new URL(target, window.location.origin);
+    return target.startsWith('/') && parsed.origin === window.location.origin ? target : '/library';
+  } catch { return '/library'; }
+};
 const closePlayerPage = () => {
   shell?.classList.add("is-closing");
-  const params = new URLSearchParams(window.location.search);
-  const explicitReturn = params.get("return");
-  let target = "/";
-  if (explicitReturn && explicitReturn.startsWith("/")) {
-    target = explicitReturn;
-  } else {
-    const state = readReturnState();
-    if (state?.url) target = state.url;
-  }
+  const target = playerReturnTarget();
 
   markReturningFromPlayer();
   window.VideoRecBackNavigate(target, { replace: true });
@@ -714,7 +742,7 @@ const closePlayerPage = () => {
   }, 0);
 };
 
-const playerMenus = [...document.querySelectorAll('[data-quality-menu], [data-download-menu]')];
+const playerMenus = [...document.querySelectorAll('[data-quality-menu], [data-download-menu], [data-player-settings-menu]')];
 const downloadStatus = document.querySelector('[data-download-status]');
 document.querySelectorAll('[data-download-quality]').forEach(link => {
   link.addEventListener('click', () => {

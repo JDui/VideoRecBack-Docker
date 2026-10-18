@@ -100,7 +100,7 @@ randomGrid?.addEventListener('touchstart', event => {
   clearTimeout(homeLongPressTimer);
   homeLongPressCard = null;
   const card = homeRandomCard(event.target);
-  if (!card) return;
+  if (!card || event.touches.length !== 1) return;
   const touch = event.touches[0];
   homeLongPressTimer = setTimeout(() => {
     homeLongPressCard = card;
@@ -131,7 +131,7 @@ shuffleButton?.addEventListener('click', async () => {
   randomGrid.style.minHeight = randomGrid.getBoundingClientRect().height + 'px';
   randomGrid.setAttribute('aria-busy', 'true');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const outgoing = reduced ? null : randomGrid.animate([{ opacity: 1 }, { opacity: .4 }], { duration: 140, fill: 'forwards' });
+  const outgoing = reduced ? null : randomGrid.animate([{ opacity: 1 }, { opacity: .4 }], { duration: 140, easing: getComputedStyle(document.documentElement).getPropertyValue('--ease-exit').trim(), fill: 'forwards' });
   feedback.textContent = '';
   try {
     const response = await fetch(`/home/random?exclude=${encodeURIComponent(ids.join(','))}`, { cache: 'no-store' });
@@ -151,7 +151,7 @@ shuffleButton?.addEventListener('click', async () => {
     outgoing?.cancel();
     if (!reduced) await Promise.all([...randomGrid.children].map((card, index) => card.animate(
       [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
-      { duration: 220, delay: index * 25, fill: 'backwards', easing: 'ease-out' }
+      { duration: 220, delay: index * 25, fill: 'backwards', easing: getComputedStyle(document.documentElement).getPropertyValue('--ease-enter').trim() }
     ).finished));
     saveHomeRandom();
     feedback.textContent = '';
@@ -197,6 +197,7 @@ const pollScan = async () => {
       return;
     }
     wasScanning = state.scanning;
+    window.dispatchEvent(new CustomEvent("videorecback:scan-state", { detail: { scanning: wasScanning } }));
     scanButton.disabled = state.scanning;
     scanButton.textContent = state.scanning ? '正在更新' : '更新影像库';
     scanStatus.textContent = state.indexing ? '正在扫描' : state.processing_media ? `正在准备 ${state.pending_media} 个封面` : '扫描空闲';
@@ -221,6 +222,7 @@ scanForm?.addEventListener('submit', async event => {
     scanButton.textContent = '更新影像库';
   } finally {
     scanSubmitting = false;
+    window.dispatchEvent(new CustomEvent("videorecback:scan-state", { detail: { scanning: wasScanning } }));
   }
   await pollScan();
 });
@@ -232,3 +234,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 window.addEventListener('videorecback:player-closed', pollScan);
 
 window.addEventListener('videorecback:home-favorite', saveHomeRandom);
+
+window.addEventListener("videorecback:scan-started", () => { wasScanning = true; pollScan(); });
+window.addEventListener("videorecback:scan-complete", pollScan);

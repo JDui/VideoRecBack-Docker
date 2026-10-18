@@ -3,7 +3,7 @@
 {% block title %}首页 - {{ settings.site_title }}{% endblock %}
 {% block body_class %}home-page{% endblock %}
 {% block head %}
-  {{ stylesheet('/static/home.css?v=5') }}
+  {{ stylesheet('/static/home.css?v=6') }}
   {{ stylesheet('/static/site-shell.css?v=2') }}
 {% endblock %}
 {% block chrome %}
@@ -21,6 +21,11 @@
     <div class="home-grid home-grid--random" id="home-random" data-home-random>
       {% if home.summary.total %}{% with videos=home.random %}{% include '_home_random.html' %}{% endwith %}{% endif %}
     </div>
+    <nav class="home-random-controls" data-random-controls aria-label="随机视频切换" hidden>
+      <button type="button" data-random-previous aria-controls="home-random">上一张</button>
+      <output data-random-position aria-live="polite"></output>
+      <button type="button" data-random-next aria-controls="home-random">下一张</button>
+    </nav>
     <p class="home-feedback" data-home-feedback role="status"></p>
     {% if not home.summary.total %}
       <div class="home-empty home-empty--welcome"><h2>暂无视频</h2><p>设置视频目录后扫描即可。</p><a class="home-soft-button" href="/settings#library">设置视频目录</a></div>
@@ -37,7 +42,7 @@
     </section>
     <section class="home-section home-memories" aria-labelledby="memories-title">
       <header class="home-section-head"><h2 id="memories-title">那年今日</h2><a class="home-more" href="/?view=memories">查看全部</a></header>
-      <div class="home-memory-list">{% for video in home.memories %}{{ home_card(video, memory=True) }}{% else %}<p class="home-empty">往年的 {{ home.today_short }} 暂无视频</p>{% endfor %}</div>
+      <div class="home-memory-list">{% for video in home.memories %}{{ home_card(video, memory=True) }}{% else %}<div class="home-empty"><p>往年的 {{ home.today_short }} 暂无视频</p><a href="/?view=calendar">浏览日历，找一段回忆</a></div>{% endfor %}</div>
     </section>
   </div>
   <footer class="home-library-status" aria-labelledby="status-title" data-home-status data-scanning="{{ '1' if scan_running else '0' }}">
@@ -56,7 +61,10 @@
   </div>
   <dialog class="thumbnail-errors-dialog" data-thumbnail-errors-dialog aria-labelledby="thumbnail-errors-title">
     <header><h2 id="thumbnail-errors-title">封面失败</h2><button type="button" data-errors-close aria-label="关闭">关闭</button></header>
-    <p data-errors-status role="status"></p><ul data-errors-list></ul><button type="button" data-errors-more hidden>加载更多</button>
+    <p data-errors-status role="status"></p>
+    <div class="thumbnail-error-actions"><button type="button" data-errors-retry-all>仅重试失败项</button><button type="button" data-errors-refresh>刷新列表</button></div>
+    <p data-errors-feedback role="status" aria-live="polite"></p>
+    <ul data-errors-list></ul><button type="button" data-errors-more hidden>加载更多</button>
   </dialog>
 {% endblock %}
-{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/home.js?v=8"></script><script type="application/x-vbr-script" data-page-script src="/static/home-player.js?v=1"></script><script type="application/x-vbr-script" data-page-script src="/static/thumbnail-errors.js?v=1"></script>{% endblock %}
+{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/home.js?v=8&amp;revision=4"></script><script type="application/x-vbr-script" data-page-script src="/static/home-player.js?v=1"></script><script type="application/x-vbr-script" data-page-script src="/static/thumbnail-errors.js?v=1&amp;revision=1"></script>{% endblock %}

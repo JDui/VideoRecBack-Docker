@@ -69,7 +69,7 @@ def test_random_only_exclusion_preserves_memories_and_existing_memory_exclusion(
     content = home_content(video_app.state.db, datetime(2026, 10, 10))
     assert all(row["id"] != 2 for row in content["memories"])
     assert content["summary"]["total"] == 6
-    assert len(content["recent"]) == 6
+    assert len(content["recent"]) == 3
     assert content["summary"]["favorites"] == 6
 
 

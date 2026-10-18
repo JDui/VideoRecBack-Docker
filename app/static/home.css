@@ -22,7 +22,7 @@ body.home-page :focus-visible, body.preferences-page :focus-visible { outline: 2
 .home-soft-button:disabled { opacity: .55; cursor: default; }
 .home-grid { display: grid; gap: 14px; }
 .home-grid--random, .home-grid--favorites { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.home-grid--recent { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.home-grid--recent { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .home-video { min-width: 0; }
 .home-cover { display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; aspect-ratio: 16 / 9; border-radius: 7px; background: #e5ebe7; }
 .home-grid--random .home-cover { aspect-ratio: 2.1; }

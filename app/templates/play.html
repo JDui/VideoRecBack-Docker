@@ -5,13 +5,13 @@
 {% block content %}
   {% from "_icons.html" import icon %}
   {% set default_quality = settings.default_panorama_quality if video.type == "panorama" else settings.default_flat_quality %}
-  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-video-bit-depth="{{ video.bit_depth or 8 }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ default_quality }}" data-embed="{{ '1' if embed else '0' }}" style="--video-aspect-ratio: {{ (video.width / video.height) if video.width and video.height else 1.7777777778 }}">
+  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-video-bit-depth="{{ video.bit_depth or 8 }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ default_quality }}" data-embed="{{ '1' if embed else '0' }}" data-return-url="{{ return_url }}" style="--video-aspect-ratio: {{ (video.width / video.height) if video.width and video.height else 1.7777777778 }}">
     <header class="player-toolbar {% if embed %}player-toolbar--embed{% endif %}">
       {% if not embed %}
       <button class="player-back-button" type="button" data-player-close aria-label="返回视频列表" title="返回视频列表">{{ icon('back') }}</button>
       <div class="player-heading">
-        <div class="player-eyebrow"><span class="player-type-badge">{{ '全景视频' if video.type == 'panorama' else '平面视频' }}</span>{% if video.width and video.height %}<span>{{ video.width }} × {{ video.height }}</span>{% endif %}{% if settings.show_duration and video.duration_seconds %}<span>{{ video.duration_seconds|duration }}</span>{% endif %}</div>
         <h1 title="{{ video.name }}">{{ video.name }}</h1>
+        <div class="player-eyebrow"><span class="player-type-badge">{{ '全景视频' if video.type == 'panorama' else '平面视频' }}</span>{% if video.width and video.height %}<span>{{ video.width }} × {{ video.height }}</span>{% endif %}{% if settings.show_duration and video.duration_seconds %}<span>{{ video.duration_seconds|duration }}</span>{% endif %}</div>
       </div>
       {% endif %}
       <div class="player-toolbar-actions">
@@ -36,9 +36,19 @@
         </details>
         {% if not embed %}
         <button class="nav-button secondary favorite-toggle {% if video.favorite %}active{% endif %}" type="button" data-favorite-toggle data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-pressed="{{ 'true' if video.favorite else 'false' }}" aria-label="{{ '取消收藏' if video.favorite else '收藏视频' }}">
-          {{ icon('heart') }}<span data-favorite-label>{{ '已收藏' if video.favorite else '收藏' }}</span>
+          {{ icon('sparkle') }}<span data-favorite-label>{{ '已收藏' if video.favorite else '收藏' }}</span>
         </button>
-        <a class="nav-button secondary player-settings-link" href="/video/{{ video.id }}" aria-label="视频设置" title="视频设置">{{ icon('settings') }}<span>设置</span></a>
+        <details class="quality-menu player-settings-menu" data-player-settings-menu>
+          <summary class="nav-button secondary" aria-label="设置">{{ icon('settings') }}<span>设置</span></summary>
+          <div class="quality-menu-panel player-settings-panel">
+            <dl>
+              <div><dt>文件名</dt><dd>{{ video.name }}</dd></div>
+              {% if settings.show_date %}<div><dt>文件修改日期</dt><dd>{{ video.mtime|date }}</dd></div>{% endif %}
+              <div><dt>所属目录</dt><dd>{{ video.folder or '根目录' }}</dd></div>
+            </dl>
+            <a class="player-detail-settings" href="/video/{{ video.id }}">{{ icon('settings') }}<span>视频详细设置</span></a>
+          </div>
+        </details>
         {% endif %}
       </div>
       <p class="player-download-status" data-download-status role="status" aria-live="polite" hidden></p>
@@ -64,9 +74,15 @@
     </div>
     <div class="player-controls">
       <div class="flat-player-bar{% if video.type == 'panorama' %} progress-strip{% endif %}" data-flat-controls>
-        <input class="flat-player-progress" type="range" min="0" max="1000" value="0" aria-label="播放进度" data-seek-control>
+        <div class="player-seek-track" data-seek-track>
+          <span class="player-seek-buffer" aria-hidden="true"></span><span class="player-seek-played" aria-hidden="true"></span>
+          <input class="flat-player-progress" type="range" min="0" max="1000" value="0" aria-label="播放进度" data-seek-control>
+        </div>
         <div class="flat-player-controls">
-          <span class="player-time" data-time-value>00:00 / 00:00</span>
+          <div class="player-time-group">
+            <span class="player-time" data-time-value>00:00 / 00:00</span>
+            <button class="playback-settings-toggle" type="button" data-playback-toggle aria-expanded="false" aria-controls="playback-settings"><span>{{ icon('settings') }}播放调节</span><span class="settings-chevron" aria-hidden="true"></span></button>
+          </div>
           <div class="player-transport">
             <button class="flat-control-button flat-control-button--icon flat-control-button--seek" type="button" data-seek-step="-10" aria-label="后退10秒" title="后退10秒">{{ icon('rewind') }}</button>
             <button class="flat-control-button flat-control-button--icon player-play-button" type="button" data-flat-play aria-label="播放" title="播放"><span class="flat-play-glyph" aria-hidden="true"></span></button>
@@ -74,19 +90,21 @@
           </div>
           <div class="flat-volume-group">
             <button class="flat-control-button flat-control-button--icon" type="button" data-mute-toggle aria-label="静音" title="静音" aria-pressed="false">{{ icon('volume') }}</button>
-            <input class="flat-volume-slider" type="range" min="0" max="100" value="{{ settings.default_volume_percent }}" aria-label="音量" data-volume-control>
+            <span class="volume-ramp" data-volume-ramp><input class="flat-volume-slider" type="range" min="0" max="150" value="{{ settings.default_volume_percent }}" aria-label="音量" aria-description="音量范围 0 至 150%，超过 100% 增强音量" data-volume-control></span>
+            <output class="volume-value" data-volume-value>{{ settings.default_volume_percent }}%</output>
           </div>
           <button class="flat-control-button flat-control-button--icon" type="button" data-fullscreen-toggle aria-label="全屏" title="全屏">{{ icon('fullscreen') }}</button>
         </div>
       </div>
-      <details class="playback-settings" data-playback-settings>
-        <summary><span>{{ icon('settings') }}播放调节</span><span class="playback-settings-hint">倍速 · 曝光<span class="settings-chevron" aria-hidden="true"></span></span></summary>
-        <div class="playback-settings-panel">
+      <details class="playback-settings player-disclosure" id="playback-settings" data-playback-settings>
+        <summary hidden aria-hidden="true">倍速与曝光</summary>
+        <div class="playback-settings-panel player-disclosure-panel">
           <label class="control-row speed-strip" aria-label="播放倍速">
             <span class="control-label">倍速</span>
             <span class="control-field">
-              <input type="range" min="0" max="4" step="1" value="1" data-speed-slider data-speed-values="0.5,1,1.5,2,4">
+              <input type="range" min="0" max="5" step="1" value="2" data-speed-slider data-speed-values="0.25,0.5,1,1.5,2,4">
               <span class="speed-ghost" aria-hidden="true">
+                <span>0.25×</span>
                 <span>0.5×</span>
                 <span>1×</span>
                 <span>1.5×</span>
@@ -109,5 +127,5 @@
 {% endblock %}
 {% block scripts %}
   <script type="application/x-vbr-script" data-page-script src="/static/vendor/hls.min.js"></script>
-  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.6.13"></script>
+  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.5&amp;revision=2"></script>
 {% endblock %}
