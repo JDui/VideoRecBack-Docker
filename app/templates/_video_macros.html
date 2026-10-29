@@ -25,6 +25,7 @@
       </span>
       {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
       {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
+      {% if video.hdr_format %}<span class="asset-hdr-badges"><span class="asset-hdr">HDR</span><span class="asset-hdr-standard">{{ video.hdr_format }}</span></span>{% endif %}
       <span class="asset-overlay">
         <strong>{{ video.name }}</strong>{% if video.folder %}<span class="asset-event">{{ video.folder }}</span>{% endif %}
         <span>{% if settings.show_date %}{{ video.mtime|date }}{% endif %}{% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}{% if video.width and video.height %} · {{ video.width }}×{{ video.height }}{% endif %}</span>

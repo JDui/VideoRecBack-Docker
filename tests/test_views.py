@@ -695,8 +695,8 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     with app.state.db.connect() as conn:
         conn.execute(
             """
-            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, thumb_status, bit_depth)
-            VALUES (?, 'flat.mp4', ?, 0, 'flat', 1, 'ready', 10)
+            INSERT INTO videos(path, name, mtime, missing, type, size_bytes, thumb_status, bit_depth, hdr_format, hdr_checked)
+            VALUES (?, 'flat.mp4', ?, 0, 'flat', 1, 'ready', 10, 'HLG', 1)
             """,
             (str(tmp_path / "flat.mp4"), datetime(2026, 7, 8).timestamp()),
         )
@@ -709,6 +709,8 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
+    assert 'class="asset-hdr">HDR</span>' in response.text
+    assert 'class="asset-hdr-standard">HLG</span>' in response.text
     assert "/static/app.js?v=2.7.5" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text

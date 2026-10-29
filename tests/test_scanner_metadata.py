@@ -6,7 +6,22 @@ import pytest
 
 from app.scanner import THUMBNAIL_VERSION, Scanner, calculate_aspect_ratio, safe_relative_path
 from app.thumbnails import VideoToolError
-from app.thumbnails import ProbeResult
+from app.thumbnails import ProbeResult, detect_hdr_format
+
+
+@pytest.mark.parametrize(
+    ("stream", "expected"),
+    [
+        ({"color_transfer": "arib-std-b67", "color_primaries": "bt2020"}, "HLG"),
+        ({"color_transfer": "smpte2084", "color_primaries": "bt2020", "side_data_list": [{"side_data_type": "Mastering display metadata"}]}, "HDR10"),
+        ({"color_transfer": "smpte2084", "color_primaries": "bt2020", "side_data_list": [{"side_data_type": "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)"}]}, "HDR10+"),
+        ({"dv_profile": 8, "color_transfer": "smpte2084"}, "Dolby Vision"),
+        ({"color_transfer": "smpte2084", "color_primaries": "bt2020"}, "PQ"),
+        ({"color_transfer": "bt709", "color_primaries": "bt709"}, None),
+    ],
+)
+def test_detect_hdr_format(stream, expected):
+    assert detect_hdr_format(stream) == expected
 
 
 def test_calculate_aspect_ratio():
@@ -70,7 +85,7 @@ def test_scan_records_bit_depth_and_codec(monkeypatch, tmp_path):
     db.init()
     scanner = Scanner(db, tmp_path / "data")
 
-    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(10, 1920, 1080, 10, "hevc", "420", 8_500_000))
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(10, 1920, 1080, 10, "hevc", "420", 8_500_000, "HLG"))
     monkeypatch.setattr("app.scanner.generate_thumbnail", lambda *args: None)
 
     scanner._scan_file_sync(Settings(video_root=str(root)), target)
@@ -78,7 +93,7 @@ def test_scan_records_bit_depth_and_codec(monkeypatch, tmp_path):
     with db.connect() as conn:
         row = conn.execute(
             """
-            SELECT bit_depth, is_10bit, video_codec, chroma_subsampling, average_bitrate
+            SELECT bit_depth, is_10bit, video_codec, chroma_subsampling, average_bitrate, hdr_format, hdr_checked
             FROM videos
             WHERE name = 'tenbit.mp4'
             """
@@ -89,6 +104,8 @@ def test_scan_records_bit_depth_and_codec(monkeypatch, tmp_path):
     assert row["video_codec"] == "hevc"
     assert row["chroma_subsampling"] == "420"
     assert row["average_bitrate"] == 8_500_000
+    assert row["hdr_format"] == "HLG"
+    assert row["hdr_checked"] == 1
 
 
 def test_scan_does_not_backfill_only_missing_tenbit_status(monkeypatch, tmp_path):
@@ -115,9 +132,9 @@ def test_scan_does_not_backfill_only_missing_tenbit_status(monkeypatch, tmp_path
             INSERT INTO videos(
                 path, name, mtime, missing, type, size_bytes, duration_seconds,
                 width, height, bit_depth, is_10bit, chroma_subsampling, average_bitrate,
-                thumb_status, thumb_path, thumb_version
+                thumb_status, thumb_path, thumb_version, hdr_checked
             )
-            VALUES (?, 'old.mp4', ?, 0, 'flat', ?, 12, 1920, 1080, 8, NULL, '420', 1000, 'ready', ?, ?)
+            VALUES (?, 'old.mp4', ?, 0, 'flat', ?, 12, 1920, 1080, 8, NULL, '420', 1000, 'ready', ?, ?, 1)
             """,
             (str(target), stat.st_mtime, stat.st_size, str(thumb), THUMBNAIL_VERSION),
         )
@@ -440,6 +457,56 @@ def test_media_worker_completes_deferred_metadata_and_thumbnail(monkeypatch, tmp
     assert video["duration_seconds"] == 12
     assert video["bit_depth"] == 10
     assert video["is_10bit"] == 1
+    assert video["thumb_status"] == "ready"
+    assert jobs == 0
+
+
+def test_media_metadata_refresh_does_not_regenerate_current_thumbnail(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    target = root / "existing.mp4"
+    target.write_bytes(b"video")
+    db = Database(tmp_path / "data")
+    db.init()
+    scanner = Scanner(db, tmp_path / "data")
+    thumb = scanner.cache_dir / "existing-thumb.webp"
+    thumb.parent.mkdir(parents=True, exist_ok=True)
+    thumb.write_bytes(b"existing thumbnail")
+    with db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO videos(
+                id, path, name, type, size_bytes, duration_seconds, width, height,
+                bit_depth, is_10bit, chroma_subsampling, average_bitrate, video_codec,
+                mtime, missing, thumb_status, thumb_path, thumb_version, media_version,
+                hdr_checked
+            ) VALUES (1, ?, 'existing.mp4', 'flat', 5, 12, 1920, 1080, 10, 1,
+                '420', 1000, 'hevc', ?, 0, 'ready', ?, ?, 1, 0)
+            """,
+            (str(target), target.stat().st_mtime, str(thumb), THUMBNAIL_VERSION),
+        )
+        conn.execute("INSERT INTO media_jobs(video_id, status) VALUES (1, 'pending')")
+
+    monkeypatch.setattr(
+        "app.scanner.probe_video",
+        lambda path: ProbeResult(12, 1920, 1080, 10, "hevc", "420", 1000, "HLG"),
+    )
+    monkeypatch.setattr(
+        "app.scanner.generate_thumbnail",
+        lambda *args: (_ for _ in ()).throw(AssertionError("current thumbnail must be reused")),
+    )
+
+    summary = scanner._process_media_jobs_sync(Settings(video_root=str(root)), limit=1)
+    with db.connect() as conn:
+        video = conn.execute(
+            "SELECT hdr_format, hdr_checked, thumb_status FROM videos WHERE id = 1"
+        ).fetchone()
+        jobs = conn.execute("SELECT COUNT(*) AS count FROM media_jobs").fetchone()["count"]
+
+    assert summary.indexed == 1
+    assert summary.thumbnails == 0
+    assert video["hdr_format"] == "HLG"
+    assert video["hdr_checked"] == 1
     assert video["thumb_status"] == "ready"
     assert jobs == 0
 

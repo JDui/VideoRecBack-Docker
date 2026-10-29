@@ -224,6 +224,8 @@ class Scanner:
                         aspect_ratio = NULL,
                         bit_depth = NULL,
                         is_10bit = NULL,
+                        hdr_format = NULL,
+                        hdr_checked = 0,
                         chroma_subsampling = NULL,
                         average_bitrate = NULL,
                         video_codec = NULL,
@@ -461,19 +463,28 @@ class Scanner:
                     raise VideoToolError(f"Unable to read video metadata: {path}")
                 with self.db.connect() as conn:
                     video = conn.execute(
-                        "SELECT type, duration_seconds FROM videos WHERE id = ?",
+                        "SELECT type, duration_seconds, thumb_status, thumb_version, thumb_path FROM videos WHERE id = ?",
                         (video_id,),
                     ).fetchone()
                 if video is None:
                     continue
-                if not self._generate_and_record_thumbnail(
-                    path,
-                    video_id,
-                    video["type"],
-                    video["duration_seconds"],
-                    settings.thumbnail_resolution,
-                ):
-                    raise VideoToolError(f"Unable to generate thumbnail: {path}")
+                thumbnail_is_current = (
+                    video["thumb_status"] == "ready"
+                    and int(video["thumb_version"] or 0) == THUMBNAIL_VERSION
+                    and bool(video["thumb_path"])
+                    and Path(video["thumb_path"]).is_file()
+                )
+                thumbnail_generated = False
+                if not thumbnail_is_current:
+                    if not self._generate_and_record_thumbnail(
+                        path,
+                        video_id,
+                        video["type"],
+                        video["duration_seconds"],
+                        settings.thumbnail_resolution,
+                    ):
+                        raise VideoToolError(f"Unable to generate thumbnail: {path}")
+                    thumbnail_generated = True
                 with self.db.connect() as conn:
                     conn.execute(
                         "UPDATE videos SET media_version = ? WHERE id = ?",
@@ -481,7 +492,8 @@ class Scanner:
                     )
                     conn.execute("DELETE FROM media_jobs WHERE id = ?", (job_id,))
                 summary.indexed += 1
-                summary.thumbnails += 1
+                if thumbnail_generated:
+                    summary.thumbnails += 1
             except (VideoToolError, OSError) as exc:
                 summary.errors += 1
                 with self.db.connect() as conn:
@@ -529,7 +541,10 @@ class Scanner:
                 )
                 thumb_path = row["thumb_path"]
                 thumb_missing = not thumb_path or not Path(thumb_path).exists()
-                if int(row["media_version"] or 0) < MEDIA_VERSION and not metadata_values_complete(row):
+                if (
+                    int(row["media_version"] or 0) < MEDIA_VERSION
+                    and not metadata_values_complete(row)
+                ) or int(row["hdr_checked"] or 0) != 1:
                     unchanged_metadata_id = row_id
                 version_stale = row["thumb_version"] != THUMBNAIL_VERSION
                 if row["thumb_status"] in {"pending", "error"} or thumb_missing or version_stale:
@@ -564,6 +579,8 @@ class Scanner:
         chroma_subsampling = None
         average_bitrate = None
         is_10bit = None
+        hdr_format = None
+        hdr_checked = 0
         thumb_status = "pending"
         thumb_error = None
         try:
@@ -576,6 +593,8 @@ class Scanner:
             video_codec = probe.codec_name
             chroma_subsampling = probe.chroma_subsampling
             average_bitrate = probe.average_bitrate
+            hdr_format = probe.hdr_format
+            hdr_checked = 1
         except (VideoToolError, OSError) as exc:
             thumb_status = "error"
             thumb_error = str(exc)
@@ -641,6 +660,10 @@ class Scanner:
                     thumb_path,
                     THUMBNAIL_VERSION,
                 ),
+            )
+            conn.execute(
+                "UPDATE videos SET hdr_format = ?, hdr_checked = ? WHERE path = ?",
+                (hdr_format, hdr_checked, path_text),
             )
             row = conn.execute("SELECT id FROM videos WHERE path = ?", (path_text,)).fetchone()
             video_id = int(row["id"])
@@ -780,6 +803,8 @@ class Scanner:
                     chroma_subsampling = ?,
                     average_bitrate = ?,
                     video_codec = ?,
+                    hdr_format = ?,
+                    hdr_checked = 1,
                     type = CASE WHEN ? = 'panorama' THEN 'panorama' ELSE type END,
                     media_version = CASE
                         WHEN thumb_status = 'ready' AND thumb_version = ? THEN ?
@@ -798,6 +823,7 @@ class Scanner:
                     probe.chroma_subsampling,
                     probe.average_bitrate,
                     probe.codec_name,
+                    probe.hdr_format,
                     video_type,
                     THUMBNAIL_VERSION,
                     MEDIA_VERSION,
@@ -981,8 +1007,8 @@ def media_data_incomplete(row) -> bool:
         or not Path(thumb_path).exists()
     )
     if int(row["media_version"] or 0) >= MEDIA_VERSION:
-        return thumbnail_missing
-    return thumbnail_missing or not metadata_values_complete(row)
+        return thumbnail_missing or int(row["hdr_checked"] or 0) != 1
+    return thumbnail_missing or not metadata_values_complete(row) or int(row["hdr_checked"] or 0) != 1
 
 
 def metadata_values_complete(row) -> bool:

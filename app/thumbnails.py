@@ -34,6 +34,7 @@ class ProbeResult:
     codec_name: str | None = None
     chroma_subsampling: str | None = None
     average_bitrate: int | None = None
+    hdr_format: str | None = None
 
 
 @dataclass(slots=True)
@@ -61,7 +62,7 @@ def probe_video(path: Path) -> ProbeResult:
             "-v",
             "error",
             "-show_entries",
-            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile,bit_rate:format=duration,bit_rate",
+            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile,bit_rate,color_transfer,color_primaries,color_space,dv_profile,dv_bl_signal_compatibility_id:stream_side_data=side_data_type,dv_profile,dv_bl_signal_compatibility_id:format=duration,bit_rate",
             "-of",
             "json",
             str(path),
@@ -85,7 +86,39 @@ def probe_video(path: Path) -> ProbeResult:
         str(stream.get("codec_name") or "") or None,
         detect_chroma_subsampling(stream),
         parse_positive_int(format_data.get("bit_rate")) or parse_positive_int(stream.get("bit_rate")),
+        detect_hdr_format(stream),
     )
+
+
+def detect_hdr_format(stream: dict[str, object]) -> str | None:
+    transfer = str(stream.get("color_transfer") or "").strip().lower()
+    primaries = str(stream.get("color_primaries") or "").strip().lower()
+    side_data = stream.get("side_data_list") or []
+    side_types = [
+        str(item.get("side_data_type") or "").lower()
+        for item in side_data
+        if isinstance(item, dict)
+    ] if isinstance(side_data, list) else []
+    side_text = " ".join(side_types)
+    has_dolby_vision = bool(stream.get("dv_profile") or stream.get("dv_bl_signal_compatibility_id")) or any(
+        marker in side_text for marker in ("dolby vision", "dovi configuration", "dovi metadata")
+    )
+    if has_dolby_vision:
+        return "Dolby Vision"
+    if "cuva 005" in side_text or "dynamic hdr vivid" in side_text or "hdr vivid" in side_text:
+        return "HDR Vivid"
+    if "smpte2094-40" in side_text or "hdr10+" in side_text:
+        return "HDR10+"
+    if transfer == "arib-std-b67":
+        return "HLG"
+    if transfer == "smpte2084":
+        has_static_metadata = any(
+            marker in side_text for marker in ("mastering display metadata", "content light level metadata")
+        )
+        if primaries in {"bt2020", "bt2020nc", "bt2020_ncl"} and has_static_metadata:
+            return "HDR10"
+        return "PQ"
+    return None
 
 
 def detect_bit_depth(stream: dict[str, object]) -> int | None:
