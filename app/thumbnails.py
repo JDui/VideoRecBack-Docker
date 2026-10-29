@@ -78,6 +78,12 @@ def probe_video(path: Path) -> ProbeResult:
     format_data = payload.get("format", {})
     raw_duration = format_data.get("duration")
     stream = next((item for item in payload.get("streams", []) if item.get("width") and item.get("height")), {})
+    # HEVC static/dynamic HDR metadata is commonly frame SEI, not stream side data.
+    # Bound decoding by packet count and wall time; an optional HDR probe must not
+    # discard otherwise usable duration/dimensions when the decoder is unsupported.
+    if str(stream.get("color_transfer") or "") in {"smpte2084", "arib-std-b67"} and detect_hdr_format(stream) != "Dolby Vision":
+        side_data = probe_hdr_frame_side_data(ffprobe, path)
+        stream = {**stream, "side_data_list": list(stream.get("side_data_list") or []) + side_data}
     return ProbeResult(
         float(raw_duration) if raw_duration else None,
         int(stream["width"]) if stream.get("width") else None,
@@ -88,6 +94,23 @@ def probe_video(path: Path) -> ProbeResult:
         parse_positive_int(format_data.get("bit_rate")) or parse_positive_int(stream.get("bit_rate")),
         detect_hdr_format(stream),
     )
+
+
+def probe_hdr_frame_side_data(ffprobe: str, path: Path) -> list[dict[str, object]]:
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-threads", "1", "-select_streams", "v:0",
+             "-read_intervals", "%+#32", "-show_frames", "-show_entries",
+             "frame_side_data=side_data_type", "-of", "json", str(path)],
+            check=False, capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return []
+        payload = json.loads(result.stdout or "{}")
+        return [item for frame in payload.get("frames", [])
+                for item in frame.get("side_data_list", []) if isinstance(item, dict)]
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return []
 
 
 def detect_hdr_format(stream: dict[str, object]) -> str | None:

@@ -438,3 +438,6 @@ body.player-page .player-play-button.glass-surface { background:rgba(55,123,213,
   .home-page .home-video-caption,
   .home-page .home-video--memory .home-video-caption { padding:12px 8px 24px; }
 }
+
+/* Keep HDR labels clear of the favorite button and its expanded hit target. */
+.timeline-gallery .asset-hdr-badges { right: 42px; max-width: calc(100% - 50px); pointer-events: none; }

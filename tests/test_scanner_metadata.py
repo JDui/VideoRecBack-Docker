@@ -387,8 +387,8 @@ def test_full_scan_skips_unchanged_database_writes(monkeypatch, tmp_path):
             INSERT INTO videos(
                 id, path, name, relative_path, folder, size_bytes, duration_seconds,
                 width, height, bit_depth, chroma_subsampling, average_bitrate,
-                mtime, mtime_ns, thumb_status, thumb_path, thumb_version, updated_at
-            ) VALUES(1, ?, 'existing.mp4', 'existing.mp4', '/', ?, 10, 1920, 1080, 8, '420', 1000, ?, ?, 'ready', ?, ?, '2000-01-01')
+                mtime, mtime_ns, thumb_status, thumb_path, thumb_version, hdr_checked, updated_at
+            ) VALUES(1, ?, 'existing.mp4', 'existing.mp4', '/', ?, 10, 1920, 1080, 8, '420', 1000, ?, ?, 'ready', ?, ?, 1, '2000-01-01')
             """,
             (str(target), stat.st_size, stat.st_mtime, stat.st_mtime_ns, str(thumb), THUMBNAIL_VERSION),
         )
@@ -602,3 +602,47 @@ def test_scan_folder_deletes_only_missing_folder_records(monkeypatch, tmp_path):
     assert rows == ["kept.mp4", "outside.mp4"]
     assert not removed_thumb.exists()
     assert outside_thumb.exists()
+
+
+@pytest.mark.parametrize('side_type, expected', [
+    ('Mastering display metadata', 'HDR10'),
+    ('HDR Dynamic Metadata SMPTE2094-40 (HDR10+)', 'HDR10+'),
+    ('HDR Dynamic Metadata CUVA 005.1 2021 (HDR Vivid)', 'HDR Vivid'),
+])
+def test_probe_video_reads_bounded_frame_hdr_metadata(monkeypatch, side_type, expected):
+    import json
+    from types import SimpleNamespace
+    from app import thumbnails
+    calls = []
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        payload = ({'frames': [{'side_data_list': [{'side_data_type': side_type}]}]}
+                   if '-show_frames' in command else
+                   {'streams': [{'width': 64, 'height': 64, 'color_transfer': 'smpte2084',
+                                 'color_primaries': 'bt2020'}], 'format': {'duration': '1'}})
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr='')
+    monkeypatch.setattr(thumbnails, 'require_tool', lambda name: name)
+    monkeypatch.setattr(thumbnails.subprocess, 'run', run)
+    result = thumbnails.probe_video(Path('hdr.mp4'))
+    assert result.hdr_format == expected
+    assert calls[1][0][calls[1][0].index('-read_intervals') + 1] == '%+#32'
+    assert calls[1][1]['timeout'] == 15
+
+
+def test_optional_frame_probe_timeout_preserves_base_metadata(monkeypatch):
+    import json
+    import subprocess
+    from types import SimpleNamespace
+    from app import thumbnails
+    def run(command, **kwargs):
+        if '-show_frames' in command:
+            raise subprocess.TimeoutExpired(command, 15)
+        return SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({
+            'streams': [{'width': 64, 'height': 64, 'color_transfer': 'smpte2084'}],
+            'format': {'duration': '1'}}))
+    monkeypatch.setattr(thumbnails, 'require_tool', lambda name: name)
+    monkeypatch.setattr(thumbnails.subprocess, 'run', run)
+    result = thumbnails.probe_video(Path('hdr.mp4'))
+    assert result.hdr_format == 'PQ'
+    assert result.duration_seconds == 1
+    assert result.width == 64

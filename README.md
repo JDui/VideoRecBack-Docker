@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前版本：**2.7.5**。从 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest) 下载 Docker 镜像包，或从源码构建。
+当前源码版本：**2.7.6**。本次为验收构建，尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
 
 ## 页面展示
 
@@ -75,7 +75,7 @@ sha256sum -c SHA256SUMS
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.7.5
+    image: videorecback:2.7.6
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -99,12 +99,12 @@ docker compose up -d
 ```bash
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
-git checkout v2.7.5
-docker build -t videorecback:2.7.5 .
+# 使用随 2.7.6 验收包提供的源码；远端尚无 v2.7.6 标签
+docker build -t videorecback:2.7.6 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.5 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.6 .`。
 
 ## 升级与数据目录
 
@@ -121,6 +121,14 @@ docker compose up -d
 ## 日期与时区
 
 归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
+
+## 2.7.6 验收更新
+
+- 首页下方模块统一网格与比例，桌面内容最大宽度扩大到 2880px。
+- 新增 HDR 标准标签与旧索引后台补齐。
+- 补充有上限的 HEVC 帧 SEI 探测，修正实际 HDR10 文件被误标为 PQ 的问题。
+- 时间轴 HDR 标签避让收藏按钮；同步刷新前端资源版本。
+- HDR 标签描述源文件，不代表所有播放路径均支持 HDR。原画直传依赖浏览器、解码器与屏幕；现有 HLS/H.264 与缩略图路径尚无 HDR→SDR 色调映射。
 
 ## 2.7.5 更新
 
