@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import re
 import subprocess
 import threading
 import time
@@ -10,6 +11,16 @@ from pathlib import Path
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+
+from app.thumbnails import VideoToolError
+from app.transcode_color import TranscodeColor, transcode_color
+
+
+def get_transcode_color(source: Path) -> TranscodeColor:
+    try:
+        return transcode_color(source)
+    except (VideoToolError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def build_range_response(request: Request, path: Path, media_type: str | None = None) -> StreamingResponse:
@@ -155,7 +166,7 @@ def stream_cache_path(video, source: Path, data_dir: Path, quality: str) -> Path
             str(stat.st_mtime_ns),
             str(stat.st_size),
             quality,
-            "stream-v2",
+            "stream-v3-hdr",
         ]
     )
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
@@ -180,20 +191,21 @@ def resolve_hls_playlist(
 
     start_ms = max(0, int(start_ms))
     clean_encoder = normalize_encoder(encoder)
+    color = get_transcode_color(source)
     output_dir = hls_cache_dir(video, source, data_dir, quality, start_ms, clean_encoder)
     playlist = output_dir / "index.m3u8"
     if hls_playlist_ready(playlist):
         key = str(output_dir)
         if hls_playlist_complete(playlist) or hls_job_running(key):
             touch_hls_job(key)
-            return playlist
+            return playback_playlist(playlist, color)
         cleanup_hls_dir(output_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_stream_cache(data_dir / "cache", max_cache_mb)
     stop_related_hls_jobs(video["id"], quality, except_key=str(output_dir))
-    start_hls_transcode(source, output_dir, STREAM_QUALITIES[quality], start_ms / 1000, clean_encoder)
-    return wait_for_hls_playlist(playlist, output_dir, timeout)
+    start_hls_transcode(source, output_dir, STREAM_QUALITIES[quality], start_ms / 1000, clean_encoder, color=color)
+    return playback_playlist(wait_for_hls_playlist(playlist, output_dir, timeout), color)
 
 
 def resolve_hls_segment(
@@ -206,12 +218,13 @@ def resolve_hls_segment(
 ) -> Path:
     if quality not in STREAM_QUALITIES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid stream quality")
-    if not segment.startswith("segment-") or not segment.endswith(".ts"):
+    if segment not in {"init.mp4", "stream.m3u8"} and not re.fullmatch(r"segment-\d+\.(ts|m4s)", segment):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid HLS segment")
     source = Path(video["path"])
     if not source.exists() or not source.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video file is missing")
-    path = hls_cache_dir(video, source, data_dir, quality, max(0, int(start_ms)), normalize_encoder(encoder)) / segment
+    filename = "index.m3u8" if segment == "stream.m3u8" else segment
+    path = hls_cache_dir(video, source, data_dir, quality, max(0, int(start_ms)), normalize_encoder(encoder)) / filename
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="HLS segment is not ready")
     touch_hls_job(str(path.parent))
@@ -236,7 +249,7 @@ def hls_cache_dir(
             quality,
             normalize_encoder(encoder),
             str(max(0, int(start_ms))),
-            "hls-v3",
+            "hls-v4-hdr",
         ]
     )
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
@@ -249,6 +262,7 @@ def start_hls_transcode(
     quality: StreamQuality,
     start_at: float,
     encoder: str = "libx264_ultrafast",
+    *, color: TranscodeColor | None = None,
 ) -> None:
     key = str(output_dir)
     ensure_hls_watchdog()
@@ -261,9 +275,11 @@ def start_hls_transcode(
         cleanup_hls_dir(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        command = build_hls_command(source, output_dir, quality, start_at, encoder)
+        color = color or get_transcode_color(source)
+        command = build_hls_command(source, output_dir, quality, start_at, encoder, color=color)
         process = subprocess.Popen(
             command,
+            cwd=output_dir,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -276,14 +292,23 @@ def build_hls_command(
     quality: StreamQuality,
     start_at: float,
     encoder: str = "libx264_ultrafast",
+    *, color: TranscodeColor = TranscodeColor(),
 ) -> list[str]:
+    source, output_dir = source.resolve(), output_dir.resolve()
     profile = ENCODER_PROFILES[normalize_encoder(encoder)]
+    # HDR always uses the verified CPU Main10 path; H.264 hardware profiles are SDR only.
+    if color.hdr:
+        profile = EncoderProfile("libx265", "ultrafast" if "ultrafast" in encoder else "veryfast")
     video_filter = (
         f"scale=w='min({quality.width},iw)':h='min({quality.height},ih)':"
         "force_original_aspect_ratio=decrease:force_divisible_by=2"
         if quality.width and quality.height
         else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
     )
+    if color.hdr:
+        # Drop dynamic metadata before resizing/re-encoding; validated static metadata
+        # is explicitly restored through x265. Never attach old DV RPU to new pixels.
+        video_filter += color.scale_options() + ",sidedata=mode=delete"
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -320,7 +345,7 @@ def build_hls_command(
         "-bufsize",
         f"{int(quality.bitrate.rstrip('M')) * 2}M",
         "-pix_fmt",
-        "yuv420p",
+        "yuv420p10le" if color.hdr else "yuv420p",
         "-g",
         str(quality.segment_seconds * 30),
         "-sc_threshold",
@@ -340,10 +365,38 @@ def build_hls_command(
         "-hls_flags",
         "independent_segments+temp_file",
         "-hls_segment_filename",
-        str(output_dir / "segment-%05d.ts"),
+        str(output_dir / ("segment-%05d.m4s" if color.hdr else "segment-%05d.ts")),
         str(output_dir / "index.m3u8"),
     ])
+    if color.hdr:
+        command[-1:-1] = [
+            "-profile:v", "main10", *color.ffmpeg_args(),
+            "-x265-params", color.x265_params(),
+            "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4",
+            "-master_pl_name", "master-source.m3u8",
+        ]
     return command
+
+
+def playback_playlist(playlist: Path, color: TranscodeColor) -> Path:
+    if not color.hdr:
+        return playlist
+    # FFmpeg supplies the actual codec string/level and bandwidth. Add HDR signalling
+    # and use a distinct route for the media playlist to avoid recursive master loads.
+    master = playlist.parent / "master-source.m3u8"
+    if not master.exists():
+        raise HTTPException(status_code=503, detail="HDR stream is still preparing")
+    lines = master.read_text(encoding="utf-8").splitlines()
+    if 'index.m3u8' not in lines or not any('CODECS="hvc1.' in line for line in lines):
+        raise HTTPException(status_code=503, detail="HDR stream metadata is still preparing")
+    lines = [line + f',VIDEO-RANGE={color.video_range}' if line.startswith('#EXT-X-STREAM-INF:')
+             else 'stream.m3u8' if line == 'index.m3u8' else line for line in lines]
+    target = playlist.parent / "hdr.m3u8"
+    # The contents are immutable for this source/quality; avoid racing file rewrites.
+    with _HLS_JOBS_LOCK:
+        if not target.exists():
+            target.write_text('\n'.join(lines) + '\n', encoding="utf-8")
+    return target
 
 
 def wait_for_hls_playlist(playlist: Path, output_dir: Path, timeout: float) -> Path:
@@ -489,7 +542,15 @@ def hls_playlist_ready(playlist: Path) -> bool:
     except OSError:
         return False
     for line in lines:
-        if not line or line.startswith("#") or not line.endswith(".ts"):
+        if line.startswith('#EXT-X-MAP:'):
+            match = re.search(r'URI="([^"]+)"', line)
+            if not match or match.group(1) != "init.mp4":
+                return False
+            init = playlist.parent / "init.mp4"
+            if not init.exists() or init.stat().st_size == 0:
+                return False
+    for line in lines:
+        if not re.fullmatch(r"segment-\d+\.(ts|m4s)", line):
             continue
         segment = playlist.parent / line
         if segment.exists() and segment.stat().st_size > 0:
@@ -507,12 +568,15 @@ def hls_playlist_complete(playlist: Path) -> bool:
 
 
 def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) -> None:
+    color = get_transcode_color(source)
     video_filter = (
         f"scale=w='min({quality.width},iw)':h='min({quality.height},ih)':"
         "force_original_aspect_ratio=decrease:force_divisible_by=2"
         if quality.width and quality.height
         else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
     )
+    if color.hdr:
+        video_filter += color.scale_options() + ",sidedata=mode=delete"
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -528,7 +592,7 @@ def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) ->
         "-vf",
         video_filter,
         "-c:v",
-        "libx264",
+        "libx265" if color.hdr else "libx264",
         "-preset",
         "veryfast",
         "-b:v",
@@ -538,7 +602,7 @@ def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) ->
         "-bufsize",
         f"{int(quality.bitrate.rstrip('M')) * 2}M",
         "-pix_fmt",
-        "yuv420p",
+        "yuv420p10le" if color.hdr else "yuv420p",
         "-c:a",
         "aac",
         "-b:a",
@@ -547,6 +611,9 @@ def generate_stream_cache(source: Path, output: Path, quality: StreamQuality) ->
         "+faststart",
         str(output),
     ]
+    if color.hdr:
+        command[-1:-1] = ["-profile:v", "main10", *color.ffmpeg_args(), "-x265-params",
+                          color.x265_params()]
     result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=3600)
     if result.returncode != 0:
         output.unlink(missing_ok=True)

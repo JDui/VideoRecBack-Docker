@@ -1,5 +1,4 @@
 const LONG_PRESS_MS = 520;
-const WIDE_VIEWPORT_RATIO = 4 / 3;
 const shell = document.querySelector(".app-shell");
 const frame = document.querySelector("[data-player-frame]");
 const closePlayer = document.querySelector("[data-close-player]");
@@ -36,10 +35,16 @@ const capturePanePosition = () => {
   const section = sectionId ? document.getElementById(sectionId) : null;
   const paneRect = libraryPane?.getBoundingClientRect();
   const sectionOffset = section && paneRect ? section.getBoundingClientRect().top - paneRect.top : 0;
+  const anchor = paneRect && [...libraryPane.querySelectorAll('.asset-card[data-video-id]')].find(card => {
+    const bounds = card.getBoundingClientRect();
+    return bounds.bottom > paneRect.top && bounds.top < paneRect.bottom;
+  });
   return {
     scrollTop: libraryPane?.scrollTop || 0,
     sectionId,
     sectionOffset,
+    videoId: anchor?.dataset.videoId,
+    videoOffset: anchor ? anchor.getBoundingClientRect().top - paneRect.top : 0,
     ...(timelineRoot?.hasAttribute("data-timeline-gallery") ? { timelineDate: section?.dataset.galleryDate || "" } : {}),
   };
 };
@@ -48,7 +53,11 @@ const restorePanePosition = (position) => {
   if (!libraryPane || !position) return;
   const sectionId = position.sectionId || position.activeSection;
   const section = sectionId ? document.getElementById(sectionId) : null;
-  if (!section) {
+  const anchor = position.videoId && [...libraryPane.querySelectorAll('.asset-card[data-video-id]')]
+    .find(card => card.dataset.videoId === String(position.videoId));
+  if (anchor) {
+    libraryPane.scrollTop += anchor.getBoundingClientRect().top - libraryPane.getBoundingClientRect().top - Number(position.videoOffset || 0);
+  } else if (!section) {
     libraryPane.scrollTop = Number(position.scrollTop || 0);
   } else {
     const paneRect = libraryPane.getBoundingClientRect();
@@ -325,7 +334,7 @@ const playerPageUrlForCard = (card) => {
   return url.toString();
 };
 
-const isWideViewport = () => window.innerWidth / Math.max(window.innerHeight, 1) > WIDE_VIEWPORT_RATIO;
+const isWideViewport = () => window.VideoRecBackPlayer.isWide();
 
 const titleForCard = (card) => card.getAttribute("aria-label")?.replace(/^播放\s*/, "") || "";
 
@@ -340,12 +349,18 @@ const openInlinePlayer = (card, panePosition) => {
   if (!shell || !frame) return;
   if (inlineFrameClearTimer) window.clearTimeout(inlineFrameClearTimer);
   inlinePlayerCard = card;
+  const anchorPosition = {
+    ...panePosition,
+    videoId: card.dataset.videoId,
+    videoOffset: card.getBoundingClientRect().top - libraryPane.getBoundingClientRect().top,
+  };
   setPlayerTargetCard(card);
   shell.classList.add("player-loading");
   window.VideoRecBackPlayer.transition(shell, () => {
     shell.classList.add("player-open");
-    restorePanePosition(panePosition);
   });
+  // The shared transition reflows the timeline before restoring the selected card.
+  restorePanePosition(anchorPosition);
   frame.src = playerUrlForCard(card);
   if (inlinePlayerTitle) inlinePlayerTitle.textContent = titleForCard(card);
   if (inlineSettings) {
@@ -353,7 +368,7 @@ const openInlinePlayer = (card, panePosition) => {
     inlineSettings.hidden = !card.dataset.settingsUrl;
   }
   configureFavoriteButton(inlineFavorite, card);
-  window.requestAnimationFrame(() => restorePanePosition(panePosition));
+  window.requestAnimationFrame(() => restorePanePosition(anchorPosition));
 };
 
 const closeInlinePlayer = async () => {

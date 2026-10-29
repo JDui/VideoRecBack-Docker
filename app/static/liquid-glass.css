@@ -261,8 +261,10 @@ body .timeline-scrub-date.glass-surface {
 .folder-cover { border-radius: 12px; }
 .empty { margin-top: 20px; padding: 44px 24px; border: 0; border-radius: 18px; background: #eeeef0; }
 .asset-section-head { padding-top: 12px; }
-.home-page .site-header-inner { max-width: min(100%, 2880px); }
-.home-page .page { padding-top: 22px; max-width: min(100%, 2880px); }
+/* Media browsing uses the available screen; text-heavy settings keep their reading width. */
+:is(.home-page, .library-page) .site-header-inner,
+:is(.home-page, .library-page) .page { width: 100%; max-width: none; }
+.home-page .page { padding-top: 22px; }
 .home-discover { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .home-section-head--hero { align-items: center; margin-bottom: 22px; }
 .home-section-head h1 { font-size: 28px; font-weight: 600; letter-spacing: -.04em; }

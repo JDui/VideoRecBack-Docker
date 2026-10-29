@@ -52,6 +52,7 @@
         {% endif %}
       </div>
       <p class="player-download-status" data-download-status role="status" aria-live="polite" hidden></p>
+      <p class="player-download-status" data-hdr-playback-notice role="status" hidden></p>
     </header>
     <iframe name="video-download-frame" title="视频下载" data-download-frame hidden></iframe>
     <div class="player-viewport">
@@ -127,5 +128,5 @@
 {% endblock %}
 {% block scripts %}
   <script type="application/x-vbr-script" data-page-script src="/static/vendor/hls.min.js"></script>
-  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.6&amp;revision=2"></script>
+  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.7&amp;revision=4"></script>
 {% endblock %}

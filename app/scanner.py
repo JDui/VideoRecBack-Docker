@@ -108,11 +108,11 @@ class Scanner:
         finally:
             self._running_count -= 1
 
-    async def recheck_all_video_metadata(self) -> ScanSummary:
+    async def recheck_all_video_metadata(self, *, hdr_only: bool = False) -> ScanSummary:
         self._running_count += 1
         try:
             async with self._lock:
-                return await asyncio.to_thread(self._recheck_all_video_metadata_sync)
+                return await asyncio.to_thread(self._recheck_all_video_metadata_sync, hdr_only=hdr_only)
         finally:
             self._running_count -= 1
 
@@ -760,7 +760,7 @@ class Scanner:
             changed += 1
         return changed
 
-    def _recheck_all_video_metadata_sync(self) -> ScanSummary:
+    def _recheck_all_video_metadata_sync(self, *, hdr_only: bool = False) -> ScanSummary:
         summary = ScanSummary()
         with self.db.connect() as conn:
             rows = conn.execute(
@@ -778,17 +778,26 @@ class Scanner:
             if not path.exists() or not path.is_file():
                 summary.errors += 1
                 continue
-            if self._refresh_metadata(path, int(row["id"])):
+            if self._refresh_metadata(path, int(row["id"]), hdr_only=hdr_only):
                 summary.indexed += 1
             else:
                 summary.errors += 1
         return summary
 
-    def _refresh_metadata(self, path: Path, video_id: int) -> bool:
+    def _refresh_metadata(self, path: Path, video_id: int, *, hdr_only: bool = False) -> bool:
         try:
             probe = probe_video(path)
         except (VideoToolError, OSError):
             return False
+        if hdr_only:
+            if not probe.hdr_probe_complete:
+                return False
+            with self.db.connect() as conn:
+                conn.execute(
+                    "UPDATE videos SET hdr_format = ?, hdr_checked = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (probe.hdr_format, video_id),
+                )
+            return True
         video_type = detect_video_type(path, probe.width, probe.height)
         with self.db.connect() as conn:
             conn.execute(

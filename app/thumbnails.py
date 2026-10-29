@@ -35,6 +35,12 @@ class ProbeResult:
     chroma_subsampling: str | None = None
     average_bitrate: int | None = None
     hdr_format: str | None = None
+    color_transfer: str | None = None
+    color_primaries: str | None = None
+    color_space: str | None = None
+    color_range: str | None = None
+    side_data: list[dict[str, object]] | None = None
+    hdr_probe_complete: bool = True
 
 
 @dataclass(slots=True)
@@ -56,13 +62,22 @@ def require_tool(name: str) -> str:
 
 def probe_video(path: Path) -> ProbeResult:
     ffprobe = require_tool("ffprobe")
+    try:
+        return _probe_video(ffprobe, path)
+    except (subprocess.TimeoutExpired, ValueError, TypeError) as exc:
+        raise VideoToolError(f"Unable to probe video: {exc}") from exc
+
+
+def _probe_video(ffprobe: str, path: Path) -> ProbeResult:
     result = subprocess.run(
         [
             ffprobe,
             "-v",
             "error",
+            "-select_streams",
+            "v:0",
             "-show_entries",
-            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile,bit_rate,color_transfer,color_primaries,color_space,dv_profile,dv_bl_signal_compatibility_id:stream_side_data=side_data_type,dv_profile,dv_bl_signal_compatibility_id:format=duration,bit_rate",
+            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile,bit_rate,color_transfer,color_primaries,color_space,color_range:stream_side_data:format=duration,bit_rate",
             "-of",
             "json",
             str(path),
@@ -78,12 +93,16 @@ def probe_video(path: Path) -> ProbeResult:
     format_data = payload.get("format", {})
     raw_duration = format_data.get("duration")
     stream = next((item for item in payload.get("streams", []) if item.get("width") and item.get("height")), {})
+    if not stream:
+        raise VideoToolError("No usable video stream")
+    hdr_probe_complete = True
     # HEVC static/dynamic HDR metadata is commonly frame SEI, not stream side data.
     # Bound decoding by packet count and wall time; an optional HDR probe must not
     # discard otherwise usable duration/dimensions when the decoder is unsupported.
-    if str(stream.get("color_transfer") or "") in {"smpte2084", "arib-std-b67"} and detect_hdr_format(stream) != "Dolby Vision":
+    if str(stream.get("color_transfer") or "") in {"smpte2084", "arib-std-b67"}:
         side_data = probe_hdr_frame_side_data(ffprobe, path)
-        stream = {**stream, "side_data_list": list(stream.get("side_data_list") or []) + side_data}
+        hdr_probe_complete = side_data is not None
+        stream = {**stream, "side_data_list": list(stream.get("side_data_list") or []) + (side_data or [])}
     return ProbeResult(
         float(raw_duration) if raw_duration else None,
         int(stream["width"]) if stream.get("width") else None,
@@ -93,24 +112,30 @@ def probe_video(path: Path) -> ProbeResult:
         detect_chroma_subsampling(stream),
         parse_positive_int(format_data.get("bit_rate")) or parse_positive_int(stream.get("bit_rate")),
         detect_hdr_format(stream),
+        stream.get("color_transfer"),
+        stream.get("color_primaries"),
+        stream.get("color_space"),
+        stream.get("color_range"),
+        stream.get("side_data_list") or [],
+        hdr_probe_complete,
     )
 
 
-def probe_hdr_frame_side_data(ffprobe: str, path: Path) -> list[dict[str, object]]:
+def probe_hdr_frame_side_data(ffprobe: str, path: Path) -> list[dict[str, object]] | None:
     try:
         result = subprocess.run(
             [ffprobe, "-v", "error", "-threads", "1", "-select_streams", "v:0",
              "-read_intervals", "%+#32", "-show_frames", "-show_entries",
-             "frame_side_data=side_data_type", "-of", "json", str(path)],
+             "frame=:frame_side_data", "-of", "json", str(path)],
             check=False, capture_output=True, text=True, timeout=15,
         )
         if result.returncode != 0:
-            return []
+            return None
         payload = json.loads(result.stdout or "{}")
         return [item for frame in payload.get("frames", [])
                 for item in frame.get("side_data_list", []) if isinstance(item, dict)]
     except (subprocess.TimeoutExpired, OSError, ValueError):
-        return []
+        return None
 
 
 def detect_hdr_format(stream: dict[str, object]) -> str | None:

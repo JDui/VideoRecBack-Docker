@@ -38,6 +38,7 @@ from app.formatting import format_bitrate, format_date, format_duration, format_
 from app.home import home_content, memory_date_values, random_videos
 from app.media import (
     build_range_response,
+    get_transcode_color,
     record_hls_heartbeat,
     resolve_hls_playlist,
     resolve_hls_segment,
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.state.manual_scan_pending = False
     app.state.thumbnail_refresh_pending = False
     app.state.metadata_recheck_pending = False
+    app.state.hdr_recheck_status = {"status": "idle"}
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.filters["duration"] = format_duration
@@ -353,6 +355,8 @@ def create_app() -> FastAPI:
                 "thumbnail_refresh": request.query_params.get("thumbnail_refresh"),
                 "panorama_recheck": request.query_params.get("panorama_recheck"),
                 "metadata_recheck": request.query_params.get("metadata_recheck"),
+                "hdr_recheck": request.query_params.get("hdr_recheck"),
+                "hdr_status": app.state.hdr_recheck_status,
             },
         )
 
@@ -434,6 +438,19 @@ def create_app() -> FastAPI:
         with db.connect() as conn:
             count = conn.execute("SELECT COUNT(*) AS count FROM videos WHERE missing = 0").fetchone()["count"]
         return RedirectResponse(f"/settings?metadata_recheck={count}", status_code=303)
+
+    @app.post("/settings/recheck-hdr-standards")
+    async def recheck_hdr_standards():
+        if is_background_busy(app):
+            return RedirectResponse("/settings?hdr_recheck=busy#maintenance", status_code=303)
+        app.state.metadata_recheck_pending = True
+        app.state.hdr_recheck_status = {"status": "running"}
+        asyncio.create_task(run_hdr_recheck(app))
+        return RedirectResponse("/settings?hdr_recheck=started#maintenance", status_code=303)
+
+    @app.get("/settings/hdr-status")
+    async def hdr_recheck_status():
+        return JSONResponse(app.state.hdr_recheck_status, headers={"Cache-Control": "no-store"})
 
     @app.get("/settings/connectivity-test/ping")
     async def connectivity_ping():
@@ -675,6 +692,13 @@ def create_app() -> FastAPI:
         media_type = "video/mp4" if quality != "original" else None
         return build_range_response(request, stream_path, media_type=media_type)
 
+    @app.get("/media/{video_id}/playback-info")
+    async def playback_info(video_id: int):
+        video = await asyncio.to_thread(get_video, db, video_id)
+        color = await asyncio.to_thread(get_transcode_color, Path(video["path"]))
+        return JSONResponse({"hdr": color.hdr, "format": color.output_format, "note": color.note},
+                            headers={"Cache-Control": "no-store"})
+
     @app.get("/media/{video_id}/hls/{quality}/{start_ms}/index.m3u8")
     async def hls_playlist(video_id: int, quality: str, start_ms: int):
         video = await asyncio.to_thread(ensure_tenbit_status, db, video_id)
@@ -707,7 +731,10 @@ def create_app() -> FastAPI:
             segment,
             hls_encoder_for_video(settings, video),
         )
-        return FileResponse(path, media_type="video/mp2t", headers={"Cache-Control": "public, max-age=86400"})
+        playlist = path.suffix == ".m3u8"
+        media_type = "application/vnd.apple.mpegurl" if playlist else "video/mp2t" if path.suffix == ".ts" else "video/mp4"
+        return FileResponse(path, media_type=media_type,
+                            headers={"Cache-Control": "no-cache" if playlist else "public, max-age=86400"})
 
     @app.post("/media/{video_id}/hls/{quality}/{start_ms}/heartbeat")
     async def hls_heartbeat(video_id: int, quality: str, start_ms: int):
@@ -836,6 +863,19 @@ async def run_metadata_recheck(app: FastAPI) -> None:
         await app.state.scanner.recheck_all_video_metadata()
     except Exception:
         LOGGER.exception("Video metadata recheck failed.")
+    finally:
+        app.state.metadata_recheck_pending = False
+
+
+async def run_hdr_recheck(app: FastAPI) -> None:
+    try:
+        summary = await app.state.scanner.recheck_all_video_metadata(hdr_only=True)
+        app.state.hdr_recheck_status = {
+            "status": "complete", "checked": summary.indexed, "errors": summary.errors,
+        }
+    except Exception:
+        LOGGER.exception("HDR standards recheck failed.")
+        app.state.hdr_recheck_status = {"status": "failed"}
     finally:
         app.state.metadata_recheck_pending = False
 

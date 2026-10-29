@@ -1,6 +1,13 @@
 import os
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
+from app.transcode_color import TranscodeColor
+
+
+@pytest.fixture(autouse=True)
+def sdr_fixture_metadata(monkeypatch):
+    monkeypatch.setattr("app.media.get_transcode_color", lambda source: TranscodeColor())
 
 from app.media import (
     HlsJob,
@@ -124,7 +131,7 @@ def test_resolve_hls_playlist_waits_for_first_segment(monkeypatch, tmp_path):
     source.write_bytes(b"source")
     video = {"id": 7, "path": str(source)}
 
-    def start_hls(source_path, output_dir, quality, start_at, encoder="libx264_ultrafast"):
+    def start_hls(source_path, output_dir, quality, start_at, encoder="libx264_ultrafast", **kwargs):
         segment = output_dir / "segment-00000.ts"
         segment.write_bytes(b"segment")
         (output_dir / "index.m3u8").write_text(
@@ -158,7 +165,7 @@ def test_resolve_hls_playlist_rebuilds_orphaned_partial_playlist(monkeypatch, tm
     (existing / "index.m3u8").write_text("#EXTM3U\n#EXTINF:2.0,\nsegment-00000.ts\n", encoding="utf-8")
     calls = []
 
-    def start_hls(source_path, output_dir, quality, start_at, encoder="libx264_ultrafast"):
+    def start_hls(source_path, output_dir, quality, start_at, encoder="libx264_ultrafast", **kwargs):
         calls.append(output_dir)
         segment = output_dir / "segment-00000.ts"
         segment.write_bytes(b"new")

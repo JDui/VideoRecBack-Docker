@@ -64,7 +64,7 @@
             <label class="preference-field">串流缓存上限<span class="preference-input-unit"><input name="hls_cache_max_mb" type="number" min="256" max="102400" value="{{ settings.hls_cache_max_mb }}" required><span>MB</span></span><small>范围为 256–102400 MB。</small></label>
             {{ encoder('flat_hls_encoder', '平面视频转码编码器', settings.flat_hls_encoder) }}
             {{ encoder('panorama_hls_encoder', '全景视频转码编码器', settings.panorama_hls_encoder) }}
-            <p class="preference-hint">硬件编码需要设备与容器支持；CPU 编码可用于通用设备。</p>
+            <p class="preference-hint">以上编码器用于 SDR 视频。HDR 视频使用 CPU HEVC 10bit 转码以保留 HDR，播放需要浏览器支持 HEVC；硬件编码需要设备与容器支持。</p>
             <input name="stream_cache_retention_days" type="hidden" value="{{ settings.stream_cache_retention_days }}">
           </div>
         </section>
@@ -102,6 +102,25 @@
         <p class="muted">这些操作会读取大量视频文件或重建缓存，提交前需要二次确认。</p>
       </div>
       <div class="settings-confirm-actions">
+        <form
+          class="settings-confirm-action"
+          action="/settings/recheck-hdr-standards"
+          method="post"
+          onsubmit="return window.confirm('确认要校验所有已收录视频的 HDR 标准吗？这会在后台读取未丢失的视频，更新 HDR 分类，不会重建封面或修改源文件。');"
+        >
+          <div>
+            <strong>HDR 标准校验</strong>
+            <p class="muted">重新识别 HLG、HDR10、HDR10+、Dolby Vision、HDR Vivid 等源文件 HDR 标准；无法细分的 PQ 保留为 PQ。仅更新 HDR 标签，不重建封面。</p>
+            <p class="settings-notice" role="status" data-hdr-status data-state="{{ hdr_status.status }}">
+              {% if hdr_status.status == 'running' %}正在后台校验 HDR 标准，可以继续浏览视频。
+              {% elif hdr_recheck == 'busy' %}已有扫描或维护任务正在运行，本次校验未启动，请完成后重试。
+              {% elif hdr_status.status == 'complete' %}HDR 标准校验完成：成功 {{ hdr_status.checked }} 个，失败 {{ hdr_status.errors }} 个。{% if hdr_status.errors %}失败项保留原标签，可稍后重试。{% endif %}
+              {% elif hdr_status.status == 'failed' %}HDR 标准校验中断，请稍后重试。
+              {% endif %}
+            </p>
+          </div>
+          <button type="submit" data-hdr-recheck {% if hdr_status.status == 'running' %}disabled{% endif %}>校验 HDR 标准</button>
+        </form>
         <form
           class="settings-confirm-action"
           action="/settings/refresh-thumbnails"
@@ -169,4 +188,4 @@
     <button type="submit" form="preferences-form" data-settings-save>保存设置</button>
   </div></footer>
 {% endblock %}
-{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/settings.js?v=3"></script>{% endblock %}
+{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/settings.js?v=4"></script>{% endblock %}

@@ -18,6 +18,45 @@ let hlsHeartbeatTimer = null;
 let hlsStopTimer = null;
 let stallRecoveryTimer = null;
 let bufferingStartedAt = 0;
+let transcodeBlocked = false;
+let activeTranscodeInfo = null;
+let transcodeInfoPromise = null;
+const hdrNotice = document.querySelector('[data-hdr-playback-notice]');
+const loadTranscodeInfo = () => {
+  if (!transcodeInfoPromise) {
+    transcodeInfoPromise = fetch(`${video.dataset.mediaBase}/playback-info`, { cache: 'no-store' })
+      .then(async response => {
+        const info = await response.json();
+        if (!response.ok) throw new Error(info.detail || '无法读取视频色彩信息，请重试。');
+        return info;
+      }).catch(error => { transcodeInfoPromise = null; throw error; });
+  }
+  return transcodeInfoPromise;
+};
+const canDecodeHdrHls = () => {
+  const mime = 'video/mp4; codecs="hvc1.2.4.L120.B0"';
+  const nativeHls = video.canPlayType('application/vnd.apple.mpegurl');
+  const mse = window.ManagedMediaSource || window.MediaSource;
+  return Boolean(mse?.isTypeSupported(mime)) || Boolean(nativeHls && video.canPlayType(mime));
+};
+const canUseHdrMse = () => {
+  const mse = window.ManagedMediaSource || window.MediaSource;
+  return window.Hls?.isSupported() && mse?.isTypeSupported('video/mp4; codecs="hvc1.2.4.L120.B0"');
+};
+const blockTranscode = message => {
+  transcodeBlocked = true;
+  mediaTimeOffset = getLogicalCurrentTime();
+  clearStallRecovery();
+  video.pause();
+  stopHlsHeartbeat(true);
+  hlsPlayer?.destroy();
+  hlsPlayer = null;
+  video.removeAttribute('src');
+  video.load();
+  showTranscodeOverlay(message);
+  transcodeOverlay?.classList.add('is-error');
+  syncPlayUi();
+};
 const qualityLabels = {
   original: "原画",
   ultra: "超清",
@@ -161,6 +200,10 @@ const toggleMute = () => {
 
 const togglePlayback = () => {
   if (!video) return;
+  if (transcodeBlocked) {
+    applyQualityAt?.(video.dataset.currentQuality || 'original', getLogicalCurrentTime(), true);
+    return;
+  }
   void audio.resume();
   if (!mediaLoaded) {
     const quality = video.dataset.currentQuality || "original";
@@ -224,6 +267,7 @@ const setLogicalCurrentTime = (time) => {
 
 const showTranscodeOverlay = (message = "正在切换转码中...") => {
   if (!transcodeOverlay) return;
+  transcodeOverlay.classList.remove('is-error');
   transcodeOverlay.textContent = message;
   transcodeOverlay.hidden = false;
   shell?.classList.add("is-transcoding");
@@ -235,7 +279,7 @@ const hideTranscodeOverlay = () => {
 };
 
 const schedulePlaybackRecovery = () => {
-  if (!video || !mediaLoaded || video.paused || video.ended) return;
+  if (transcodeBlocked || !video || !mediaLoaded || video.paused || video.ended) return;
   const quality = video.dataset.currentQuality || "original";
   if (!bufferingStartedAt) bufferingStartedAt = Date.now();
   showTranscodeOverlay(quality === "original" ? "正在缓冲..." : "正在等待转码缓冲...");
@@ -249,6 +293,7 @@ const schedulePlaybackRecovery = () => {
 };
 
 const markPlaybackResponsive = () => {
+  if (transcodeBlocked) return;
   clearStallRecovery();
   hideTranscodeOverlay();
 };
@@ -286,19 +331,20 @@ const syncProgressUi = () => {
 };
 
 const syncPlayUi = () => {
-  const label = video?.paused ? "播放" : "暂停";
+  const paused = transcodeBlocked || video?.paused;
+  const label = paused ? "播放" : "暂停";
   if (flatPlayButton) {
-    flatPlayButton.classList.toggle("is-playing", !video?.paused);
+    flatPlayButton.classList.toggle("is-playing", !paused);
     flatPlayButton.setAttribute("aria-label", label);
     flatPlayButton.setAttribute("title", label);
   }
   if (centerAction) {
     centerAction.setAttribute("aria-label", label);
-    centerAction.tabIndex = video?.paused ? 0 : -1;
-    centerAction.classList.toggle("is-hidden", !video?.paused);
+    centerAction.tabIndex = paused ? 0 : -1;
+    centerAction.classList.toggle("is-hidden", !paused);
   }
-  shell?.classList.toggle("is-playing", Boolean(video && !video.paused && !video.ended));
-  shell?.classList.toggle("is-paused", Boolean(video && (video.paused || video.ended)));
+  shell?.classList.toggle("is-playing", Boolean(video && !paused && !video.ended));
+  shell?.classList.toggle("is-paused", Boolean(video && (paused || video.ended)));
 };
 
 const syncMuteUi = () => {
@@ -315,7 +361,7 @@ const syncExposureUi = () => {
   if (exposureControl) exposureControl.value = percent;
   if (exposureValue) exposureValue.textContent = `${percent}%`;
   if (video && shell?.dataset.videoType !== "panorama") {
-    video.style.filter = `brightness(${exposure})`;
+    video.style.filter = exposure === 1 ? 'none' : `brightness(${exposure})`;
   }
 };
 
@@ -395,6 +441,8 @@ if (video) {
       hlsPlayer = null;
     };
     const prepareMediaSwitch = () => {
+      transcodeBlocked = false;
+      activeTranscodeInfo = null;
       clearStallRecovery();
       stopHlsHeartbeat(true);
       destroyHls();
@@ -430,14 +478,14 @@ if (video) {
       return qualityValues.find((item) => item !== "original") || "original";
     };
 
-    applyQualityAt = (quality, resumeAt, forcePlay = false) => {
+    applyQualityAt = async (quality, resumeAt, forcePlay = false) => {
       const wasPaused = video.paused;
       const playbackRate = video.playbackRate;
       const volume = video.volume;
       const switchId = ++qualitySwitchId;
       const shouldPlay = forcePlay || !wasPaused;
       const resume = () => {
-        if (switchId !== qualitySwitchId) return;
+        if (switchId !== qualitySwitchId || transcodeBlocked) return;
         video.playbackRate = playbackRate;
         video.defaultPlaybackRate = playbackRate;
         video.volume = volume;
@@ -451,6 +499,26 @@ if (video) {
       shell?.classList.add("has-media");
       if (playerPoster) playerPoster.hidden = true;
       prepareMediaSwitch();
+      if (hdrNotice) hdrNotice.hidden = true;
+      if (quality !== 'original') {
+        showTranscodeOverlay('正在检查转码格式...');
+        try {
+          const info = await loadTranscodeInfo();
+          if (switchId !== qualitySwitchId) return;
+          activeTranscodeInfo = info;
+          if (info.hdr && !canDecodeHdrHls()) {
+            blockTranscode('当前浏览器无法解码 HDR 转码（HEVC 10bit）。请使用支持的浏览器或播放/下载原画。');
+            return;
+          }
+          if (info.hdr && hdrNotice) {
+            hdrNotice.textContent = `${info.format} 转码 · ${info.note || '保留 HDR；实际显示取决于浏览器和屏幕。'}${document.getElementById('panoramaCanvas') ? ' 全景画布尚不能保证 HDR 显示。' : ''}`;
+            hdrNotice.hidden = false;
+          }
+        } catch (error) {
+          if (switchId === qualitySwitchId) blockTranscode(error.message || '转码格式检查失败，请重试。');
+          return;
+        }
+      }
       video.addEventListener("canplay", resume, { once: true });
       video.addEventListener("playing", resume, { once: true });
       video.addEventListener("seeked", resume, { once: true });
@@ -473,7 +541,7 @@ if (video) {
       mediaTimeOffset = Math.max(0, resumeAt);
       const url = qualityUrl(quality, resumeAt);
       startHlsHeartbeat(quality, resumeAt);
-      if (canUseNativeHls()) {
+      if (canUseNativeHls() && !(activeTranscodeInfo?.hdr && canUseHdrMse())) {
         destroyHls();
         video.src = url;
         video.load();
@@ -503,6 +571,11 @@ if (video) {
         });
         hlsPlayer.on(window.Hls.Events.ERROR, (_event, data) => {
           if (!data?.fatal || switchId !== qualitySwitchId) return;
+          const status = data.response?.code || data.networkDetails?.status;
+          if ((status >= 400 && status !== 503) || (activeTranscodeInfo?.hdr && data.type !== window.Hls.ErrorTypes.NETWORK_ERROR)) {
+            blockTranscode(activeTranscodeInfo?.hdr ? 'HDR 转码播放失败，请检查 HEVC 10bit 支持及服务端编码器，或使用原画。' : '转码失败，请重试或使用原画。');
+            return;
+          }
           showTranscodeOverlay("播放缓冲中，正在重试...");
           if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
             hlsPlayer?.startLoad();
@@ -581,6 +654,11 @@ if (video) {
   video.addEventListener("waiting", schedulePlaybackRecovery);
   video.addEventListener("stalled", schedulePlaybackRecovery);
   video.addEventListener("error", () => {
+    if (transcodeBlocked) return;
+    if (activeTranscodeInfo?.hdr && video.dataset.currentQuality !== 'original') {
+      blockTranscode('HDR 转码播放失败，请使用支持 HEVC 10bit 的浏览器或原画。');
+      return;
+    }
     if (fallbackOriginalToTranscode(getLogicalCurrentTime(), true)) return;
     if (!mediaLoaded || video.paused || video.ended) return;
     window.setTimeout(() => {
@@ -589,6 +667,7 @@ if (video) {
   });
   video.addEventListener("play", syncPlayUi);
   video.addEventListener("play", () => {
+    if (transcodeBlocked) { video.pause(); return; }
     void audio.resume();
     syncPlayUi();
     clearScheduledHlsStop();

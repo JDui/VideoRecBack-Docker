@@ -1,0 +1,116 @@
+{
+  "work_dir": "C:\\Users\\MUXINZ~1\\AppData\\Local\\Temp\\vrb-hdr-audit-08j82mau",
+  "findings": {
+    "optional_timeout": {
+      "summary": {
+        "seen": 1,
+        "indexed": 1,
+        "thumbnails": 0,
+        "errors": 0,
+        "deleted": 0,
+        "skipped": 0
+      },
+      "stored": {
+        "hdr_format": "PQ",
+        "hdr_checked": 1
+      }
+    },
+    "main_timeout": {
+      "status": {
+        "status": "failed"
+      },
+      "probed": [
+        "hdr10.mp4"
+      ],
+      "lock_released": true
+    }
+  },
+  "source": {
+    "codec_name": "hevc",
+    "pix_fmt": "yuv420p10le",
+    "color_range": "tv",
+    "color_space": "bt2020nc",
+    "color_transfer": "smpte2084",
+    "color_primaries": "bt2020"
+  },
+  "probe": {
+    "duration_seconds": 1.0,
+    "width": 192,
+    "height": 64,
+    "bit_depth": 10,
+    "codec_name": "hevc",
+    "chroma_subsampling": "420",
+    "average_bitrate": 66360,
+    "hdr_format": "HDR10"
+  },
+  "source_pq_y_codes": [
+    327,
+    509,
+    723
+  ],
+  "download": {
+    "codec_name": "h264",
+    "pix_fmt": "yuv420p",
+    "color_range": "tv",
+    "color_space": "bt2020nc",
+    "color_transfer": "smpte2084",
+    "color_primaries": "bt2020",
+    "side_data_list": [
+      {
+        "side_data_type": "Mastering display metadata"
+      },
+      {
+        "side_data_type": "Content light level metadata"
+      }
+    ]
+  },
+  "hls_segment": {
+    "codec_name": "h264",
+    "pix_fmt": "yuv420p",
+    "color_range": "tv",
+    "color_space": "bt2020nc",
+    "color_transfer": "smpte2084",
+    "color_primaries": "bt2020"
+  },
+  "hls_playlist": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nsegment-00000.ts\n#EXT-X-ENDLIST\n",
+  "source_decoded_y_codes_10bit": [
+    327,
+    509,
+    723
+  ],
+  "download_decoded_y_codes_10bit": [
+    328,
+    508,
+    724
+  ],
+  "hls_decoded_y_codes_10bit": [
+    328,
+    508,
+    724
+  ],
+  "thumbnail": {
+    "mode": "RGB",
+    "size": [
+      853,
+      480
+    ],
+    "icc_profile": false,
+    "neutral_rgb": [
+      [
+        77,
+        77,
+        77
+      ],
+      [
+        129,
+        129,
+        129
+      ],
+      [
+        192,
+        192,
+        192
+      ]
+    ]
+  }
+}

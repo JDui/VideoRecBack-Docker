@@ -441,3 +441,40 @@ body.player-page .player-play-button.glass-surface { background:rgba(55,123,213,
 
 /* Keep HDR labels clear of the favorite button and its expanded hit target. */
 .timeline-gallery .asset-hdr-badges { right: 42px; max-width: calc(100% - 50px); pointer-events: none; }
+
+/* Size cards against their pane, including when the player takes most of the screen. */
+.library-page .asset-grid {
+  --grid-card-size: var(--card-size);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--grid-card-size)), 1fr));
+}
+.library-page .compact-grid { --grid-card-size: max(124px, calc(var(--card-size) * .82)); }
+.library-page :is(.folder-grid, .calendar-aggregate-grid) {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
+}
+.library-page .timeline-stack { min-width: 0; }
+.library-page :is(.finder-view, .calendar-view, .favorites-view, .asset-section, .day-row) {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.library-page .calendar-zoom { min-width: 0; max-width: 100%; }
+.library-page .calendar-zoom > :is(a, span) { min-width: 0; flex: 1; }
+
+/* Let the header's actual height determine the remaining library viewport. */
+body.library-page { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+.library-page .site-header { flex: 0 0 auto; }
+.library-page .page { flex: 1; height: auto; min-height: 0; }
+
+/* Glass decoration must not override sticky positioning on the settings navigation. */
+.preferences-page .preferences-nav { position: sticky; }
+
+/* Short cards keep duration, bit depth, HDR standard and favorite in separate corners. */
+.library-page .asset-item:not(.timeline-video) .asset-duration { inset: auto auto 8px 8px; }
+.asset-hdr-badges, .home-hdr-badges { overflow: hidden; }
+.asset-hdr-badges .asset-hdr, .home-hdr-badges .home-hdr { flex-shrink: 0; }
+.asset-hdr-badges .asset-hdr-standard, .home-hdr-badges .home-hdr-standard {
+  display: block;
+  min-width: 0;
+}
+.timeline-gallery .timeline-video:has(.asset-bit-depth) .asset-hdr-badges { max-width: max(0px, calc(100% - 104px)); }
+.home-hdr-badges { max-width: max(0px, calc(100% - 66px)); }
+.transcode-overlay.is-error::before { display: none; }

@@ -1,5 +1,28 @@
 const panel = document.querySelector("[data-connectivity-test]");
 
+const hdrStatus = document.querySelector('[data-hdr-status]');
+const hdrButton = document.querySelector('[data-hdr-recheck]');
+const pollHdrStatus = async () => {
+  if (!hdrStatus?.isConnected || hdrStatus.dataset.state !== 'running') return;
+  try {
+    const response = await fetch('/settings/hdr-status', { cache: 'no-store' });
+    if (!response.ok) throw new Error('HDR status unavailable');
+    const result = await response.json();
+    if (!hdrStatus.isConnected) return;
+    hdrStatus.dataset.state = result.status;
+    if (result.status === 'complete') {
+      hdrStatus.textContent = `HDR 标准校验完成：成功 ${result.checked} 个，失败 ${result.errors} 个。${result.errors ? '失败项保留原标签，可稍后重试。' : ''}`;
+    } else if (result.status === 'failed' || result.status === 'idle') {
+      hdrStatus.textContent = 'HDR 标准校验中断，请稍后重试。';
+    }
+    hdrButton.disabled = result.status === 'running';
+  } catch {
+    hdrStatus.textContent = '暂时无法获取校验状态，正在重试。';
+  }
+  if (hdrStatus.dataset.state === 'running') setTimeout(pollHdrStatus, 2000);
+};
+if (hdrStatus?.dataset.state === 'running') setTimeout(pollHdrStatus, 1000);
+
 const preferencesForm = document.querySelector('#preferences-form');
 const saveStatus = document.querySelector('[data-settings-save-status]');
 const saveButton = document.querySelector('[data-settings-save]');
