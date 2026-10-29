@@ -453,6 +453,7 @@ body[data-intranet-access="local"]:not(.player-page--embed)::before {
 .home-player-shell.player-open .home-grid { grid-template-columns:1fr; }
 .home-player-shell.player-open .home-grid--recent { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .home-player-shell.player-open .home-lower { grid-template-columns:1fr; gap:0; }
+.home-player-shell.player-open .home-memory-list { grid-template-columns: 1fr; }
 .home-player-shell.player-open .home-library-status { gap:16px; }
 .home-player-shell.player-open .home-library-status form { margin-left:0; }
 .home-player-shell.player-open .home-section-head { gap:8px; }
