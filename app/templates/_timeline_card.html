@@ -4,12 +4,12 @@
     <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-video-id="{{ video.id }}" data-video-type="{{ video.type }}" data-settings-url="/video/{{ video.id }}" data-timeline-url="/?view=timeline#timeline-{{ video.mtime|date }}" data-exclude-random="{{ 1 if video.exclude_random else 0 }}" data-exclude-memories="{{ 1 if video.exclude_memories else 0 }}" data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-label="播放 {{ video.name }}">
       <span class="asset-thumb">
         {% if video.thumb_status == 'ready' %}
-          <img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="{{ video.name }}" loading="lazy" decoding="async">
+          <img {% if video.type == 'flat' and video.height and video.width and video.height > video.width %}class="portrait-thumbnail" {% endif %}src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;r={{ video.thumb_revision }}&amp;preview=1" alt="{{ video.name }}" loading="lazy" decoding="async">
         {% else %}<span class="poster-empty">{% if video.thumb_status == 'error' %}封面失败{% else %}封面生成中{% endif %}</span>{% endif %}
       </span>
       {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
       {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
-      {% if video.hdr_format %}<span class="asset-hdr-badges"><span class="asset-hdr">HDR</span><span class="asset-hdr-standard">{{ video.hdr_format }}</span></span>{% endif %}
+      {% if video.hdr_format %}<span class="asset-hdr-badges" title="源视频 HDR 标准：{{ video.hdr_format }}"><span class="asset-hdr asset-hdr-standard">{{ video.hdr_format|hdr_standard }}</span></span>{% endif %}
       <span class="timeline-year-badge" data-gallery-year hidden>{{ (video.mtime|date)[:4] }}</span>
       <span class="asset-overlay">
         <strong>{{ video.name }}</strong>{% if video.folder %}<span class="asset-event">{{ video.folder }}</span>{% endif %}

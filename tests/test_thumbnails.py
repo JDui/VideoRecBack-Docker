@@ -74,6 +74,7 @@ def test_flat_thumbnail_uses_configured_resolution_and_quality(monkeypatch, tmp_
 
     monkeypatch.setattr(thumbnails, "require_tool", lambda name: name)
     monkeypatch.setattr(thumbnails, "run_ffmpeg", commands.append)
+    monkeypatch.setattr(thumbnails, "probe_video_geometry", lambda path: (1920, 1080))
 
     thumbnails.generate_flat_thumbnail(Path("/videos/demo.mp4"), tmp_path / "thumb.webp", 10, 720)
 

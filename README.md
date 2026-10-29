@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前源码版本：**2.7.7**。本次为验收构建，尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
+当前源码版本：**2.7.8**。本次为验收构建，尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
 
 ## 页面展示
 
@@ -56,16 +56,10 @@ VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线�
 
 ### 1. 下载并加载镜像
 
-在 [v2.7.5 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.5) 下载 `videorecback-2.7.5-amd64.tar`。发布包适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
+使用本地构建的 `videorecback-2.7.8-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。历史公开版本可从 [v2.7.5 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.5) 获取。
 
 ```bash
-docker load -i videorecback-2.7.5-amd64.tar
-```
-
-Release 同时提供 `SHA256SUMS`，可在保存这两个文件的目录中校验：
-
-```bash
-sha256sum -c SHA256SUMS
+docker load -i videorecback-2.7.8-amd64.tar
 ```
 
 ### 2. 创建 Docker Compose 配置
@@ -75,7 +69,7 @@ sha256sum -c SHA256SUMS
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.7.7
+    image: videorecback:2.7.8
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -99,12 +93,12 @@ docker compose up -d
 ```bash
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
-# 使用随 2.7.7 验收包提供的源码；远端尚无 v2.7.7 标签
-docker build -t videorecback:2.7.7 .
+# 使用 main 分支的当前源码
+docker build -t videorecback:2.7.8 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.7 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.8 .`。
 
 ## 升级与数据目录
 
@@ -122,17 +116,18 @@ docker compose up -d
 
 归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
 
-## 2.7.7 验收更新
+## 2.7.8 验收更新
 
 - 首页下方模块统一网格与比例；首页和视频库随屏幕宽度展开，充分使用超宽屏空间。
 - 修正播放器分栏后左侧卡片的固定宽度与日历网格溢出，打开和关闭播放器时保持缩略图浏览位置。
 - 设置 → 维护工具新增「HDR 标准校验」，在后台重新识别已收录视频的 HDR 分类，显示成功与失败数量；不重建封面，失败项保留原标签。
-- 新增 HDR 标准标签与旧索引后台补齐。
+- HDR 标签直接显示 HLG、HDR10、HDR10+、杜比视界等源视频标准，旧索引在后台补齐；详情和播放页也显示标准。
+- 竖屏封面保留完整四宫格画面，识别手机旋转方向；维护工具新增「重载竖屏缩略图」，只重建竖屏封面与预览图，失败项保留旧封面，完成后刷新封面缓存。
 - 补充有上限的 HEVC 帧 SEI 探测，修正实际 HDR10 文件被误标为 PQ 的问题。
 - 时间轴 HDR 标签避让收藏按钮；同步刷新前端资源版本。
 - HDR 转码播放和转码下载使用 HEVC Main10，保留源 PQ/HLG、色域、矩阵、范围及已探测到的静态 HDR 元数据；HLS 使用 fMP4 并声明 VIDEO-RANGE。HDR 编码使用 CPU，现有硬件 H.264 编码器选项用于 SDR。
 - HDR10+、HDR Vivid 及兼容的 Dolby Vision 8.1/8.4 转码保留基础 HDR，动态元数据不保留；无法安全转换的杜比视界或色彩参数不完整时提示使用原画。完整动态标准需播放或下载原画。
-- 缩略图维持现有生成方式。HDR 标签描述源文件，实际 HDR 显示取决于浏览器、解码器与屏幕；全景 WebGL 画布尚未完成 HDR 输出支持。浏览器不支持 HEVC 10bit 时明确提示，不自动转为 SDR。
+- 缩略图维持现有色彩处理方式。HDR 标签描述源文件，实际 HDR 显示取决于浏览器、解码器与屏幕；全景 WebGL 画布尚未完成 HDR 输出支持。浏览器不支持 HEVC 10bit 时明确提示，不自动转为 SDR。
 
 ## 2.7.5 更新
 

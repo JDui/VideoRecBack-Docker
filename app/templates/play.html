@@ -11,7 +11,7 @@
       <button class="player-back-button" type="button" data-player-close aria-label="返回视频列表" title="返回视频列表">{{ icon('back') }}</button>
       <div class="player-heading">
         <h1 title="{{ video.name }}">{{ video.name }}</h1>
-        <div class="player-eyebrow"><span class="player-type-badge">{{ '全景视频' if video.type == 'panorama' else '平面视频' }}</span>{% if video.width and video.height %}<span>{{ video.width }} × {{ video.height }}</span>{% endif %}{% if settings.show_duration and video.duration_seconds %}<span>{{ video.duration_seconds|duration }}</span>{% endif %}</div>
+        <div class="player-eyebrow"><span class="player-type-badge">{{ '全景视频' if video.type == 'panorama' else '平面视频' }}</span>{% if video.hdr_format %}<span title="源视频 HDR 标准：{{ video.hdr_format }}">{{ video.hdr_format|hdr_standard }}</span>{% endif %}{% if video.width and video.height %}<span>{{ video.width }} × {{ video.height }}</span>{% endif %}{% if settings.show_duration and video.duration_seconds %}<span>{{ video.duration_seconds|duration }}</span>{% endif %}</div>
       </div>
       {% endif %}
       <div class="player-toolbar-actions">
@@ -58,7 +58,7 @@
     <div class="player-viewport">
       <div class="player-stage {% if video.type == 'panorama' %}is-panorama{% endif %}">
         {% if video.thumb_status == "ready" %}
-          <img class="player-poster" src="/thumb/{{ video.id }}.webp" alt="{{ video.name }}" data-player-poster>
+          <img class="player-poster" src="/thumb/{{ video.id }}.webp?r={{ video.thumb_revision }}" alt="{{ video.name }}" data-player-poster>
         {% else %}
           <div class="player-poster player-poster--empty" role="img" aria-label="{{ video.name }}" data-player-poster></div>
         {% endif %}
@@ -128,5 +128,5 @@
 {% endblock %}
 {% block scripts %}
   <script type="application/x-vbr-script" data-page-script src="/static/vendor/hls.min.js"></script>
-  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.7&amp;revision=4"></script>
+  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.8&amp;revision=4"></script>
 {% endblock %}

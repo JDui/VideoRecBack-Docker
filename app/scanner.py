@@ -4,12 +4,14 @@ import asyncio
 import fnmatch
 import logging
 import os
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import Settings
 from app.db import Database
-from app.thumbnails import VideoToolError, generate_preview_thumbnail, generate_thumbnail, probe_video
+from app.thumbnails import VideoToolError, generate_preview_thumbnail, generate_thumbnail, probe_video, probe_video_geometry
 from app.video_types import detect_video_type
 
 THUMBNAIL_VERSION = 8
@@ -760,6 +762,41 @@ class Scanner:
             changed += 1
         return changed
 
+    async def rebuild_portrait_thumbnails(self, settings: Settings, progress=None) -> ScanSummary:
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._rebuild_portrait_thumbnails_sync, settings, progress)
+        finally:
+            self._running_count -= 1
+
+    def _rebuild_portrait_thumbnails_sync(self, settings: Settings, progress=None) -> ScanSummary:
+        with self.db.connect() as conn:
+            rows = conn.execute("SELECT id,path,duration_seconds FROM videos WHERE missing=0 AND type='flat' ORDER BY id").fetchall()
+        summary = ScanSummary()
+        for row in rows:
+            summary.seen += 1
+            try:
+                path = Path(row['path'])
+                width, height = probe_video_geometry(path)
+                if height <= width:
+                    summary.skipped += 1
+                    continue
+                if self._generate_and_record_thumbnail(path, row['id'], 'flat', row['duration_seconds'],
+                                                       settings.thumbnail_resolution, preserve_existing=True):
+                    with self.db.connect() as conn:
+                        conn.execute('UPDATE videos SET width=?,height=?,aspect_ratio=? WHERE id=?',
+                                     (width, height, width / height, row['id']))
+                    summary.indexed += 1
+                else:
+                    summary.errors += 1
+            except (VideoToolError, OSError):
+                summary.errors += 1
+            finally:
+                if progress:
+                    progress(summary, len(rows))
+        return summary
+
     def _recheck_all_video_metadata_sync(self, *, hdr_only: bool = False) -> ScanSummary:
         summary = ScanSummary()
         with self.db.connect() as conn:
@@ -848,23 +885,37 @@ class Scanner:
         video_type: str,
         duration: float | None,
         thumbnail_resolution: int = 576,
+        *, preserve_existing: bool = False,
     ) -> bool:
         try:
             final_thumb_path = self.cache_dir / f"{video_id}.webp"
-            generate_thumbnail(path, final_thumb_path, video_type, duration, thumbnail_resolution)
-            if final_thumb_path.exists():
-                generate_preview_thumbnail(final_thumb_path, self.cache_dir / f"{video_id}-preview.webp")
+            if preserve_existing:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                with tempfile.TemporaryDirectory(prefix='portrait-', dir=self.cache_dir) as temporary:
+                    staged = Path(temporary) / 'thumb.webp'
+                    staged_preview = Path(temporary) / 'preview.webp'
+                    generate_thumbnail(path, staged, video_type, duration, thumbnail_resolution)
+                    generate_preview_thumbnail(staged, staged_preview)
+                    staged.replace(final_thumb_path)
+                    staged_preview.replace(self.cache_dir / f"{video_id}-preview.webp")
+            else:
+                generate_thumbnail(path, final_thumb_path, video_type, duration, thumbnail_resolution)
+                if final_thumb_path.exists():
+                    generate_preview_thumbnail(final_thumb_path, self.cache_dir / f"{video_id}-preview.webp")
             with self.db.connect() as conn:
                 conn.execute(
                     """
                     UPDATE videos
-                    SET thumb_status = 'ready', thumb_error = NULL, thumb_failed_at = NULL, thumb_path = ?, thumb_version = ?, updated_at = CURRENT_TIMESTAMP
+                    SET thumb_status = 'ready', thumb_error = NULL, thumb_failed_at = NULL, thumb_path = ?, thumb_version = ?, thumb_revision = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
-                    (str(final_thumb_path), THUMBNAIL_VERSION, video_id),
+                    (str(final_thumb_path), THUMBNAIL_VERSION, time.time_ns(), video_id),
                 )
             return True
         except (VideoToolError, OSError) as exc:
+            if preserve_existing:
+                LOGGER.warning('Portrait thumbnail rebuild failed for video %s: %s', video_id, exc)
+                return False
             with self.db.connect() as conn:
                 conn.execute(
                     """

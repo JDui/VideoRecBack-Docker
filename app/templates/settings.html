@@ -142,6 +142,21 @@
           </div>
           <button class="danger-button" type="submit">刷新所有封面</button>
         </form>
+        <form class="settings-confirm-action" action="/settings/refresh-portrait-thumbnails" method="post"
+          onsubmit="return window.confirm('确认要重载竖屏缩略图吗？将检查已收录普通视频的显示方向，仅重建竖屏封面和预览图；不会重建横屏、全景封面或修改源文件。');">
+          <div>
+            <strong>重载竖屏缩略图</strong>
+            <p class="muted">保留竖屏完整画面，修复手机旋转方向，并刷新封面缓存。失败项保留原封面。</p>
+            <p class="settings-notice" role="status" data-portrait-status data-state="{{ portrait_status.status }}">
+              {% if portrait_status.status == 'running' %}正在检查视频方向：已检查 {{ portrait_status.checked }} 个，重建 {{ portrait_status.rebuilt }} 个，失败 {{ portrait_status.errors }} 个。
+              {% elif portrait_refresh == 'busy' %}已有扫描或维护任务正在运行，本次重载未启动，请完成后重试。
+              {% elif portrait_status.status == 'complete' %}竖屏缩略图重载完成：检查 {{ portrait_status.checked }} 个，重建 {{ portrait_status.rebuilt }} 个，失败 {{ portrait_status.errors }} 个。
+              {% elif portrait_status.status == 'failed' %}竖屏缩略图重载中断，请稍后重试。
+              {% endif %}
+            </p>
+          </div>
+          <button type="submit" data-portrait-refresh {% if portrait_status.status == 'running' %}disabled{% endif %}>重载竖屏缩略图</button>
+        </form>
         <form
           class="settings-confirm-action"
           action="/settings/recheck-panorama-types"
@@ -188,4 +203,4 @@
     <button type="submit" form="preferences-form" data-settings-save>保存设置</button>
   </div></footer>
 {% endblock %}
-{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/settings.js?v=4"></script>{% endblock %}
+{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/settings.js?v=5"></script>{% endblock %}

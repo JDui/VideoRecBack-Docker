@@ -23,6 +23,29 @@ const pollHdrStatus = async () => {
 };
 if (hdrStatus?.dataset.state === 'running') setTimeout(pollHdrStatus, 1000);
 
+const portraitStatus = document.querySelector('[data-portrait-status]');
+const portraitButton = document.querySelector('[data-portrait-refresh]');
+const pollPortraitStatus = async () => {
+  if (!portraitStatus?.isConnected || portraitStatus.dataset.state !== 'running') return;
+  try {
+    const response = await fetch('/settings/portrait-thumbnail-status', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Portrait thumbnail status unavailable');
+    const result = await response.json();
+    if (!portraitStatus.isConnected) return;
+    portraitStatus.dataset.state = result.status;
+    portraitButton.disabled = result.status === 'running';
+    if (result.status === 'running' || result.status === 'complete') {
+      portraitStatus.textContent = `${result.status === 'complete' ? '竖屏缩略图重载完成' : '正在检查视频方向'}：检查 ${result.checked} 个，重建 ${result.rebuilt} 个，失败 ${result.errors} 个。`;
+    } else {
+      portraitStatus.textContent = '竖屏缩略图重载中断，请稍后重试。';
+    }
+  } catch {
+    portraitStatus.textContent = '暂时无法获取重载状态，正在重试。';
+  }
+  if (portraitStatus.dataset.state === 'running') setTimeout(pollPortraitStatus, 2000);
+};
+if (portraitStatus?.dataset.state === 'running') setTimeout(pollPortraitStatus, 1000);
+
 const preferencesForm = document.querySelector('#preferences-form');
 const saveStatus = document.querySelector('[data-settings-save-status]');
 const saveButton = document.querySelector('[data-settings-save]');

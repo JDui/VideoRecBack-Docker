@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
@@ -77,7 +78,7 @@ def _probe_video(ffprobe: str, path: Path) -> ProbeResult:
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=width,height,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile,bit_rate,color_transfer,color_primaries,color_space,color_range:stream_side_data:format=duration,bit_rate",
+            "stream=width,height,sample_aspect_ratio,bits_per_raw_sample,bits_per_sample,pix_fmt,codec_name,profile,bit_rate,color_transfer,color_primaries,color_space,color_range:stream_tags=rotate:stream_side_data:format=duration,bit_rate",
             "-of",
             "json",
             str(path),
@@ -103,10 +104,11 @@ def _probe_video(ffprobe: str, path: Path) -> ProbeResult:
         side_data = probe_hdr_frame_side_data(ffprobe, path)
         hdr_probe_complete = side_data is not None
         stream = {**stream, "side_data_list": list(stream.get("side_data_list") or []) + (side_data or [])}
+    width, height = display_dimensions(stream) if stream.get('width') and stream.get('height') else (None, None)
     return ProbeResult(
         float(raw_duration) if raw_duration else None,
-        int(stream["width"]) if stream.get("width") else None,
-        int(stream["height"]) if stream.get("height") else None,
+        width,
+        height,
         detect_bit_depth(stream),
         str(stream.get("codec_name") or "") or None,
         detect_chroma_subsampling(stream),
@@ -119,6 +121,40 @@ def _probe_video(ffprobe: str, path: Path) -> ProbeResult:
         stream.get("side_data_list") or [],
         hdr_probe_complete,
     )
+
+
+def display_dimensions(stream: dict) -> tuple[int, int]:
+    width, height = int(stream['width']), int(stream['height'])
+    try:
+        sar = Fraction(str(stream.get('sample_aspect_ratio', '1:1')).replace(':', '/'))
+        if sar > 0:
+            width = max(1, round(width * sar))
+    except (ValueError, ZeroDivisionError):
+        pass
+    rotation = next((item['rotation'] for item in (stream.get('side_data_list') or []) if 'rotation' in item),
+                    (stream.get('tags') or {}).get('rotate', 0))
+    try:
+        if round(float(rotation) / 90) % 2:
+            width, height = height, width
+    except (TypeError, ValueError):
+        pass
+    return width, height
+
+
+def probe_video_geometry(path: Path) -> tuple[int, int]:
+    """Read display orientation without the more expensive HDR frame probe."""
+    try:
+        result = subprocess.run([require_tool('ffprobe'), '-v', 'error', '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation',
+            '-of', 'json', str(path)], capture_output=True, text=True, timeout=15, check=False)
+        if result.returncode:
+            raise VideoToolError(result.stderr.strip() or 'Unable to read video orientation')
+        streams = json.loads(result.stdout).get('streams', [])
+        if not streams or not streams[0].get('width') or not streams[0].get('height'):
+            raise VideoToolError('No usable video dimensions')
+        return display_dimensions(streams[0])
+    except (subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as exc:
+        raise VideoToolError(f'Unable to read video orientation: {exc}') from exc
 
 
 def probe_hdr_frame_side_data(ffprobe: str, path: Path) -> list[dict[str, object]] | None:
@@ -277,6 +313,16 @@ def generate_flat_thumbnail(
     ffmpeg = require_tool("ffmpeg")
     times = sample_times(duration)
     tile_width, tile_height = flat_tile_size(height)
+    width, display_height = probe_video_geometry(video_path)
+    portrait = display_height > width
+    if portrait:
+        tile_height = normalize_thumbnail_height(height) // 2
+        tile_width = max(2, round(tile_height * width / display_height / 2) * 2)
+    video_filter = (
+        f"scale={tile_width}:{tile_height},setsar=1"
+        if portrait else
+        f"scale={tile_width}:{tile_height}:force_original_aspect_ratio=increase,crop={tile_width}:{tile_height}"
+    )
     with tempfile.TemporaryDirectory() as tmp:
         frame_paths: list[Path] = []
         for index, timestamp in enumerate(times):
@@ -294,7 +340,7 @@ def generate_flat_thumbnail(
                     "-frames:v",
                     "1",
                     "-vf",
-                    f"scale={tile_width}:{tile_height}:force_original_aspect_ratio=increase,crop={tile_width}:{tile_height}",
+                    video_filter,
                     "-compression_level",
                     WEBP_COMPRESSION_LEVEL,
                     "-quality",

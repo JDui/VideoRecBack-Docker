@@ -709,9 +709,9 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'data-inline-favorite' in response.text
     assert 'data-favorite-state="0"' in response.text
     assert 'class="asset-bit-depth">10bit</span>' in response.text
-    assert 'class="asset-hdr">HDR</span>' in response.text
-    assert 'class="asset-hdr-standard">HLG</span>' in response.text
-    assert "/static/app.js?v=2.7.7" in response.text
+    assert 'class="asset-hdr asset-hdr-standard">HLG</span>' in response.text
+    assert 'class="asset-hdr">HDR</span>' not in response.text
+    assert "/static/app.js?v=2.7.8" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

@@ -477,4 +477,22 @@ body.library-page { display: flex; flex-direction: column; height: 100dvh; overf
 }
 .timeline-gallery .timeline-video:has(.asset-bit-depth) .asset-hdr-badges { max-width: max(0px, calc(100% - 104px)); }
 .home-hdr-badges { max-width: max(0px, calc(100% - 66px)); }
+
+/* Keep the complete portrait collage visible inside every cover shape. */
+.library-page .asset-thumb img.portrait-thumbnail,
+.home-page .home-cover img.portrait-thumbnail,
+.library-page .folder-cover img.portrait-thumbnail,
+.detail-page .detail-poster img.portrait-thumbnail {
+  object-fit: contain;
+  background: #101722;
+  transform: none;
+}
+.library-page .asset-card:has(img.portrait-thumbnail) .asset-hdr-badges {
+  top: 34px;
+  left: 8px;
+  right: auto;
+  max-width: calc(100% - 16px);
+}
+.asset-hdr-badges .asset-hdr-standard,
+.home-hdr-badges .home-hdr-standard { flex-shrink: 1; }
 .transcode-overlay.is-error::before { display: none; }

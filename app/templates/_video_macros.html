@@ -14,18 +14,18 @@
       aria-label="播放 {{ video.name }}"
     >
       {% if video.type == "panorama" and video.thumb_status == "ready" %}
-        <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="" loading="lazy" decoding="async"></span>
+        <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;r={{ video.thumb_revision }}&amp;preview=1" alt="" loading="lazy" decoding="async"></span>
       {% endif %}
       <span class="asset-thumb">
         {% if video.thumb_status == "ready" %}
-          <img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="{{ video.name }}" loading="lazy" decoding="async">
+          <img {% if video.type == 'flat' and video.height and video.width and video.height > video.width %}class="portrait-thumbnail" {% endif %}src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;r={{ video.thumb_revision }}&amp;preview=1" alt="{{ video.name }}" loading="lazy" decoding="async">
         {% else %}
           <span class="poster-empty">{% if video.thumb_status == "error" %}封面失败{% else %}生成中{% endif %}</span>
         {% endif %}
       </span>
       {% if settings.show_duration %}<span class="asset-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
       {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="asset-bit-depth">10bit</span>{% endif %}
-      {% if video.hdr_format %}<span class="asset-hdr-badges"><span class="asset-hdr">HDR</span><span class="asset-hdr-standard">{{ video.hdr_format }}</span></span>{% endif %}
+      {% if video.hdr_format %}<span class="asset-hdr-badges" title="源视频 HDR 标准：{{ video.hdr_format }}"><span class="asset-hdr asset-hdr-standard">{{ video.hdr_format|hdr_standard }}</span></span>{% endif %}
       <span class="asset-overlay">
         <strong>{{ video.name }}</strong>{% if video.folder %}<span class="asset-event">{{ video.folder }}</span>{% endif %}
         <span>{% if settings.show_date %}{{ video.mtime|date }}{% endif %}{% if settings.show_size %}{% if settings.show_date %} · {% endif %}{{ video.size_bytes|size }}{% endif %}{% if video.width and video.height %} · {{ video.width }}×{{ video.height }}{% endif %}</span>

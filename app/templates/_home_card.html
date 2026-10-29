@@ -2,14 +2,14 @@
   <article class="home-video{% if memory %} home-video--memory{% endif %}" data-home-card="{{ video.id }}" data-exclude-random="{{ 1 if video.exclude_random else 0 }}" data-exclude-memories="{{ 1 if video.exclude_memories else 0 }}" data-favorite-state="{{ 1 if video.favorite else 0 }}" data-home-timeline-url="/library#timeline-{{ video.mtime|date }}">
     <a class="home-cover" href="/video/{{ video.id }}/play" data-home-video="{{ video.id }}" aria-label="播放 {{ video.name }}">
       {% if video.thumb_status == 'ready' %}
-        <img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;preview=1" alt="{{ video.name }}" loading="{{ 'eager' if hero else 'lazy' }}" decoding="async">
+        <img {% if video.type == 'flat' and video.height and video.width and video.height > video.width %}class="portrait-thumbnail" {% endif %}src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;r={{ video.thumb_revision }}&amp;preview=1" alt="{{ video.name }}" loading="{{ 'eager' if hero else 'lazy' }}" decoding="async">
       {% else %}
         <span class="home-cover-status">{{ '封面暂不可用' if video.thumb_status == 'error' else '封面正在准备' }}</span>
       {% endif %}
       {% if settings.show_duration and video.duration_seconds %}<span class="home-duration">{{ video.duration_seconds|duration }}</span>{% endif %}
       {% if video.type == 'panorama' %}<span class="home-kind">全景</span>{% endif %}
       {% if video.is_10bit or (video.bit_depth and video.bit_depth >= 10) %}<span class="home-bit-depth">10bit</span>{% endif %}
-      {% if video.hdr_format %}<span class="home-hdr-badges"><span class="home-hdr">HDR</span><span class="home-hdr-standard">{{ video.hdr_format }}</span></span>{% endif %}
+      {% if video.hdr_format %}<span class="home-hdr-badges" title="源视频 HDR 标准：{{ video.hdr_format }}"><span class="home-hdr home-hdr-standard">{{ video.hdr_format|hdr_standard }}</span></span>{% endif %}
       <span class="home-video-caption">
         {% if memory %}<span class="home-memory-year">{{ video.mtime|memory_year }} 年的今天</span>{% endif %}
         <strong class="home-video-title" title="{{ video.name }}">{{ video.name }}</strong>

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS videos (
     thumb_failed_at TEXT,
     thumb_path TEXT,
     thumb_version INTEGER NOT NULL DEFAULT 2,
+    thumb_revision INTEGER NOT NULL DEFAULT 0,
     media_version INTEGER NOT NULL DEFAULT 0
 );
 
@@ -101,6 +102,7 @@ MIGRATIONS = {
     "hdr_checked": "ALTER TABLE videos ADD COLUMN hdr_checked INTEGER NOT NULL DEFAULT 0",
     "mtime_ns": "ALTER TABLE videos ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0",
     "thumb_version": "ALTER TABLE videos ADD COLUMN thumb_version INTEGER NOT NULL DEFAULT 0",
+    "thumb_revision": "ALTER TABLE videos ADD COLUMN thumb_revision INTEGER NOT NULL DEFAULT 0",
     "favorite": "ALTER TABLE videos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
     "exclude_random": "ALTER TABLE videos ADD COLUMN exclude_random INTEGER NOT NULL DEFAULT 0",
     "exclude_memories": "ALTER TABLE videos ADD COLUMN exclude_memories INTEGER NOT NULL DEFAULT 0",

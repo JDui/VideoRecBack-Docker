@@ -19,7 +19,7 @@
     <a class="folder-tile" href="{{ item.url if item.url is defined else '#' }}" aria-label="{{ item.label if item.label is defined else item.name }}，{{ item.count }} 个视频，{{ kind }}">
       <span class="folder-cover">
         {% if item.cover and item.cover.thumb_status == "ready" %}
-          <img src="/thumb/{{ item.cover.id }}.webp?v={{ item.cover.thumb_version }}&amp;preview=1" alt="{{ item.label if item.label is defined else item.name }}" loading="lazy" decoding="async">
+          <img {% if item.cover.type == 'flat' and item.cover.height and item.cover.width and item.cover.height > item.cover.width %}class="portrait-thumbnail" {% endif %}src="/thumb/{{ item.cover.id }}.webp?v={{ item.cover.thumb_version }}&amp;r={{ item.cover.thumb_revision }}&amp;preview=1" alt="{{ item.label if item.label is defined else item.name }}" loading="lazy" decoding="async">
         {% endif %}
       </span>
       <span class="folder-info">
@@ -211,7 +211,7 @@
   {% endif %}
 {% endblock %}
 {% block scripts %}
-  <script type="application/x-vbr-script" data-page-script src="/static/app.js?v=2.7.7&amp;revision=5"></script>
+  <script type="application/x-vbr-script" data-page-script src="/static/app.js?v=2.7.8&amp;revision=5"></script>
   {% if filters.view == 'timeline' %}
     <script type="application/x-vbr-script" data-page-script src="/static/timeline-density.js?v=4"></script>
     <script type="application/x-vbr-script" data-page-script src="/static/timeline.js?v=18&amp;revision=7"></script>

@@ -103,12 +103,14 @@ def create_app() -> FastAPI:
     app.state.thumbnail_refresh_pending = False
     app.state.metadata_recheck_pending = False
     app.state.hdr_recheck_status = {"status": "idle"}
+    app.state.portrait_refresh_status = {"status": "idle"}
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.filters["duration"] = format_duration
     templates.env.filters["size"] = format_size
     templates.env.filters["date"] = format_date
     templates.env.filters["bitrate"] = format_bitrate
+    templates.env.filters["hdr_standard"] = lambda value: {"Dolby Vision": "杜比视界"}.get(value, value)
     templates.env.filters["memory_year"] = lambda value: archive_datetime(value).year
 
     def intranet_preflight(request: Request, settings: Settings):
@@ -357,6 +359,8 @@ def create_app() -> FastAPI:
                 "metadata_recheck": request.query_params.get("metadata_recheck"),
                 "hdr_recheck": request.query_params.get("hdr_recheck"),
                 "hdr_status": app.state.hdr_recheck_status,
+                "portrait_refresh": request.query_params.get("portrait_refresh"),
+                "portrait_status": app.state.portrait_refresh_status,
             },
         )
 
@@ -423,6 +427,19 @@ def create_app() -> FastAPI:
         with db.connect() as conn:
             count = conn.execute("SELECT COUNT(*) AS count FROM videos WHERE missing = 0").fetchone()["count"]
         return RedirectResponse(f"/settings?thumbnail_refresh={count}", status_code=303)
+
+    @app.post("/settings/refresh-portrait-thumbnails")
+    async def refresh_portrait_thumbnails():
+        if is_background_busy(app):
+            return RedirectResponse('/settings?portrait_refresh=busy#maintenance', status_code=303)
+        app.state.thumbnail_refresh_pending = True
+        app.state.portrait_refresh_status = {'status': 'running', 'checked': 0, 'rebuilt': 0, 'errors': 0}
+        asyncio.create_task(run_portrait_thumbnail_refresh(app, load_settings(config_dir)))
+        return RedirectResponse('/settings?portrait_refresh=started#maintenance', status_code=303)
+
+    @app.get("/settings/portrait-thumbnail-status")
+    async def portrait_thumbnail_status():
+        return JSONResponse(app.state.portrait_refresh_status, headers={'Cache-Control': 'no-store'})
 
     @app.post("/settings/recheck-panorama-types")
     async def recheck_panorama_types():
@@ -751,7 +768,7 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/thumb/{video_id}.webp")
-    async def thumb(video_id: int, preview: int = 0):
+    async def thumb(request: Request, video_id: int, preview: int = 0):
         video = get_video(db, video_id)
         thumb_path = video["thumb_path"]
         if video["thumb_status"] != "ready" or not thumb_path or not Path(thumb_path).exists():
@@ -771,7 +788,8 @@ def create_app() -> FastAPI:
         return FileResponse(
             selected_path,
             media_type="image/webp",
-            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            headers={"Cache-Control": "public, max-age=31536000, immutable"
+                     if request.query_params.get('r') == str(video['thumb_revision']) else "no-cache"},
         )
 
     return app
@@ -854,6 +872,21 @@ async def run_thumbnail_refresh(app: FastAPI, settings: Settings) -> None:
         await asyncio.to_thread(app.state.scanner.rebuild_all_thumbnails, settings)
     except Exception:
         LOGGER.exception("Thumbnail refresh failed.")
+    finally:
+        app.state.thumbnail_refresh_pending = False
+
+
+async def run_portrait_thumbnail_refresh(app: FastAPI, settings: Settings) -> None:
+    def progress(summary, total):
+        app.state.portrait_refresh_status = {'status': 'running', 'checked': summary.seen,
+            'rebuilt': summary.indexed, 'errors': summary.errors, 'total': total}
+    try:
+        summary = await app.state.scanner.rebuild_portrait_thumbnails(settings, progress)
+        app.state.portrait_refresh_status = {'status': 'complete', 'checked': summary.seen,
+            'rebuilt': summary.indexed, 'errors': summary.errors, 'skipped': summary.skipped}
+    except Exception:
+        LOGGER.exception('Portrait thumbnail refresh failed.')
+        app.state.portrait_refresh_status = {**app.state.portrait_refresh_status, 'status': 'failed'}
     finally:
         app.state.thumbnail_refresh_pending = False
 
