@@ -318,6 +318,7 @@ def generate_flat_thumbnail(
     if portrait:
         tile_height = normalize_thumbnail_height(height) // 2
         tile_width = max(2, round(tile_height * width / display_height / 2) * 2)
+        tile_width *= 2
     video_filter = (
         f"scale={tile_width}:{tile_height},setsar=1"
         if portrait else
