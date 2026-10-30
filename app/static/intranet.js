@@ -1,12 +1,10 @@
 const intranetConfig = document.body?.dataset || {};
 
-const FETCH_PROBE_TIMEOUT_MS = 8000;
+const FETCH_PROBE_TIMEOUT_MS = 1500;
 const IMAGE_PROBE_TIMEOUT_MS = 1200;
 const PREFLIGHT_TIMEOUT_MS = 1500;
 const MANUAL_PROBE_TIMEOUT_MS = 6000;
-const MANUAL_REACHABLE_TTL_MS = 60 * 1000;
-const PROBE_INTERVAL_MS = 15000;
-const PROBE_RETRY_DELAYS_MS = [350, 1200, 3000];
+const AUTO_PROBE_SESSION_KEY = "vbr_intranet_checked";
 const jumpButton = document.querySelector("[data-intranet-jump]");
 const LOCAL_ACCESS = "local";
 const EXTERNAL_ACCESS = "external";
@@ -27,7 +25,7 @@ const markAccess = () => {
   const status = document.querySelector('[data-intranet-current-status]');
   const hint = document.querySelector('[data-intranet-external-hint]');
   const enabled = intranetConfig.intranetEnabled === '1' && Boolean(configuredRedirectHost());
-  if (status) status.textContent = isLocalAccess() ? '当前已通过内网访问。' : enabled ? '当前通过其他地址访问，正在检测目标内网服务。' : '内网直连检测未启用或目标地址尚未配置；修改后请保存设置。';
+  if (status) status.textContent = isLocalAccess() ? '当前已通过内网访问。' : enabled ? '当前通过其他地址访问；自动检测仅在本次浏览会话首次进入首页时进行，可点击顶部“检测内网”手动重试。' : '内网直连检测未启用或目标地址尚未配置；修改后请保存设置。';
   if (hint) hint.hidden = !enabled || isLocalAccess();
 };
 
@@ -203,14 +201,10 @@ const browserCanReachIntranet = async () => {
 
 markAccess();
 
-let activeProbe = null;
-let retryIndex = 0;
-let retryTimer = null;
 let manualProbeActive = false;
 let manualProbeNonce = "";
 let manualProbeWindow = null;
 let manualProbeTimer = null;
-let manualReachableUntil = 0;
 
 const shouldProbe = () => {
   return intranetConfig.intranetEnabled === "1" &&
@@ -219,13 +213,26 @@ const shouldProbe = () => {
     intranetOrigin() !== null;
 };
 
-const scheduleFastRetry = () => {
-  if (retryTimer || retryIndex >= PROBE_RETRY_DELAYS_MS.length) return;
-  retryTimer = window.setTimeout(() => {
-    retryTimer = null;
-    retryIndex += 1;
-    refreshJumpButton();
-  }, PROBE_RETRY_DELAYS_MS[retryIndex]);
+const automaticProbeAttempted = () => {
+  try {
+    if (window.sessionStorage.getItem(AUTO_PROBE_SESSION_KEY) === "1") return true;
+  } catch {}
+  return document.cookie.split(";").some((cookie) => cookie.trim() === `${AUTO_PROBE_SESSION_KEY}=1`);
+};
+
+const rememberAutomaticProbe = () => {
+  // The session cookie also lets the server skip the preflight page on return.
+  // sessionStorage covers browsers that reject cookies, without persisting failures forever.
+  try { window.sessionStorage.setItem(AUTO_PROBE_SESSION_KEY, "1"); } catch {}
+  document.cookie = `${AUTO_PROBE_SESSION_KEY}=1; Path=/; SameSite=Lax`;
+};
+
+const claimAutomaticProbe = () => {
+  const isHome = intranetConfig.intranetPreflight === "1" || document.body.classList.contains("home-page");
+  if (!isHome || !shouldProbe() || automaticProbeAttempted()) return false;
+  // Record the attempt before making requests, including failures and timeouts.
+  rememberAutomaticProbe();
+  return true;
 };
 
 const createProbeNonce = () => {
@@ -250,8 +257,6 @@ const finishManualProbe = (reachable) => {
   } catch {}
   manualProbeWindow = null;
   if (reachable) {
-    manualReachableUntil = Date.now() + MANUAL_REACHABLE_TTL_MS;
-    retryIndex = 0;
     markProbeState("reachable");
     showJumpButton();
     return;
@@ -311,7 +316,7 @@ const handleProbeMessage = (event) => {
   finishManualProbe(true);
 };
 
-const refreshJumpButton = async () => {
+const initializeJumpButton = async () => {
   markAccess();
   if (isLocalAccess()) {
     hideJumpButton();
@@ -323,32 +328,21 @@ const refreshJumpButton = async () => {
     markProbeState("disabled");
     return;
   }
-  if (manualProbeActive) return;
-  if (manualReachableUntil > Date.now()) {
-    markProbeState("reachable");
-    showJumpButton();
+  showDetectButton();
+  if (!claimAutomaticProbe()) {
+    markProbeState("idle");
     return;
   }
-  if (jumpButton?.dataset.mode !== JUMP_MODE) {
-    showDetectButton();
-  }
-  if (activeProbe) return;
   markProbeState("checking");
-  activeProbe = browserCanReachIntranet();
-  const reachable = await activeProbe;
-  activeProbe = null;
+  const reachable = await browserCanReachIntranet();
+  // A manual handshake owns the UI once started, even if this request finishes later.
+  if (manualProbeActive || document.body.dataset.intranetProbe !== "checking") return;
   if (reachable && shouldProbe()) {
-    retryIndex = 0;
     markProbeState("reachable");
     showJumpButton();
   } else {
     markProbeState("unreachable");
-    if (manualReachableUntil > Date.now()) {
-      showJumpButton();
-    } else {
-      showDetectButton();
-    }
-    scheduleFastRetry();
+    showDetectButton();
   }
 };
 
@@ -364,7 +358,7 @@ const runPreflight = () => {
     window.location.replace(fallback.toString());
   };
   const timeout = window.setTimeout(() => finish(false), PREFLIGHT_TIMEOUT_MS);
-  if (!shouldProbe()) {
+  if (!claimAutomaticProbe()) {
     finish(false);
     return;
   }
@@ -374,6 +368,7 @@ const runPreflight = () => {
 if (intranetConfig.intranetPreflight === "1") {
   runPreflight();
 } else {
+  if (intranetConfig.intranetSkipProbe === "1") rememberAutomaticProbe();
   jumpButton?.addEventListener("click", () => {
     if (jumpButton.dataset.mode === JUMP_MODE) {
       redirectToIntranet();
@@ -382,10 +377,5 @@ if (intranetConfig.intranetPreflight === "1") {
     startManualProbe();
   });
   window.addEventListener("message", handleProbeMessage);
-  refreshJumpButton();
-  window.setInterval(refreshJumpButton, PROBE_INTERVAL_MS);
-  window.addEventListener("online", refreshJumpButton);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) refreshJumpButton();
-  });
+  initializeJumpButton();
 }

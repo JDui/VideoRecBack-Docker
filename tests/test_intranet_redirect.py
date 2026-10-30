@@ -21,8 +21,7 @@ def intranet_app(monkeypatch, tmp_path):
     return app
 
 
-@pytest.mark.parametrize("path", ["/", "/library?view=timeline", "/settings", "/video/1", "/video/1/play?embed=1"])
-def test_redirect_preflight_runs_before_loading_page_data(intranet_app, monkeypatch, path):
+def test_home_preflight_runs_before_loading_page_data(intranet_app, monkeypatch):
     def unexpected_page_load(*args, **kwargs):
         pytest.fail("Page data must not load before the intranet preflight")
 
@@ -30,7 +29,7 @@ def test_redirect_preflight_runs_before_loading_page_data(intranet_app, monkeypa
     for symbol in ("home_content", "query_videos", "get_video", "ensure_tenbit_status"):
         monkeypatch.setattr(main, symbol, unexpected_page_load)
 
-    response = TestClient(intranet_app).get(path)
+    response = TestClient(intranet_app).get("/")
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
@@ -42,6 +41,32 @@ def test_redirect_preflight_runs_before_loading_page_data(intranet_app, monkeypa
     assert "/static/styles.css" not in response.text
     assert "VideoRecBackLoading" in response.text
     assert "正在检测内网连接" not in response.text
+
+
+def test_other_pages_load_directly_and_returning_home_skips_preflight(intranet_app):
+    with intranet_app.state.db.connect() as conn:
+        conn.execute("""
+            INSERT INTO videos(id, path, name, mtime, missing, type, size_bytes, is_10bit)
+            VALUES (1, '/media/test.mp4', 'test.mp4', 1, 0, 'flat', 1, 0)
+        """)
+    client = TestClient(intranet_app)
+    for path in ["/library?view=timeline", "/?view=folders", "/settings", "/video/1", "/video/1/play?embed=1"]:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert 'data-intranet-preflight="1"' not in response.text
+        assert "/static/styles.css" in response.text
+
+    # Visiting another page first must not consume the first home probe.
+    assert 'data-intranet-preflight="1"' in client.get("/").text
+    client.cookies.set("vbr_intranet_checked", "1")
+    for _ in range(2):
+        response = client.get("/")
+        assert response.status_code == 200
+        assert 'data-intranet-preflight="1"' not in response.text
+        assert 'class="home-page"' in response.text
+
+    client.cookies.clear()
+    assert 'data-intranet-preflight="1"' in client.get("/").text
 
 
 @pytest.mark.parametrize("changes", [

@@ -113,9 +113,18 @@ def create_app() -> FastAPI:
     templates.env.filters["hdr_standard"] = lambda value: {"Dolby Vision": "杜比视界"}.get(value, value)
     templates.env.filters["memory_year"] = lambda value: archive_datetime(value).year
 
+    def is_home_request(request: Request) -> bool:
+        library_params = {
+            "view", "type", "duration", "aspect", "folder", "q",
+            "calendar_zoom", "calendar_year", "calendar_month", "date_from", "date_to",
+        }
+        return request.url.path == "/" and not library_params.intersection(request.query_params)
+
     def intranet_preflight(request: Request, settings: Settings):
         if (
-            not settings.intranet_auto_redirect_enabled
+            not is_home_request(request)
+            or request.cookies.get("vbr_intranet_checked") == "1"
+            or not settings.intranet_auto_redirect_enabled
             or not settings.intranet_keepalive_enabled
             or not settings.intranet_redirect_host
             or request.query_params.get("_vbr_skip_intranet") == "1"
@@ -237,11 +246,7 @@ def create_app() -> FastAPI:
         })
 
     def render_index(request: Request, settings: Settings):
-        library_params = {
-            "view", "type", "duration", "aspect", "folder", "q",
-            "calendar_zoom", "calendar_year", "calendar_month", "date_from", "date_to",
-        }
-        if request.url.path == "/" and not library_params.intersection(request.query_params):
+        if is_home_request(request):
             return templates.TemplateResponse(
                 request, "home.html",
                 {"settings": settings, "home": home_content(db), "scan_running": is_scan_running(app)},
@@ -345,9 +350,6 @@ def create_app() -> FastAPI:
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
         settings = load_settings(config_dir)
-        preflight = intranet_preflight(request, settings)
-        if preflight is not None:
-            return preflight
         return templates.TemplateResponse(
             request,
             "settings.html",
@@ -589,9 +591,6 @@ def create_app() -> FastAPI:
     @app.get("/video/{video_id}", response_class=HTMLResponse)
     async def video_detail(request: Request, video_id: int):
         settings = load_settings(config_dir)
-        preflight = intranet_preflight(request, settings)
-        if preflight is not None:
-            return preflight
         video = get_video(db, video_id)
         return templates.TemplateResponse(
             request,
@@ -687,9 +686,6 @@ def create_app() -> FastAPI:
     @app.get("/video/{video_id}/play", response_class=HTMLResponse)
     async def play_page(request: Request, video_id: int):
         settings = load_settings(config_dir)
-        preflight = intranet_preflight(request, settings)
-        if preflight is not None:
-            return preflight
         video = await asyncio.to_thread(ensure_tenbit_status, db, video_id)
         return templates.TemplateResponse(
             request,
