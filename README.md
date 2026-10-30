@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前源码版本：**2.7.9**。本次为验收构建，尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
+当前源码版本：**2.7.10**。本次为验收构建，尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
 
 ## 页面展示
 
@@ -56,10 +56,10 @@ VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线�
 
 ### 1. 下载并加载镜像
 
-使用本地构建的 `videorecback-2.7.9-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。历史公开版本可从 [v2.7.5 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.5) 获取。
+使用本地构建的 `videorecback-2.7.10-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。历史公开版本可从 [v2.7.5 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.5) 获取。
 
 ```bash
-docker load -i videorecback-2.7.9-amd64.tar
+docker load -i videorecback-2.7.10-amd64.tar
 ```
 
 ### 2. 创建 Docker Compose 配置
@@ -69,7 +69,7 @@ docker load -i videorecback-2.7.9-amd64.tar
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.7.9
+    image: videorecback:2.7.10
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -94,11 +94,11 @@ docker compose up -d
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
 # 使用 main 分支的当前源码
-docker build -t videorecback:2.7.9 .
+docker build -t videorecback:2.7.10 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.9 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.10 .`。
 
 ## 升级与数据目录
 
@@ -115,6 +115,12 @@ docker compose up -d
 ## 日期与时区
 
 归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
+
+## 2.7.10 更新
+
+- 修复手动内网连接依赖弹窗回传的问题：按钮改为「连接内网」，在当前窗口切换并保留路径、查询与锚点，不再创建探测窗口。
+- 每个窗口首次进入首页各自动探测一次，其他窗口的会话 Cookie 不再阻止本窗口的首次尝试；切换页面、刷新及返回首页仍不会重复探测。
+- 内网自动检测与页面回归共 27 项通过；Chrome 无弹窗环境下连接 NAS 服务已验证。极空间内置浏览器及真实外网入口仍需升级后验收。
 
 ## 2.7.9 更新
 
@@ -186,9 +192,9 @@ docker compose up -d
 
 ## 内网直连与自动跳转
 
-设置页“内网连接”可配置服务地址、端口与协议，并开启内网直连检测。每个浏览器会话仅在首次进入首页时自动探测一次，成功、失败或超时都会记住本次尝试；切换页面、返回首页、刷新及切回窗口不再自动探测，也不定时重试。需要重新检测（例如切换网络后）时，可点击“检测内网”，通过一次性顶层导航握手确认连接，再使用“跳转内网”。
+设置页“内网连接”可配置服务地址、端口与协议，并开启内网直连检测。每个窗口仅在首次进入首页时自动探测一次，成功、失败或超时都会记住本次尝试；切换页面、返回首页、刷新及切回窗口不再自动探测，也不定时重试。未自动切换（例如浏览器限制后台内网请求或切换网络后）时，可点击“连接内网”，在当前窗口直接访问配置的内网地址并保留页面位置；不再打开探测弹窗，也不依赖窗口之间的消息回传。连接失败可使用浏览器返回键回到原页面。
 
-“首页首次载入前自动跳转内网”对应 `/config/settings.json` 中的 `intranet_auto_redirect_enabled`，默认 `false`，需同时开启直连检测并填写服务地址。开启后，仅首次进入首页时先检测内网，成功后保留路径、查询参数和锚点跳转；失败或超过 1.5 秒继续加载当前地址，后续页面直接加载。直接打开视频库、设置、详情或播放页面不会触发自动探测或跳转。已经使用内网地址时不会重复跳转；手动检测成功时仍会按此开关决定是否跳转。
+“首页首次访问时自动跳转内网”对应 `/config/settings.json` 中的 `intranet_auto_redirect_enabled`，默认 `false`，需同时开启直连检测并填写服务地址。开启后，仅当前窗口首次进入首页时检测内网，成功后保留路径、查询参数和锚点跳转；失败或超过 1.5 秒继续加载当前地址，后续页面直接加载。直接打开视频库、设置、详情或播放页面不会触发自动探测或跳转。已经使用内网地址时不会重复跳转；手动点击“连接内网”始终执行切换，不受自动跳转开关限制。新窗口会重新尝试一次，旧窗口的会话 Cookie 只用于省去预检测页面，不会阻止新窗口的首次探测。后台探测受浏览器内网访问权限和混合内容策略约束，不能以超时判定服务一定不可达。
 
 ## 本地开发与验证
 

@@ -140,20 +140,30 @@ test("disabled detection and a matching local origin do not probe or redirect", 
   }
 });
 
-test("manual verification redirects automatically only after validating the handshake", async () => {
-  const state = start({ preflight: false, url: "https://public.example/settings" });
-  assert.equal(state.requests.length, 0);
+test("manual connection uses the current window without a popup or opener and preserves the page", () => {
+  for (const auto of [true, false]) {
+    const state = start({ preflight: false, auto,
+      url: "https://public.example/library?view=timeline&q=family&_vbr_skip_intranet=1#day-1" });
+    assert.equal(state.requests.length, 0);
+    assert.equal(state.button.textContent, "连接内网");
+    state.listeners.get("button:click")();
+    assert.equal(state.popup, undefined);
+    assert.equal(state.navigations.length, 1);
+    assert.equal(state.navigations[0].method, "assign", "Back should return to the external page");
+    assert.equal(state.navigations[0].url.href,
+      "http://192.168.1.10:8080/library?view=timeline&q=family#day-1");
+  }
+});
+
+test("a late automatic result does not navigate again after a manual connection", async () => {
+  let resolveFetch;
+  const state = start({ preflight: false,
+    fetchImpl: () => new Promise(resolve => { resolveFetch = resolve; }) });
   state.listeners.get("button:click")();
-  const message = {
-    source: state.popup, origin: "http://192.168.1.10:8080",
-    data: { type: "videorecback:intranet-probe", service: "videorecback", nonce: "wrong" },
-  };
-  state.listeners.get("message")(message);
-  assert.equal(state.navigations.length, 0);
-  message.data.nonce = state.popup.url.searchParams.get("nonce");
-  state.listeners.get("message")(message);
+  resolveFetch(healthResponse());
+  await flush();
   assert.equal(state.navigations.length, 1);
-  assert.equal(state.navigations[0].method, "replace");
+  assert.equal(state.navigations[0].method, "assign");
 });
 
 test("direct visits to other pages never probe, even in a fresh session", async () => {
@@ -191,7 +201,8 @@ test("failed home detection has no timer, online or visibility retries and can b
   const returning = start({ preflight: false, auto: false, session: state.session });
   assert.equal(returning.requests.length, 0);
   returning.listeners.get("button:click")();
-  assert.equal(returning.popup.url.pathname, "/intranet/probe");
+  assert.equal(returning.popup, undefined);
+  assert.equal(returning.navigations[0].url.origin, "http://192.168.1.10:8080");
   const fresh = start({ preflight: false, auto: false });
   assert.equal(fresh.requests.length, 1, "A new browser session may detect again");
 });
@@ -204,6 +215,19 @@ test("either session cookie or sessionStorage alone prevents repeated automatic 
     assert.equal(returning.images.length, 0);
     assert.equal(returning.navigations[0].url.searchParams.get("_vbr_skip_intranet"), "1");
   }
+});
+
+test("a new window probes once even if another window left a session cookie", async () => {
+  const first = start();
+  first.expire(1500);
+  const session = { cookie: first.session.cookie, storage: new Map() };
+  // The server skips its preflight shell when it sees the existing cookie.
+  const nextWindow = start({ preflight: false, session, fetchImpl: async () => healthResponse() });
+  await flush();
+  assert.equal(nextWindow.requests.length, 1);
+  assert.equal(nextWindow.navigations[0].url.origin, "http://192.168.1.10:8080");
+  const refreshed = start({ preflight: false, session });
+  assert.equal(refreshed.requests.length, 0);
 });
 
 test("explicitly continuing on the public home skips detection even without prior session state", () => {

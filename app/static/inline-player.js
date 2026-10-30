@@ -35,9 +35,38 @@
   window.VideoRecBackPlayer = {
     transition,
     isWide: () => innerWidth >= 1000 && innerHeight >= 600 && innerWidth / Math.max(innerHeight, 1) > 4 / 3,
+    mountHeader: (frame, playerDocument) => {
+      const pane = frame?.closest('[data-inline-player]');
+      if (!pane || frame.contentDocument !== playerDocument) return false;
+      const menus = playerDocument.querySelectorAll('[data-quality-menu], [data-download-menu]');
+      const metadata = playerDocument.querySelector('[data-player-metadata]');
+      pane.querySelector('[data-inline-media-actions]').replaceChildren(...menus);
+      const info = pane.querySelector('[data-inline-player-metadata]');
+      info.replaceChildren(...(metadata ? [metadata] : []));
+      info.title = metadata ? [...metadata.children].map(item => item.title || item.textContent.trim()).join(' · ') : '';
+      pane.querySelector('[data-inline-player-notices]').replaceChildren(
+        ...playerDocument.querySelectorAll('[data-download-status], [data-hdr-playback-notice], [data-download-frame]'));
+      return true;
+    },
   };
   for (const shell of document.querySelectorAll('.app-shell, .home-player-shell')) {
     const frame = shell.querySelector('[data-player-frame]');
+    const pane = shell.querySelector('[data-inline-player]');
+    // A new target must not retain the previous video's menus or download URLs.
+    if (frame) new MutationObserver(() => {
+      pane.querySelector('[data-inline-media-actions]').replaceChildren();
+      pane.querySelector('[data-inline-player-metadata]').replaceChildren();
+      pane.querySelector('[data-inline-player-notices]').replaceChildren();
+    }).observe(frame, { attributes: true, attributeFilter: ['src'] });
+    const menus = () => [...pane.querySelectorAll('.quality-menu')];
+    document.addEventListener('click', event => {
+      for (const menu of menus()) if (!menu.contains(event.target)) menu.open = false;
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const menu = menus().find(item => item.open);
+      if (menu) { menu.open = false; menu.querySelector('summary')?.focus(); }
+    });
     frame?.addEventListener('load', () => {
       if (frame.getAttribute('src') !== 'about:blank') shell.classList.remove('player-loading');
     });

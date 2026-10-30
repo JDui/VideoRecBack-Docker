@@ -496,3 +496,36 @@ body.library-page { display: flex; flex-direction: column; height: 100dvh; overf
 .asset-hdr-badges .asset-hdr-standard,
 .home-hdr-badges .home-hdr-standard { flex-shrink: 1; }
 .transcode-overlay.is-error::before { display: none; }
+
+/* One compact header shared by home and library embedded playback. */
+.preview-pane .inline-player-head { position: relative; container-type: inline-size; gap: 12px; height: 52px; min-height: 52px; box-sizing: border-box; }
+.preview-pane .inline-player-heading { gap: 2px; overflow: hidden; }
+.preview-pane .inline-player-heading strong { line-height: 20px; }
+.player-metadata { display: flex; gap: 6px; align-items: center; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; font-size: 10px; line-height: 14px; color: var(--muted); }
+.player-metadata::-webkit-scrollbar { display: none; }
+.player-metadata > span { flex: 0 0 auto; }
+.player-metadata > span + span::before { content: '·'; margin-right: 6px; opacity: .6; }
+.inline-player-metadata { min-width: 0; overflow: hidden; }
+.preview-pane .inline-player-actions { flex-wrap: nowrap; gap: 6px; }
+.inline-media-actions { display: flex; align-items: center; gap: 6px; }
+.inline-media-actions .quality-menu > summary { min-height: 40px; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
+.inline-media-actions .quality-menu-panel { z-index: 50; max-width: min(280px, calc(100vw - 40px)); }
+.inline-media-actions .quality-menu-panel button { width: 100%; }
+.preview-pane { position: relative; }
+.inline-player-notices { position: absolute; top: 62px; left: 20px; right: 20px; z-index: 40; pointer-events: none; }
+.inline-player-notices p:not([hidden]) { margin: 0; padding: 6px 10px; background: var(--panel, #f2f4f7); border-radius: 8px; }
+.player-page .player-shell.has-parent-toolbar { grid-template-rows: minmax(0, 1fr) auto; }
+.player-toolbar--embed[hidden] { display: none; }
+@container (max-width: 650px) {
+  .inline-player-actions > .nav-button span { display: none; }
+  .inline-player-actions > .nav-button { width: 36px; min-height: 36px; padding: 8px; justify-content: center; }
+}
+@container (max-width: 520px) {
+  .inline-player-heading { align-self: flex-start; }
+  .inline-player-metadata { position: absolute; bottom: 10px; left: 0; right: 0; }
+  .inline-player-actions { align-self: flex-start; }
+  .preview-pane .inline-player-actions > .nav-button,
+  .preview-pane .inline-player-actions [data-close-player] { width: 28px; height: 28px; min-height: 28px; padding: 4px; }
+  .inline-media-actions [data-quality-value] { display: none; }
+  .inline-media-actions .quality-menu > summary { min-height: 28px; height: 28px; padding: 4px 6px; gap: 4px; }
+}

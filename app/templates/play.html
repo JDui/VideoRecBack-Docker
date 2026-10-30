@@ -11,9 +11,10 @@
       <button class="player-back-button" type="button" data-player-close aria-label="返回视频列表" title="返回视频列表">{{ icon('back') }}</button>
       <div class="player-heading">
         <h1 title="{{ video.name }}">{{ video.name }}</h1>
-        <div class="player-eyebrow"><span class="player-type-badge">{{ '全景视频' if video.type == 'panorama' else '平面视频' }}</span>{% if video.hdr_format %}<span title="源视频 HDR 标准：{{ video.hdr_format }}">{{ video.hdr_format|hdr_standard }}</span>{% endif %}{% if video.width and video.height %}<span>{{ video.width }} × {{ video.height }}</span>{% endif %}{% if settings.show_duration and video.duration_seconds %}<span>{{ video.duration_seconds|duration }}</span>{% endif %}</div>
+        {% include "_player_metadata.html" %}
       </div>
       {% endif %}
+      {% if embed %}<div hidden data-embed-metadata>{% include "_player_metadata.html" %}</div>{% endif %}
       <div class="player-toolbar-actions">
         <details class="quality-menu" data-quality-menu>
           <summary class="nav-button secondary"><span class="quality-caption">画质</span><span data-quality-value>原画</span></summary>
@@ -128,5 +129,5 @@
 {% endblock %}
 {% block scripts %}
   <script type="application/x-vbr-script" data-page-script src="/static/vendor/hls.min.js"></script>
-  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.9&amp;revision=5"></script>
+  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.10&amp;revision=7"></script>
 {% endblock %}

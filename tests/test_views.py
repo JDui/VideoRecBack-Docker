@@ -385,7 +385,7 @@ def test_intranet_action_is_visible_when_enabled(monkeypatch, tmp_path):
     button_start = response.text.split("data-intranet-jump", 1)[0].rsplit("<button", 1)[1]
     assert "hidden" not in button_markup
     assert "is-visible" in button_start
-    assert ">检测内网" in button_markup
+    assert ">连接内网" in button_markup
 
 
 def test_connectivity_test_endpoints(monkeypatch, tmp_path):
@@ -711,7 +711,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'class="asset-bit-depth">10bit</span>' in response.text
     assert 'class="asset-hdr asset-hdr-standard">HLG</span>' in response.text
     assert 'class="asset-hdr">HDR</span>' not in response.text
-    assert "/static/app.js?v=2.7.9" in response.text
+    assert "/static/app.js?v=2.7.10" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

@@ -1,0 +1,9 @@
+<div class="player-metadata" data-player-metadata tabindex="0" role="group" aria-label="视频信息，可横向滚动查看">
+  {% if settings.show_date %}<span>{{ video.mtime|date }}</span>{% endif %}
+  {% if video.hdr_format %}<span title="源视频 HDR 标准：{{ video.hdr_format|hdr_standard }}">{{ video.hdr_format|hdr_standard }}</span>{% endif %}
+  {% if video.folder %}<span title="{{ video.folder }}">{{ video.folder.split('/')[-2:]|join(' / ') }}</span>{% endif %}
+  {% if video.bit_depth %}<span>{{ video.bit_depth }}bit</span>{% endif %}
+  {% if video.width and video.height %}<span>{{ video.width }}×{{ video.height }}</span>{% endif %}
+  {% if settings.show_duration and video.duration_seconds %}<span>{{ video.duration_seconds|duration }}</span>{% endif %}
+  {% if settings.show_size %}<span>{{ video.size_bytes|size }}</span>{% endif %}
+</div>

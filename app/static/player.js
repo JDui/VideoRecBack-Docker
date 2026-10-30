@@ -234,7 +234,7 @@ const changeVolumeBy = (delta) => {
 const isEditableKeyTarget = (target) => {
   if (!(target instanceof Element)) return false;
   if (target.closest("[contenteditable='true']")) return true;
-  return Boolean(target.closest("input, select, textarea, button, summary, a"));
+  return Boolean(target.closest("input, select, textarea, button, summary, a, [data-player-metadata]"));
 };
 
 const getLogicalDuration = () => {
@@ -860,6 +860,16 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.querySelector("[data-player-close]")?.addEventListener("click", closePlayerPage);
+// Reuse the live controls, including their bound quality/download handlers.
+// Keep the original embedded toolbar as a fallback when no matching parent exists.
+if (shell?.dataset.embed === '1' && window.parent !== window) {
+  try {
+    if (window.parent.VideoRecBackPlayer?.mountHeader(window.frameElement, document)) {
+      document.querySelector('.player-toolbar--embed').hidden = true;
+      shell.classList.add('has-parent-toolbar');
+    }
+  } catch { /* A standalone or cross-origin embed keeps its own controls. */ }
+}
 window.addEventListener("pagehide", () => stopHlsHeartbeat(true));
 window.addEventListener("beforeunload", () => stopHlsHeartbeat(true));
 document.addEventListener("visibilitychange", () => {

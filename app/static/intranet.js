@@ -3,14 +3,12 @@ const intranetConfig = document.body?.dataset || {};
 const FETCH_PROBE_TIMEOUT_MS = 1500;
 const IMAGE_PROBE_TIMEOUT_MS = 1200;
 const PREFLIGHT_TIMEOUT_MS = 1500;
-const MANUAL_PROBE_TIMEOUT_MS = 6000;
 const AUTO_PROBE_SESSION_KEY = "vbr_intranet_checked";
 const jumpButton = document.querySelector("[data-intranet-jump]");
 const LOCAL_ACCESS = "local";
 const EXTERNAL_ACCESS = "external";
 const DETECT_MODE = "detect";
 const JUMP_MODE = "jump";
-const PROBE_MESSAGE_TYPE = "videorecback:intranet-probe";
 
 const configuredRedirectHost = () => (intranetConfig.intranetRedirectHost || "").trim();
 
@@ -25,7 +23,7 @@ const markAccess = () => {
   const status = document.querySelector('[data-intranet-current-status]');
   const hint = document.querySelector('[data-intranet-external-hint]');
   const enabled = intranetConfig.intranetEnabled === '1' && Boolean(configuredRedirectHost());
-  if (status) status.textContent = isLocalAccess() ? '当前已通过内网访问。' : enabled ? '当前通过其他地址访问；自动检测仅在本次浏览会话首次进入首页时进行，可点击顶部“检测内网”手动重试。' : '内网直连检测未启用或目标地址尚未配置；修改后请保存设置。';
+  if (status) status.textContent = isLocalAccess() ? '当前已通过内网访问。' : enabled ? '当前通过其他地址访问；自动检测仅在当前窗口首次进入首页时进行；未自动切换时，可点击顶部“连接内网”。' : '内网直连检测未启用或目标地址尚未配置；修改后请保存设置。';
   if (hint) hint.hidden = !enabled || isLocalAccess();
 };
 
@@ -51,22 +49,12 @@ const sameTarget = () => {
 
 const isLocalAccess = () => sameTarget();
 
-const currentPageOrigin = () => {
-  if (window.location.origin && window.location.origin !== "null") {
-    return window.location.origin;
-  }
-  try {
-    return new URL(document.referrer).origin;
-  } catch {
-    return "";
-  }
-};
-
 const redirectToIntranet = (replace = false) => {
   const target = intranetOrigin();
   if (!target || sameTarget()) return false;
   target.pathname = window.location.pathname;
   target.search = window.location.search;
+  target.searchParams.delete("_vbr_skip_intranet");
   target.hash = window.location.hash;
   if (replace) {
     window.location.replace(target.toString());
@@ -111,21 +99,12 @@ const showJumpButton = () => {
   revealActionButton();
 };
 
-const showDetectButton = (label = "检测内网", title = "点击确认当前浏览器能否直连内网服务") => {
+const showConnectButton = () => {
   if (!jumpButton || isLocalAccess() || sameTarget()) return;
   jumpButton.dataset.mode = DETECT_MODE;
-  jumpButton.textContent = label;
-  jumpButton.title = title;
+  jumpButton.textContent = "连接内网";
+  jumpButton.title = "在当前窗口连接内网地址；若无法访问，可使用返回键回到当前页面";
   jumpButton.disabled = false;
-  revealActionButton();
-};
-
-const showManualChecking = () => {
-  if (!jumpButton) return;
-  jumpButton.dataset.mode = DETECT_MODE;
-  jumpButton.textContent = "正在检测";
-  jumpButton.title = "正在通过内网地址确认连接";
-  jumpButton.disabled = true;
   revealActionButton();
 };
 
@@ -201,10 +180,7 @@ const browserCanReachIntranet = async () => {
 
 markAccess();
 
-let manualProbeActive = false;
-let manualProbeNonce = "";
-let manualProbeWindow = null;
-let manualProbeTimer = null;
+let manualNavigationStarted = false;
 
 const shouldProbe = () => {
   return intranetConfig.intranetEnabled === "1" &&
@@ -215,16 +191,19 @@ const shouldProbe = () => {
 
 const automaticProbeAttempted = () => {
   try {
-    if (window.sessionStorage.getItem(AUTO_PROBE_SESSION_KEY) === "1") return true;
+    // A cookie from another tab must not suppress this window's first attempt.
+    return window.sessionStorage.getItem(AUTO_PROBE_SESSION_KEY) === "1";
   } catch {}
-  return document.cookie.split(";").some((cookie) => cookie.trim() === `${AUTO_PROBE_SESSION_KEY}=1`);
+  try {
+    return document.cookie.split(";").some((cookie) => cookie.trim() === `${AUTO_PROBE_SESSION_KEY}=1`);
+  } catch { return false; }
 };
 
 const rememberAutomaticProbe = () => {
   // The session cookie also lets the server skip the preflight page on return.
   // sessionStorage covers browsers that reject cookies, without persisting failures forever.
   try { window.sessionStorage.setItem(AUTO_PROBE_SESSION_KEY, "1"); } catch {}
-  document.cookie = `${AUTO_PROBE_SESSION_KEY}=1; Path=/; SameSite=Lax`;
+  try { document.cookie = `${AUTO_PROBE_SESSION_KEY}=1; Path=/; SameSite=Lax`; } catch {}
 };
 
 const claimAutomaticProbe = () => {
@@ -233,87 +212,6 @@ const claimAutomaticProbe = () => {
   // Record the attempt before making requests, including failures and timeouts.
   rememberAutomaticProbe();
   return true;
-};
-
-const createProbeNonce = () => {
-  if (window.crypto?.getRandomValues) {
-    const bytes = new Uint8Array(16);
-    window.crypto.getRandomValues(bytes);
-    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-  }
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`.padEnd(16, "0");
-};
-
-const finishManualProbe = (reachable) => {
-  if (!manualProbeActive) return;
-  manualProbeActive = false;
-  manualProbeNonce = "";
-  if (manualProbeTimer) {
-    window.clearTimeout(manualProbeTimer);
-    manualProbeTimer = null;
-  }
-  try {
-    manualProbeWindow?.close();
-  } catch {}
-  manualProbeWindow = null;
-  if (reachable) {
-    markProbeState("reachable");
-    showJumpButton();
-    return;
-  }
-  markProbeState("manual-unreachable");
-  showDetectButton("重新检测", "未收到内网服务确认，点击重试");
-};
-
-const startManualProbe = () => {
-  const target = intranetOrigin();
-  if (!target || !shouldProbe() || manualProbeActive) return;
-  manualProbeActive = true;
-  manualProbeNonce = createProbeNonce();
-  target.pathname = "/intranet/probe";
-  target.search = "";
-  target.searchParams.set("nonce", manualProbeNonce);
-  const openerOrigin = currentPageOrigin();
-  if (!openerOrigin) {
-    manualProbeActive = false;
-    manualProbeNonce = "";
-    markProbeState("invalid-origin");
-    showDetectButton("重新检测", "无法确认当前页面来源");
-    return;
-  }
-  target.searchParams.set("opener_origin", openerOrigin);
-  markProbeState("manual-checking");
-  showManualChecking();
-  manualProbeWindow = window.open(
-    target.toString(),
-    "videorecback-intranet-probe",
-    "popup=yes,width=420,height=240"
-  );
-  if (!manualProbeWindow) {
-    manualProbeActive = false;
-    manualProbeNonce = "";
-    markProbeState("popup-blocked");
-    showDetectButton("重新检测", "浏览器阻止了探测窗口，请允许此网站打开弹窗后重试");
-    return;
-  }
-  manualProbeTimer = window.setTimeout(() => finishManualProbe(false), MANUAL_PROBE_TIMEOUT_MS);
-};
-
-const handleProbeMessage = (event) => {
-  const target = intranetOrigin();
-  const payload = event.data;
-  if (
-    !manualProbeActive ||
-    !target ||
-    event.source !== manualProbeWindow ||
-    event.origin !== target.origin ||
-    payload?.type !== PROBE_MESSAGE_TYPE ||
-    payload?.service !== "videorecback" ||
-    payload?.nonce !== manualProbeNonce
-  ) {
-    return;
-  }
-  finishManualProbe(true);
 };
 
 const initializeJumpButton = async () => {
@@ -328,21 +226,21 @@ const initializeJumpButton = async () => {
     markProbeState("disabled");
     return;
   }
-  showDetectButton();
+  showConnectButton();
   if (!claimAutomaticProbe()) {
     markProbeState("idle");
     return;
   }
   markProbeState("checking");
   const reachable = await browserCanReachIntranet();
-  // A manual handshake owns the UI once started, even if this request finishes later.
-  if (manualProbeActive || document.body.dataset.intranetProbe !== "checking") return;
+  // Do not replace a user-initiated navigation with a late automatic result.
+  if (manualNavigationStarted) return;
   if (reachable && shouldProbe()) {
     markProbeState("reachable");
     showJumpButton();
   } else {
     markProbeState("unreachable");
-    showDetectButton();
+    showConnectButton();
   }
 };
 
@@ -370,12 +268,11 @@ if (intranetConfig.intranetPreflight === "1") {
 } else {
   if (intranetConfig.intranetSkipProbe === "1") rememberAutomaticProbe();
   jumpButton?.addEventListener("click", () => {
-    if (jumpButton.dataset.mode === JUMP_MODE) {
-      redirectToIntranet();
-      return;
-    }
-    startManualProbe();
+    if (!shouldProbe()) return;
+    manualNavigationStarted = true;
+    rememberAutomaticProbe();
+    // Top-level navigation works without a popup/opener handshake and preserves Back.
+    redirectToIntranet();
   });
-  window.addEventListener("message", handleProbeMessage);
   initializeJumpButton();
 }
