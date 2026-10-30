@@ -357,7 +357,11 @@ def generate_flat_thumbnail(
         command.extend(
             [
                 "-filter_complex",
-                f"xstack=inputs=4:layout=0_0|{tile_width}_0|0_{tile_height}|{tile_width}_{tile_height}",
+                (
+                    f"xstack=inputs=4:layout=0_0|{tile_width}_0|{tile_width * 2}_0|{tile_width * 3}_0"
+                    if portrait else
+                    f"xstack=inputs=4:layout=0_0|{tile_width}_0|0_{tile_height}|{tile_width}_{tile_height}"
+                ),
                 "-frames:v",
                 "1",
                 "-compression_level",
