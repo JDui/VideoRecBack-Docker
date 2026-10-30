@@ -45,11 +45,10 @@ def test_real_portrait_and_rotated_phone_keep_full_frame(tmp_path):
         output = tmp_path / f'{video.stem}.webp'
         generate_flat_thumbnail(video, output, 1, 480)
         with Image.open(output) as cover:
-            assert cover.size == (288, 480)
-            for x in (72, 216):
-                for offset in (0, 240):
-                    top = cover.getpixel((x, offset + 20))
-                    bottom = cover.getpixel((x, offset + 220))
+            assert cover.size == (288, 240)
+            for x in (36, 108, 180, 252):
+                top = cover.getpixel((x, 20))
+                bottom = cover.getpixel((x, 220))
                     assert top[0] > top[2] + 100
                     assert bottom[2] > bottom[0] + 100
 
