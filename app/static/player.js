@@ -1138,7 +1138,7 @@ void main() {
 
   float lon = atan(direction.x, -direction.z);
   float lat = asin(clamp(direction.y, -1.0, 1.0));
-  vec2 uv = vec2(fract(0.5 - lon / (2.0 * PI)), clamp(0.5 - lat / PI, 0.0, 1.0));
+  vec2 uv = vec2(fract(0.5 + lon / (2.0 * PI)), clamp(0.5 - lat / PI, 0.0, 1.0));
   vec4 color = texture2D(uTexture, uv);
   gl_FragColor = vec4(color.rgb * uExposure, color.a);
 }
