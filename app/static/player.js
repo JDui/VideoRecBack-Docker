@@ -21,6 +21,48 @@ let bufferingStartedAt = 0;
 let transcodeBlocked = false;
 let activeTranscodeInfo = null;
 let transcodeInfoPromise = null;
+let playbackRequested = false;
+let startupTimer = null;
+let startupFrame = null;
+let startupGeneration = 0;
+let startupPending = false;
+let requestCurrentPlayback = () => {};
+
+const clearPlaybackStartup = () => {
+  startupGeneration += 1;
+  startupPending = false;
+  window.clearTimeout(startupTimer);
+  startupTimer = null;
+  if (startupFrame !== null) video?.cancelVideoFrameCallback?.(startupFrame);
+  startupFrame = null;
+};
+
+const watchPlaybackStartup = (quality, resumeAt) => {
+  clearPlaybackStartup();
+  if (!playbackRequested) return;
+  startupPending = true;
+  const generation = startupGeneration;
+  // HDR encoding can spend up to 75 seconds preparing the first HLS segment.
+  const timeoutMs = quality === 'original' && isTenBitVideo ? 15000 : 90000;
+  const expired = () => {
+    if (generation !== startupGeneration || !playbackRequested) return;
+    if (document.hidden) {
+      startupTimer = window.setTimeout(expired, timeoutMs);
+      return;
+    }
+    clearPlaybackStartup();
+    if (quality === 'original' && fallbackOriginalToTranscode(resumeAt, true)) return;
+    blockTranscode('播放启动超时，请点击播放重试或选择其他画质。');
+  };
+  startupTimer = window.setTimeout(expired, timeoutMs);
+  if (video.requestVideoFrameCallback) {
+    startupFrame = video.requestVideoFrameCallback(() => {
+      if (generation !== startupGeneration) return;
+      clearPlaybackStartup();
+      markPlaybackResponsive();
+    });
+  }
+};
 const hdrNotice = document.querySelector('[data-hdr-playback-notice]');
 const loadTranscodeInfo = () => {
   if (!transcodeInfoPromise) {
@@ -45,6 +87,8 @@ const canUseHdrMse = () => {
 };
 const blockTranscode = message => {
   transcodeBlocked = true;
+  playbackRequested = false;
+  clearPlaybackStartup();
   mediaTimeOffset = getLogicalCurrentTime();
   clearStallRecovery();
   video.pause();
@@ -210,9 +254,14 @@ const togglePlayback = () => {
     applyQualityAt?.(quality, getLogicalCurrentTime(), true);
     return;
   }
-  if (video.paused) {
-    video.play().catch(() => {});
+  if (video.paused && !playbackRequested) {
+    playbackRequested = true;
+    watchPlaybackStartup(video.dataset.currentQuality || 'original', getLogicalCurrentTime());
+    requestCurrentPlayback();
   } else {
+    playbackRequested = false;
+    clearPlaybackStartup();
+    hideTranscodeOverlay();
     video.pause();
   }
 };
@@ -279,6 +328,7 @@ const hideTranscodeOverlay = () => {
 };
 
 const schedulePlaybackRecovery = () => {
+  if (startupPending) return;
   if (transcodeBlocked || !video || !mediaLoaded || video.paused || video.ended) return;
   const quality = video.dataset.currentQuality || "original";
   if (!bufferingStartedAt) bufferingStartedAt = Date.now();
@@ -295,7 +345,7 @@ const schedulePlaybackRecovery = () => {
 const markPlaybackResponsive = () => {
   if (transcodeBlocked) return;
   clearStallRecovery();
-  hideTranscodeOverlay();
+  if (!startupPending) hideTranscodeOverlay();
 };
 
 const formatClock = (seconds) => {
@@ -331,7 +381,7 @@ const syncProgressUi = () => {
 };
 
 const syncPlayUi = () => {
-  const paused = transcodeBlocked || video?.paused;
+  const paused = transcodeBlocked || (video?.paused && !playbackRequested);
   const label = paused ? "播放" : "暂停";
   if (flatPlayButton) {
     flatPlayButton.classList.toggle("is-playing", !paused);
@@ -444,6 +494,7 @@ if (video) {
       transcodeBlocked = false;
       activeTranscodeInfo = null;
       clearStallRecovery();
+      clearPlaybackStartup();
       stopHlsHeartbeat(true);
       destroyHls();
       video.pause();
@@ -470,8 +521,8 @@ if (video) {
         video.dataset.currentQuality = quality;
         return;
       }
-      if (video.dataset.currentQuality === quality) return;
-      applyQualityAt(quality, getLogicalCurrentTime(), false);
+      if (video.dataset.currentQuality === quality && !transcodeBlocked && !video.error) return;
+      applyQualityAt(quality, getLogicalCurrentTime(), playbackRequested || transcodeBlocked || Boolean(video.error));
     };
     const fallbackQuality = () => {
       if (qualityValues.includes("ultra")) return "ultra";
@@ -483,7 +534,23 @@ if (video) {
       const playbackRate = video.playbackRate;
       const volume = video.volume;
       const switchId = ++qualitySwitchId;
-      const shouldPlay = forcePlay || !wasPaused;
+      const shouldPlay = forcePlay || playbackRequested || !wasPaused;
+      requestCurrentPlayback = () => {
+        if (switchId !== qualitySwitchId || transcodeBlocked || !playbackRequested) return;
+        video.play().catch(error => {
+          if (switchId !== qualitySwitchId || !playbackRequested || transcodeBlocked) return;
+          if (error.name === 'AbortError') return;
+          if (error.name === 'NotAllowedError') {
+            playbackRequested = false;
+            clearPlaybackStartup();
+            showTranscodeOverlay('浏览器暂未允许播放，请再次点击播放。');
+            syncPlayUi();
+            return;
+          }
+          if (fallbackOriginalToTranscode(resumeAt, true)) return;
+          blockTranscode('视频无法启动播放，请点击播放重试或选择其他画质。');
+        });
+      };
       const resume = () => {
         if (switchId !== qualitySwitchId || transcodeBlocked) return;
         video.playbackRate = playbackRate;
@@ -491,20 +558,24 @@ if (video) {
         video.volume = volume;
         syncVolumeUi();
         syncProgressUi();
-        hideTranscodeOverlay();
-        if (shouldPlay) video.play().catch(() => {});
+        if (!playbackRequested) hideTranscodeOverlay();
+        if (shouldPlay) requestCurrentPlayback();
       };
       video.dataset.currentQuality = quality;
       mediaLoaded = true;
       shell?.classList.add("has-media");
       if (playerPoster) playerPoster.hidden = true;
       prepareMediaSwitch();
+      playbackRequested = shouldPlay;
+      watchPlaybackStartup(quality, resumeAt);
+      syncQualityUi(quality);
+      syncPlayUi();
       if (hdrNotice) hdrNotice.hidden = true;
       if (quality !== 'original') {
         showTranscodeOverlay('正在检查转码格式...');
         try {
           const info = await loadTranscodeInfo();
-          if (switchId !== qualitySwitchId) return;
+          if (switchId !== qualitySwitchId || transcodeBlocked) return;
           activeTranscodeInfo = info;
           if (info.hdr && !canDecodeHdrHls()) {
             blockTranscode('当前浏览器无法解码 HDR 转码（HEVC 10bit）。请使用支持的浏览器或播放/下载原画。');
@@ -524,7 +595,8 @@ if (video) {
       video.addEventListener("seeked", resume, { once: true });
 
       if (quality === "original") {
-        hideTranscodeOverlay();
+        if (shouldPlay) showTranscodeOverlay('正在加载原画...');
+        else hideTranscodeOverlay();
         mediaTimeOffset = 0;
         video.addEventListener("loadedmetadata", () => {
           if (switchId !== qualitySwitchId) return;
@@ -534,17 +606,21 @@ if (video) {
         }, { once: true });
         video.src = qualityUrl(quality, resumeAt);
         video.load();
+        requestCurrentPlayback();
         return;
       }
 
       showTranscodeOverlay();
       mediaTimeOffset = Math.max(0, resumeAt);
       const url = qualityUrl(quality, resumeAt);
+      // The format check and first segment each get their own bounded wait.
+      watchPlaybackStartup(quality, resumeAt);
       startHlsHeartbeat(quality, resumeAt);
       if (canUseNativeHls() && !(activeTranscodeInfo?.hdr && canUseHdrMse())) {
         destroyHls();
         video.src = url;
         video.load();
+        requestCurrentPlayback();
         return;
       }
       if (window.Hls?.isSupported()) {
@@ -567,7 +643,7 @@ if (video) {
         });
         hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED, () => {
           if (switchId !== qualitySwitchId || !shouldPlay) return;
-          video.play().catch(() => {});
+          requestCurrentPlayback();
         });
         hlsPlayer.on(window.Hls.Events.ERROR, (_event, data) => {
           if (!data?.fatal || switchId !== qualitySwitchId) return;
@@ -601,6 +677,9 @@ if (video) {
       }, { once: true });
       video.src = qualityUrl("original", resumeAt);
       video.load();
+      watchPlaybackStartup('original', resumeAt);
+      syncQualityUi('original');
+      requestCurrentPlayback();
     };
     fallbackOriginalToTranscode = (resumeAt = 0, forcePlay = true) => {
       const quality = fallbackQuality();
@@ -608,7 +687,7 @@ if (video) {
         return false;
       }
       originalFallbackUsed = true;
-      showTranscodeOverlay("当前浏览器无法直接播放 10bit 原画，正在切换转码...");
+      showPlayerFeedback("10bit 原画未能启动，正在尝试转码播放");
       syncQualityUi(quality);
       applyQualityAt(quality, resumeAt, forcePlay);
       return true;
@@ -649,17 +728,23 @@ if (video) {
     if (video.videoWidth && video.videoHeight) shell?.style.setProperty("--video-aspect-ratio", String(video.videoWidth / video.videoHeight));
     syncProgressUi();
   });
-  video.addEventListener("canplay", markPlaybackResponsive);
-  video.addEventListener("playing", markPlaybackResponsive);
+  video.addEventListener("canplay", () => {
+    if (!playbackRequested) markPlaybackResponsive();
+  });
+  video.addEventListener("playing", () => {
+    if (!video.requestVideoFrameCallback) clearPlaybackStartup();
+    markPlaybackResponsive();
+  });
   video.addEventListener("waiting", schedulePlaybackRecovery);
   video.addEventListener("stalled", schedulePlaybackRecovery);
   video.addEventListener("error", () => {
     if (transcodeBlocked) return;
+    if (!playbackRequested && video.paused) return;
     if (activeTranscodeInfo?.hdr && video.dataset.currentQuality !== 'original') {
       blockTranscode('HDR 转码播放失败，请使用支持 HEVC 10bit 的浏览器或原画。');
       return;
     }
-    if (fallbackOriginalToTranscode(getLogicalCurrentTime(), true)) return;
+    if (fallbackOriginalToTranscode(getLogicalCurrentTime(), playbackRequested || !video.paused)) return;
     if (!mediaLoaded || video.paused || video.ended) return;
     window.setTimeout(() => {
       if (!video.paused && !video.ended) applyQualityAt?.(video.dataset.currentQuality || "original", getLogicalCurrentTime(), true);
@@ -678,11 +763,15 @@ if (video) {
     if (video.dataset.currentQuality !== "original" && activeHlsSession) sendHlsControl("heartbeat");
   });
   video.addEventListener("pause", () => {
+    // load()/source replacement also queues pause; it must not cancel pending startup.
+    if (!startupPending && !video.error && video.paused) playbackRequested = false;
     syncPlayUi();
     clearStallRecovery();
-    if (video.dataset.currentQuality !== "original") scheduleHlsStop(60000);
+    if (video.dataset.currentQuality !== "original" && !playbackRequested) scheduleHlsStop(60000);
   });
   video.addEventListener("ended", () => {
+    playbackRequested = false;
+    clearPlaybackStartup();
     syncPlayUi();
     stopHlsHeartbeat(true);
   });
@@ -870,7 +959,7 @@ if (shell?.dataset.embed === '1' && window.parent !== window) {
     }
   } catch { /* A standalone or cross-origin embed keeps its own controls. */ }
 }
-window.addEventListener("pagehide", () => stopHlsHeartbeat(true));
+window.addEventListener("pagehide", () => { clearPlaybackStartup(); stopHlsHeartbeat(true); });
 window.addEventListener("beforeunload", () => stopHlsHeartbeat(true));
 document.addEventListener("visibilitychange", () => {
   if (video?.dataset.currentQuality === "original") return;
@@ -1056,6 +1145,11 @@ async function initPanorama() {
     if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       try {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        // The offscreen source video may not receive compositor frame callbacks.
+        if (startupPending) {
+          clearPlaybackStartup();
+          markPlaybackResponsive();
+        }
       } catch {
         gl.texImage2D(
           gl.TEXTURE_2D,

@@ -46,7 +46,7 @@ from app.media import (
     stop_hls_transcode,
 )
 from app.scanner import Scanner, calculate_aspect_ratio, is_tenbit_depth
-from app.thumbnails import VideoToolError, generate_preview_thumbnail, probe_video
+from app.thumbnails import PORTRAIT_STRIP_MAX_RATIO, VideoToolError, generate_preview_thumbnail, probe_video
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -106,6 +106,7 @@ def create_app() -> FastAPI:
     app.state.portrait_refresh_status = {"status": "idle"}
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
+    templates.env.globals['portrait_strip_max_ratio'] = PORTRAIT_STRIP_MAX_RATIO
     templates.env.filters["duration"] = format_duration
     templates.env.filters["size"] = format_size
     templates.env.filters["date"] = format_date

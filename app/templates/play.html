@@ -5,7 +5,7 @@
 {% block content %}
   {% from "_icons.html" import icon %}
   {% set default_quality = settings.default_panorama_quality if video.type == "panorama" else settings.default_flat_quality %}
-  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-video-bit-depth="{{ video.bit_depth or 8 }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ default_quality }}" data-embed="{{ '1' if embed else '0' }}" data-return-url="{{ return_url }}" style="--video-aspect-ratio: {{ (video.width / video.height) if video.width and video.height else 1.7777777778 }}">
+  <section class="player-shell {% if embed %}player-shell--embed{% endif %}" data-video-type="{{ video.type }}" data-video-id="{{ video.id }}" data-video-bit-depth="{{ video.bit_depth or (10 if video.is_10bit else 8) }}" data-duration="{{ video.duration_seconds or 0 }}" data-default-volume="{{ settings.default_volume_percent / 100 }}" data-default-quality="{{ default_quality }}" data-embed="{{ '1' if embed else '0' }}" data-return-url="{{ return_url }}" style="--video-aspect-ratio: {{ (video.width / video.height) if video.width and video.height else 1.7777777778 }}">
     <header class="player-toolbar {% if embed %}player-toolbar--embed{% endif %}">
       {% if not embed %}
       <button class="player-back-button" type="button" data-player-close aria-label="返回视频列表" title="返回视频列表">{{ icon('back') }}</button>
@@ -129,5 +129,5 @@
 {% endblock %}
 {% block scripts %}
   <script type="application/x-vbr-script" data-page-script src="/static/vendor/hls.min.js"></script>
-  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.10&amp;revision=7"></script>
+  <script type="application/x-vbr-script" data-page-script data-module="1" src="/static/player.js?v=2.7.11&amp;revision=8"></script>
 {% endblock %}

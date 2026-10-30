@@ -282,6 +282,13 @@ def test_play_page_skips_tenbit_detection_when_status_exists(monkeypatch, tmp_pa
     assert response.status_code == 200
     assert 'data-video-bit-depth="8"' in response.text
 
+    # Older indexes can know that a source is 10bit without recording its exact depth.
+    with app.state.db.connect() as conn:
+        conn.execute("UPDATE videos SET bit_depth = NULL, is_10bit = 1 WHERE id = 1")
+    response = TestClient(app).get("/video/1/play")
+    assert response.status_code == 200
+    assert 'data-video-bit-depth="10"' in response.text
+
 
 def test_embed_play_page_hides_inner_favorite_for_parent_chrome(monkeypatch, tmp_path):
     main = load_main(monkeypatch, tmp_path)
@@ -711,7 +718,7 @@ def test_index_embeds_timeline_cache_and_lazy_thumbnails(monkeypatch, tmp_path):
     assert 'class="asset-bit-depth">10bit</span>' in response.text
     assert 'class="asset-hdr asset-hdr-standard">HLG</span>' in response.text
     assert 'class="asset-hdr">HDR</span>' not in response.text
-    assert "/static/app.js?v=2.7.10" in response.text
+    assert "/static/app.js?v=2.7.11" in response.text
     assert '"anchor": "timeline-2026-07"' in response.text
     assert '"anchor": "timeline-2026-07-08"' in response.text
     assert 'loading="lazy"' in response.text

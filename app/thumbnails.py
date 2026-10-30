@@ -20,6 +20,7 @@ WEBP_QUALITY = "60"
 WEBP_COMPRESSION_LEVEL = "4"
 FFMPEG_THUMBNAIL_THREADS = "1"
 PREVIEW_MAX_SIZE = (512, 384)
+PORTRAIT_STRIP_MAX_RATIO = 3 / 4
 
 
 class VideoToolError(RuntimeError):
@@ -315,6 +316,7 @@ def generate_flat_thumbnail(
     tile_width, tile_height = flat_tile_size(height)
     width, display_height = probe_video_geometry(video_path)
     portrait = display_height > width
+    portrait_strip = width / display_height <= PORTRAIT_STRIP_MAX_RATIO
     if portrait:
         tile_height = normalize_thumbnail_height(height) // 2
         tile_width = max(2, round(tile_height * width / display_height / 2) * 2)
@@ -359,7 +361,7 @@ def generate_flat_thumbnail(
                 "-filter_complex",
                 (
                     f"xstack=inputs=4:layout=0_0|{tile_width}_0|{tile_width * 2}_0|{tile_width * 3}_0"
-                    if portrait else
+                    if portrait_strip else
                     f"xstack=inputs=4:layout=0_0|{tile_width}_0|0_{tile_height}|{tile_width}_{tile_height}"
                 ),
                 "-frames:v",

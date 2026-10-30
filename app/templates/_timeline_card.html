@@ -1,6 +1,8 @@
 {% from "_icons.html" import icon %}
 {% macro timeline_card(video) %}
-  <article class="asset-item timeline-video" id="timeline-video-{{ video.id }}" data-gallery-date="{{ video.mtime|date }}" data-gallery-mtime="{{ video.mtime }}" data-gallery-id="{{ video.id }}" data-gallery-ratio="{{ (video.width / video.height) if video.width and video.height else 1.777777 }}">
+  {% set source_ratio = (video.width / video.height) if video.width and video.height else 1.777777 %}
+  {% set preview_ratio = source_ratio * 4 if video.type == 'flat' and source_ratio <= portrait_strip_max_ratio and video.thumb_status == 'ready' else source_ratio %}
+  <article class="asset-item timeline-video" id="timeline-video-{{ video.id }}" data-gallery-date="{{ video.mtime|date }}" data-gallery-mtime="{{ video.mtime }}" data-gallery-id="{{ video.id }}" data-gallery-ratio="{{ preview_ratio }}">
     <a class="asset-card asset-card--{{ video.type }}" href="/video/{{ video.id }}/play" data-video-id="{{ video.id }}" data-video-type="{{ video.type }}" data-settings-url="/video/{{ video.id }}" data-timeline-url="/?view=timeline#timeline-{{ video.mtime|date }}" data-exclude-random="{{ 1 if video.exclude_random else 0 }}" data-exclude-memories="{{ 1 if video.exclude_memories else 0 }}" data-favorite-state="{{ 1 if video.favorite else 0 }}" aria-label="播放 {{ video.name }}">
       <span class="asset-thumb">
         {% if video.thumb_status == 'ready' %}

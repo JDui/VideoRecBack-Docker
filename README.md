@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前源码版本：**2.7.10**。本次为验收构建，尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
+当前源码版本：**2.7.11**。镜像下载见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
 
 ## 页面展示
 
@@ -56,10 +56,10 @@ VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线�
 
 ### 1. 下载并加载镜像
 
-使用本地构建的 `videorecback-2.7.10-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。历史公开版本可从 [v2.7.5 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.5) 获取。
+从 [v2.7.11 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.11) 下载 `videorecback-2.7.11-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
 
 ```bash
-docker load -i videorecback-2.7.10-amd64.tar
+docker load -i videorecback-2.7.11-amd64.tar
 ```
 
 ### 2. 创建 Docker Compose 配置
@@ -69,7 +69,7 @@ docker load -i videorecback-2.7.10-amd64.tar
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.7.10
+    image: videorecback:2.7.11
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -94,11 +94,11 @@ docker compose up -d
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
 # 使用 main 分支的当前源码
-docker build -t videorecback:2.7.10 .
+docker build -t videorecback:2.7.11 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.10 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.11 .`。
 
 ## 升级与数据目录
 
@@ -116,6 +116,12 @@ docker compose up -d
 
 归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
 
+## 2.7.11 更新
+
+- 修复 10bit 首次播放一直等待、必须切换画质才能恢复的问题：立即发起播放，原画启动失败或 15 秒未出画面时自动尝试一次转码；首段转码等待不再被短周期重载打断。
+- 播放启动拒绝、超时、手动暂停和切换画质分别处理；旧索引仅记录 10bit 标记时也启用恢复。
+- 合入竖屏封面布局修复：3:4 及更窄使用四帧横排，接近方形保留四宫格；时间线预览按实际缩略图比例排布。已有旧封面可通过「重载竖屏缩略图」更新。
+
 ## 2.7.10 更新
 
 - 修复手动内网连接依赖弹窗回传的问题：按钮改为「连接内网」，在当前窗口切换并保留路径、查询与锚点，不再创建探测窗口。
@@ -132,7 +138,7 @@ docker compose up -d
 - 修正播放器分栏后左侧卡片的固定宽度与日历网格溢出，打开和关闭播放器时保持缩略图浏览位置。
 - 设置 → 维护工具新增「HDR 标准校验」，在后台重新识别已收录视频的 HDR 分类，显示成功与失败数量；不重建封面，失败项保留原标签。
 - HDR 标签直接显示 HLG、HDR10、HDR10+、杜比视界等源视频标准，旧索引在后台补齐；详情和播放页也显示标准。
-- 竖屏封面保留完整四宫格画面，识别手机旋转方向；维护工具新增「重载竖屏缩略图」，只重建竖屏封面与预览图，失败项保留旧封面，完成后刷新封面缓存。
+- 竖屏封面保留完整画面并识别手机旋转方向：3:4 及更窄（如 2:3、9:16）的画幅使用四帧横排，接近方形（如 4:5）的使用四宫格，时间线预览框跟随缩略图实际比例。维护工具的「重载竖屏缩略图」仅重建竖屏封面与预览图，失败项保留旧封面，完成后刷新封面缓存。
 - 补充有上限的 HEVC 帧 SEI 探测，修正实际 HDR10 文件被误标为 PQ 的问题。
 - 时间轴 HDR 标签避让收藏按钮；同步刷新前端资源版本。
 - HDR 转码播放和转码下载使用 HEVC Main10，保留源 PQ/HLG、色域、矩阵、范围及已探测到的静态 HDR 元数据；HLS 使用 fMP4 并声明 VIDEO-RANGE。HDR 编码使用 CPU，现有硬件 H.264 编码器选项用于 SDR。

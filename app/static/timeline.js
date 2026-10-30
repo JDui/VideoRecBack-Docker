@@ -145,7 +145,15 @@
     rows = [];
     let row = [];
     let sum = 0;
-    const ratio = card => Math.max(0.5, Math.min(2.4, Number(card.dataset.galleryRatio) || 16 / 9));
+    const ratio = card => {
+      const image = card.querySelector('.asset-thumb img.portrait-thumbnail');
+      const estimate = Number(card.dataset.galleryRatio) || 16 / 9;
+      // Portrait previews use either a strip or a 2x2 grid. Size the card to
+      // the rendered image, including rounding and older cached layouts.
+      if (image) return image.naturalWidth && image.naturalHeight
+        ? image.naturalWidth / image.naturalHeight : estimate;
+      return Math.max(0.5, Math.min(2.4, estimate));
+    };
     const commit = full => {
       if (!row.length) return;
       const height = full ? (width - gap * (row.length - 1)) / sum : Math.min(target, (width - gap * (row.length - 1)) / sum);
@@ -200,6 +208,10 @@
     if (layoutFrame) return;
     layoutFrame = requestAnimationFrame(() => { layoutFrame = 0; layout(); });
   };
+  // Capture also covers lazy images in subsequently inserted timeline batches.
+  timelineStack.addEventListener('load', event => {
+    if (event.target.matches?.('img.portrait-thumbnail')) scheduleLayout();
+  }, true);
   const scrollToCard = card => {
     if (!card) return;
     libraryPane.scrollTop += card.getBoundingClientRect().top - libraryPane.getBoundingClientRect().top;

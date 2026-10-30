@@ -146,7 +146,7 @@
           onsubmit="return window.confirm('确认要重载竖屏缩略图吗？将检查已收录普通视频的显示方向，仅重建竖屏封面和预览图；不会重建横屏、全景封面或修改源文件。');">
           <div>
             <strong>重载竖屏缩略图</strong>
-            <p class="muted">保留竖屏完整画面，修复手机旋转方向，并刷新封面缓存。失败项保留原封面。</p>
+            <p class="muted">保留竖屏完整画面：3:4 及更窄的画幅使用四帧横排，接近方形的使用四宫格。同步修复手机旋转方向并刷新缓存，失败项保留原封面。</p>
             <p class="settings-notice" role="status" data-portrait-status data-state="{{ portrait_status.status }}">
               {% if portrait_status.status == 'running' %}正在检查视频方向：已检查 {{ portrait_status.checked }} 个，重建 {{ portrait_status.rebuilt }} 个，失败 {{ portrait_status.errors }} 个。
               {% elif portrait_refresh == 'busy' %}已有扫描或维护任务正在运行，本次重载未启动，请完成后重试。

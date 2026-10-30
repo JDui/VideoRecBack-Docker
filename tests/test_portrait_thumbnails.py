@@ -14,12 +14,18 @@ from app.thumbnails import VideoToolError, generate_flat_thumbnail, probe_video,
 
 
 @pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'), reason='FFmpeg required')
-def test_real_portrait_and_rotated_phone_keep_full_frame(tmp_path):
+@pytest.mark.parametrize('source_size,output_size,columns,rows', [
+    ((90, 160), (544, 240), 4, 1),  # 9:16: four frames in one row
+    ((96, 144), (640, 240), 4, 1),  # 2:3: four frames in one row
+    ((128, 160), (384, 480), 2, 2),  # 4:5: keep the 2x2 grid
+])
+def test_real_portrait_and_rotated_phone_keep_full_frame(tmp_path, source_size, output_size, columns, rows):
     # Distinct top and bottom bands reveal cropping, including after phone autorotation.
     source = tmp_path / 'portrait.png'
-    picture = Image.new('RGB', (96, 160), (30, 150, 50))
-    picture.paste((240, 30, 30), (0, 0, 96, 32))
-    picture.paste((30, 30, 240), (0, 128, 96, 160))
+    width, height = source_size
+    picture = Image.new('RGB', source_size, (30, 150, 50))
+    picture.paste((240, 30, 30), (0, 0, width, height // 5))
+    picture.paste((30, 30, 240), (0, height * 4 // 5, width, height))
     picture.save(source)
     sideways = tmp_path / 'sideways.png'
     picture.transpose(Image.Transpose.ROTATE_270).save(sideways)
@@ -37,18 +43,20 @@ def test_real_portrait_and_rotated_phone_keep_full_frame(tmp_path):
     except subprocess.CalledProcessError:
         # Older FFmpeg releases write the display matrix via the rotate metadata tag.
         encode('-i', landscape, '-c', 'copy', '-metadata:s:v:0', 'rotate=90', rotated)
-    assert probe_video_geometry(landscape) == (160, 96)
+    assert probe_video_geometry(landscape) == (height, width)
     for video in (portrait, rotated):
-        assert probe_video_geometry(video) == (96, 160)
+        assert probe_video_geometry(video) == source_size
         probe = probe_video(video)
-        assert (probe.width, probe.height) == (96, 160)
+        assert (probe.width, probe.height) == source_size
         output = tmp_path / f'{video.stem}.webp'
         generate_flat_thumbnail(video, output, 1, 480)
         with Image.open(output) as cover:
-            assert cover.size == (576, 240)
-            for x in (72, 216, 360, 504):
-                top = cover.getpixel((x, 20))
-                bottom = cover.getpixel((x, 220))
+            assert cover.size == output_size
+            for column in range(columns):
+                x = int((column + .5) * output_size[0] / columns)
+                for row in range(rows):
+                    top = cover.getpixel((x, row * 240 + 20))
+                    bottom = cover.getpixel((x, row * 240 + 220))
                     assert top[0] > top[2] + 100
                     assert bottom[2] > bottom[0] + 100
 
