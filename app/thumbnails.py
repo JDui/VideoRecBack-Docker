@@ -254,6 +254,15 @@ def flat_tile_size(height: int = DEFAULT_THUMBNAIL_HEIGHT) -> tuple[int, int]:
     return width // 2, clean_height // 2
 
 
+def flat_thumbnail_layout(width: int, height: int) -> tuple[int, int]:
+    """Choose columns/rows from display dimensions, including phone rotation."""
+    if width * 16 == height * 9 or width * 2 == height:
+        return 3, 1
+    if width / height <= PORTRAIT_STRIP_MAX_RATIO:
+        return 4, 1
+    return 2, 2
+
+
 def panorama_thumbnail_size(height: int = DEFAULT_THUMBNAIL_HEIGHT) -> tuple[int, int]:
     clean_height = normalize_thumbnail_height(height)
     width = round(clean_height * 4 / 3)
@@ -316,7 +325,9 @@ def generate_flat_thumbnail(
     tile_width, tile_height = flat_tile_size(height)
     width, display_height = probe_video_geometry(video_path)
     portrait = display_height > width
-    portrait_strip = width / display_height <= PORTRAIT_STRIP_MAX_RATIO
+    columns, rows = flat_thumbnail_layout(width, display_height)
+    if columns == 3:
+        times = times[1:]  # Keep the 25%, 50% and 75% samples for three columns.
     if portrait:
         tile_height = normalize_thumbnail_height(height) // 2
         tile_width = max(2, round(tile_height * width / display_height / 2) * 2)
@@ -360,8 +371,8 @@ def generate_flat_thumbnail(
             [
                 "-filter_complex",
                 (
-                    f"xstack=inputs=4:layout=0_0|{tile_width}_0|{tile_width * 2}_0|{tile_width * 3}_0"
-                    if portrait_strip else
+                    f"xstack=inputs={columns}:layout=" + "|".join(f"{tile_width * column}_0" for column in range(columns))
+                    if rows == 1 else
                     f"xstack=inputs=4:layout=0_0|{tile_width}_0|0_{tile_height}|{tile_width}_{tile_height}"
                 ),
                 "-frames:v",

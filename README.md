@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前源码版本：**2.7.11**。镜像下载见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
+当前源码版本：**2.7.12**。镜像下载见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
 
 ## 页面展示
 
@@ -56,10 +56,10 @@ VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线�
 
 ### 1. 下载并加载镜像
 
-从 [v2.7.11 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.11) 下载 `videorecback-2.7.11-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
+从 [v2.7.12 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.12) 下载 `videorecback-2.7.12-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
 
 ```bash
-docker load -i videorecback-2.7.11-amd64.tar
+docker load -i videorecback-2.7.12-amd64.tar
 ```
 
 ### 2. 创建 Docker Compose 配置
@@ -69,7 +69,7 @@ docker load -i videorecback-2.7.11-amd64.tar
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.7.11
+    image: videorecback:2.7.12
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -94,11 +94,11 @@ docker compose up -d
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
 # 使用 main 分支的当前源码
-docker build -t videorecback:2.7.11 .
+docker build -t videorecback:2.7.12 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.11 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.12 .`。
 
 ## 升级与数据目录
 
@@ -115,6 +115,13 @@ docker compose up -d
 ## 日期与时区
 
 归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
+
+## 2.7.12 更新
+
+- 统一稳定浅底、轻磨砂导航、分级圆角与工具栏，桌面控件 36px、手机 44px，窄窗口允许换行。
+- 首页改为随机主区、近期记录侧栏和下方分组；手机在同一个随机模块内完整展开三段视频，保留「换一组」。桌面和手机实际效果见 [实施截图与验收](docs/design/gui-implementation-2026-11-01/README.md)。
+
+- 显示比例恰好为 9:16、1:2 的竖屏封面改为三帧横排，兼容手机旋转；其他比例保留原布局。已有缓存可通过维护工具的「重载竖屏缩略图」更新。
 
 ## 2.7.11 更新
 
@@ -161,7 +168,7 @@ docker compose up -d
 - 首页包含随机三个视频、最近记录、收藏、那年今日和影像库概览。随机支持换组；最近记录按文件时间排序，那年今日匹配往年同月同日的文件时间。
 - 首页、时间线、文件夹、日历、收藏使用统一导航。视频库支持按类型、时长、画幅筛选，切换视图保留筛选条件，可调整封面预览大小。
 - 时间线按 180 条分批加载，密度时间轴基于完整筛选索引，为记录较多的日期分配更多空间，并减弱极端高峰对其他日期的挤压。刻度长度与颜色随每日数量变化，紫色表示较少、红色表示较多，金色小点表示有收藏；支持拖动、方向键、Home/End 和跨批次跳转。
-- 平面封面使用四个时间点合成 WebP 四宫格，全景封面使用鱼眼球面预览；可选择 480P、576P 或 720P 封面高度。10bit 视频显示标记；根据 FFprobe 色彩传递特性与流附加元数据识别 HDR、HLG、HDR10、HDR10+、Dolby Vision 和 HDR Vivid，无法可靠细分的 PQ 视频标记为 PQ。旧索引会在后台元数据更新时补齐 HDR 分类；带全景标记或接近 2:1 的视频默认识别为全景。
+- 平面封面合成 WebP 拼图：横屏与接近方形的竖屏使用四宫格；显示比例恰好为 9:16、1:2 的竖屏使用三帧横排，其他 3:4 及更窄的竖屏使用四帧横排，竖屏均保留完整画面。已有竖屏封面可通过维护工具的「重载竖屏缩略图」更新。全景封面使用鱼眼球面预览；可选择 480P、576P 或 720P 封面高度。10bit 视频显示标记；根据 FFprobe 色彩传递特性与流附加元数据识别 HDR、HLG、HDR10、HDR10+、Dolby Vision 和 HDR Vivid，无法可靠细分的 PQ 视频标记为 PQ。旧索引会在后台元数据更新时补齐 HDR 分类；带全景标记或接近 2:1 的视频默认识别为全景。
 - 封面失败数量可点击查看文件名、路径与失败原因，支持分页和重试。
 
 ### 播放与下载

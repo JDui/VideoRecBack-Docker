@@ -1,0 +1,252 @@
+[
+  {
+    "controls": [
+      {
+        "blur": "none",
+        "height": 44.00000762939453,
+        "name": "跳转到日期"
+      },
+      {
+        "blur": "none",
+        "height": 44.00000762939453,
+        "name": ""
+      },
+      {
+        "blur": "none",
+        "height": 44.00000762939453,
+        "name": "搜索"
+      },
+      {
+        "blur": "none",
+        "height": 44,
+        "name": "预览大小"
+      },
+      {
+        "blur": "none",
+        "height": 44,
+        "name": "筛选"
+      },
+      {
+        "blur": "none",
+        "height": 44,
+        "name": "展开时间轴"
+      }
+    ],
+    "overflow": false,
+    "page": "library-mobile",
+    "viewport": [
+      390,
+      844
+    ]
+  },
+  {
+    "controls": [
+      {
+        "blur": "none",
+        "height": 36,
+        "name": "跳转到日期"
+      },
+      {
+        "blur": "none",
+        "height": 36,
+        "name": ""
+      },
+      {
+        "blur": "none",
+        "height": 36,
+        "name": "搜索"
+      },
+      {
+        "blur": "none",
+        "height": 36,
+        "name": "预览大小"
+      },
+      {
+        "blur": "none",
+        "height": 36,
+        "name": "筛选"
+      },
+      {
+        "blur": "none",
+        "height": 36,
+        "name": "展开时间轴"
+      }
+    ],
+    "overflow": false,
+    "page": "library-desktop",
+    "viewport": [
+      1440,
+      1000
+    ]
+  },
+  {
+    "field": {
+      "blur": "none",
+      "radius": "11px"
+    },
+    "overflow": false,
+    "page": "settings-desktop",
+    "panel": {
+      "fill": "rgb(255, 255, 255)",
+      "radius": "22px"
+    },
+    "save": {
+      "color": "rgb(255, 255, 255)",
+      "fill": "rgb(0, 101, 211)"
+    },
+    "viewport": [
+      1440,
+      1000
+    ]
+  },
+  {
+    "navigation": [
+      {
+        "height": 44,
+        "label": "视频库"
+      },
+      {
+        "height": 44,
+        "label": "播放偏好"
+      },
+      {
+        "height": 44,
+        "label": "封面与转码"
+      },
+      {
+        "height": 44,
+        "label": "内网连接"
+      },
+      {
+        "height": 44,
+        "label": "维护工具"
+      },
+      {
+        "height": 0,
+        "label": "返回首页"
+      }
+    ],
+    "overflow": false,
+    "page": "settings-mobile",
+    "save": {
+      "color": "rgb(255, 255, 255)",
+      "fill": "rgb(0, 101, 211)",
+      "height": 44
+    },
+    "viewport": [
+      390,
+      844
+    ]
+  },
+  {
+    "moduleWidths": [
+      2211,
+      1106,
+      3337,
+      3337
+    ],
+    "overflow": false,
+    "page": "home-ultrawide",
+    "viewport": [
+      3440,
+      1440
+    ]
+  },
+  {
+    "overflow": false,
+    "page": "home-player-minimum-pane",
+    "pane": {
+      "clientWidth": 285,
+      "scrollWidth": 285,
+      "width": 300.15625
+    },
+    "recent": [
+      {
+        "text": 125.15625,
+        "thumbnail": 88,
+        "title": 125.15625
+      },
+      {
+        "text": 125.15625,
+        "thumbnail": 88,
+        "title": 125.15625
+      },
+      {
+        "text": 125.15625,
+        "thumbnail": 88,
+        "title": 125.15625
+      }
+    ],
+    "viewport": [
+      1024,
+      700
+    ]
+  },
+  {
+    "imageFilters": [
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none"
+    ],
+    "overflow": false,
+    "page": "home-desktop",
+    "random": [
+      "2",
+      "3",
+      "16"
+    ],
+    "recentColumns": [
+      277.84375,
+      277.84375,
+      277.84375
+    ],
+    "viewport": [
+      1440,
+      1000
+    ]
+  },
+  {
+    "busy": null,
+    "disabled": false,
+    "feedback": "加载失败，请重试。",
+    "overflow": false,
+    "page": "shuffle-error",
+    "random": [
+      "6",
+      "9",
+      "14"
+    ],
+    "viewport": [
+      390,
+      844
+    ]
+  },
+  {
+    "overflow": false,
+    "page": "empty-home-mobile",
+    "setup": "/settings#library",
+    "shuffleDisabled": true,
+    "viewport": [
+      390,
+      844
+    ]
+  },
+  {
+    "overflow": false,
+    "page": "home-small-mobile",
+    "randomWidth": 243,
+    "recentText": 127,
+    "viewport": [
+      320,
+      568
+    ]
+  }
+]

@@ -1,4 +1,21 @@
-# 首页随机组、统一框架与时间线修复验证
+# 当前 GUI 视觉改进验证（2026-11-01）
+
+final result: passed
+
+材质、圆角、工具栏及首页模块布局已实施。完整证据、五项视觉检查、修复历史和独立复核见 [本轮验收报告](docs/design/gui-implementation-2026-11-01/README.md)。
+
+- 视觉依据：[已选方向](docs/design/gui-direction-2026-11-01.md) 及 [原桌面截图](docs/design/gui-implementation-2026-11-01/before-home-desktop.jpg)。
+- 实施截图：[桌面](docs/design/gui-implementation-2026-11-01/home-desktop.jpg)、[最新手机三张展开](docs/design/gui-implementation-2026-11-01/home-mobile-expanded.jpg)。
+- CSS 视口：1440×1000、390×844；另测 3440×1440、1024×700 的约300px左栏及320×568。
+- 原始 JPEG：桌面前1393×990/后1407×1000，组合前约1%归一；手机前后375×812。是截图工具输出，不声称等于CSS视口或原生分辨率。
+- 同状态比较：[桌面并列](docs/design/gui-implementation-2026-11-01/home-desktop-comparison.jpg)、[手机并列](docs/design/gui-implementation-2026-11-01/home-mobile-comparison.jpg)、[页头局部](docs/design/gui-implementation-2026-11-01/header-comparison.jpg)，前后随机 IDs 一致。
+- 首轮修复：尺寸隐藏误伤目录、窄栏缩略图挤压、按钮重复模糊、保存按钮降级对比、触控导航高度及减少动效悬停缩放；复验方式和未实测项见详细报告。
+- 正常换组、失败保留旧组并恢复重试入口、导航、筛选 Escape/焦点、播放器开关和空库已检查；主预览控制台 warn/error 记录为空。前一步三项定向测试通过。追加竖屏三张同模块完整展开：390px 初次加载/换组后与320px检查均显示三张，无横向溢出；JS语法、git diff --check及独立只读复核通过。
+- 当前已覆盖视觉状态无剩余P0/P1/P2问题；完整键盘、系统偏好/滤镜降级、200%缩放、真机及绘制性能仍待验证。运行覆盖8/14组，不计算完整运行评分；实际视频解码/HDR不在本轮通过范围。未打包、部署。
+
+---
+
+# 历史记录：首页随机组、统一框架与时间线修复验证
 
 final result: passed
 

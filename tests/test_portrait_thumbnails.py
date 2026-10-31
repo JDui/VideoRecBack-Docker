@@ -10,12 +10,26 @@ from PIL import Image
 from app.config import Settings
 from app.db import Database
 from app.scanner import Scanner, ScanSummary
-from app.thumbnails import VideoToolError, generate_flat_thumbnail, probe_video, probe_video_geometry, require_tool
+from app.thumbnails import VideoToolError, flat_thumbnail_layout, generate_flat_thumbnail, probe_video, probe_video_geometry, require_tool
+
+
+@pytest.mark.parametrize('size,layout', [
+    ((1080, 1920), (3, 1)),
+    ((1080, 2160), (3, 1)),
+    ((1078, 1920), (4, 1)),  # Nearby ratios must not match the exact-ratio exception.
+    ((1082, 2160), (4, 1)),
+    ((1200, 1600), (4, 1)),  # 3:4 stays a four-frame strip.
+    ((1280, 1600), (2, 2)),
+    ((1920, 1080), (2, 2)),
+])
+def test_flat_thumbnail_layout_only_changes_exact_portrait_ratios(size, layout):
+    assert flat_thumbnail_layout(*size) == layout
 
 
 @pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'), reason='FFmpeg required')
 @pytest.mark.parametrize('source_size,output_size,columns,rows', [
-    ((90, 160), (544, 240), 4, 1),  # 9:16: four frames in one row
+    ((90, 160), (408, 240), 3, 1),  # 9:16: three frames in one row
+    ((80, 160), (360, 240), 3, 1),  # 1:2: three frames in one row
     ((96, 144), (640, 240), 4, 1),  # 2:3: four frames in one row
     ((128, 160), (384, 480), 2, 2),  # 4:5: keep the 2x2 grid
 ])
@@ -173,6 +187,8 @@ def test_specific_hdr_labels_and_thumbnail_revision_reach_all_views(monkeypatch,
                 assert '杜比视界' in page.text
                 assert '>HDR</span>' not in page.text
                 assert 'r=123' in page.text
+                if route == '/library':
+                    assert 'data-gallery-ratio="1.6875"' in page.text
                 if route != '/video/1/play':
                     assert 'class="portrait-thumbnail"' in page.text
             assert 'r=123' in (await client.get('/library?view=folders')).text

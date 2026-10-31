@@ -3,7 +3,7 @@
 {% block title %}首页 - {{ settings.site_title }}{% endblock %}
 {% block body_class %}home-page{% endblock %}
 {% block head %}
-  {{ stylesheet('/static/home.css?v=6') }}
+  {{ stylesheet('/static/home.css?v=7') }}
   {{ stylesheet('/static/site-shell.css?v=2') }}
 {% endblock %}
 {% block chrome %}
@@ -21,17 +21,12 @@
     <div class="home-grid home-grid--random" id="home-random" data-home-random>
       {% if home.summary.total %}{% with videos=home.random %}{% include '_home_random.html' %}{% endwith %}{% endif %}
     </div>
-    <nav class="home-random-controls" data-random-controls aria-label="随机视频切换" hidden>
-      <button type="button" data-random-previous aria-controls="home-random">上一张</button>
-      <output data-random-position aria-live="polite"></output>
-      <button type="button" data-random-next aria-controls="home-random">下一张</button>
-    </nav>
     <p class="home-feedback" data-home-feedback role="status"></p>
     {% if not home.summary.total %}
       <div class="home-empty home-empty--welcome"><h2>暂无视频</h2><p>设置视频目录后扫描即可。</p><a class="home-soft-button" href="/settings#library">设置视频目录</a></div>
     {% endif %}
   </section>
-  <section class="home-section" aria-labelledby="recent-title">
+  <section class="home-section home-section--recent" aria-labelledby="recent-title">
     <header class="home-section-head"><h2 id="recent-title">最近记录</h2><a class="home-more" href="/library">查看全部</a></header>
     <div class="home-grid home-grid--recent">{% for video in home.recent %}{{ home_card(video) }}{% else %}<p class="home-empty">暂无视频</p>{% endfor %}</div>
   </section>
