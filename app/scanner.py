@@ -11,7 +11,10 @@ from pathlib import Path
 
 from app.config import Settings
 from app.db import Database
-from app.thumbnails import VideoToolError, generate_preview_thumbnail, generate_thumbnail, probe_video, probe_video_geometry
+from app.thumbnails import (
+    VideoToolError, generate_preview_thumbnail, generate_scrolling_thumbnail,
+    generate_thumbnail, probe_video, probe_video_geometry,
+)
 from app.video_types import detect_video_type
 
 THUMBNAIL_VERSION = 8
@@ -162,7 +165,10 @@ class Scanner:
                 folder = "/"
             if row["relative_path"] != relative_path or row["folder"] != folder or not row["mtime_ns"]:
                 metadata_updates.append((snapshot.mtime_ns, relative_path, folder, int(row["id"])))
-            if media_data_incomplete(row):
+            if media_data_incomplete(row) or (
+                row["media_job_status"] not in {"pending", "running", "error"}
+                and self._needs_scrolling_thumbnail(row)
+            ):
                 incomplete_ids.append(int(row["id"]))
 
         summary.indexed = self._record_changed_files(changed, root, incomplete_ids, metadata_updates)
@@ -253,6 +259,7 @@ class Scanner:
                         THUMBNAIL_VERSION,
                     ),
                 ).fetchone()
+                self._remove_scrolling_thumbnail(int(row["id"]))
                 self._enqueue_media_job(int(row["id"]), conn=conn)
             for video_id in incomplete_ids:
                 self._enqueue_media_job(video_id, conn=conn)
@@ -487,6 +494,11 @@ class Scanner:
                     ):
                         raise VideoToolError(f"Unable to generate thumbnail: {path}")
                     thumbnail_generated = True
+                elif video["type"] == "flat":
+                    if self._needs_scrolling_thumbnail(video, video_id):
+                        self._generate_scrolling_thumbnail(path, video_id, video["duration_seconds"])
+                else:
+                    self._remove_scrolling_thumbnail(video_id)
                 with self.db.connect() as conn:
                     conn.execute(
                         "UPDATE videos SET media_version = ? WHERE id = ?",
@@ -527,6 +539,7 @@ class Scanner:
             folder = "/"
 
         unchanged_thumbnail_args: tuple[int, str, float | None] | None = None
+        unchanged_scrolling_args: tuple[int, float | None] | None = None
         unchanged_metadata_id: int | None = None
         with self.db.connect() as conn:
             row = conn.execute("SELECT * FROM videos WHERE path = ?", (path_text,)).fetchone()
@@ -551,9 +564,11 @@ class Scanner:
                 version_stale = row["thumb_version"] != THUMBNAIL_VERSION
                 if row["thumb_status"] in {"pending", "error"} or thumb_missing or version_stale:
                     unchanged_thumbnail_args = (row_id, row["type"], row["duration_seconds"])
+                elif self._needs_scrolling_thumbnail(row):
+                    unchanged_scrolling_args = (row_id, row["duration_seconds"])
         if row and unchanged:
             if defer_media:
-                if unchanged_metadata_id is not None or unchanged_thumbnail_args is not None:
+                if unchanged_metadata_id is not None or unchanged_thumbnail_args is not None or unchanged_scrolling_args is not None:
                     self._enqueue_media_job(row_id)
                 return 0
             if unchanged_metadata_id is not None:
@@ -567,6 +582,9 @@ class Scanner:
                     cached_duration,
                     settings.thumbnail_resolution,
                 )
+            elif unchanged_scrolling_args is not None:
+                row_id, cached_duration = unchanged_scrolling_args
+                self._generate_scrolling_thumbnail(path, row_id, cached_duration)
             return 0
 
         if defer_media:
@@ -797,6 +815,32 @@ class Scanner:
                     progress(summary, len(rows))
         return summary
 
+    async def rebuild_scrolling_thumbnails(self, settings: Settings, progress=None) -> ScanSummary:
+        self._running_count += 1
+        try:
+            async with self._lock:
+                return await asyncio.to_thread(self._rebuild_scrolling_thumbnails_sync, settings, progress)
+        finally:
+            self._running_count -= 1
+
+    def _rebuild_scrolling_thumbnails_sync(self, settings: Settings, progress=None) -> ScanSummary:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """SELECT id, path, duration_seconds FROM videos
+                   WHERE missing = 0 AND type = 'flat' AND thumb_status = 'ready' ORDER BY id"""
+            ).fetchall()
+        summary = ScanSummary()
+        for row in rows:
+            summary.seen += 1
+            if self._generate_scrolling_thumbnail(Path(row["path"]), int(row["id"]), row["duration_seconds"]):
+                summary.indexed += 1
+                summary.thumbnails += 1
+            else:
+                summary.errors += 1
+            if progress:
+                progress(summary, len(rows))
+        return summary
+
     def _recheck_all_video_metadata_sync(self, *, hdr_only: bool = False) -> ScanSummary:
         summary = ScanSummary()
         with self.db.connect() as conn:
@@ -911,6 +955,10 @@ class Scanner:
                     """,
                     (str(final_thumb_path), THUMBNAIL_VERSION, time.time_ns(), video_id),
                 )
+            if video_type == "flat":
+                self._generate_scrolling_thumbnail(path, video_id, duration)
+            else:
+                self._remove_scrolling_thumbnail(video_id)
             return True
         except (VideoToolError, OSError) as exc:
             if preserve_existing:
@@ -925,6 +973,31 @@ class Scanner:
                     """,
                     (str(exc), video_id),
                 )
+            return False
+
+    def _needs_scrolling_thumbnail(self, row, video_id: int | None = None) -> bool:
+        return (
+            row["type"] == "flat" and row["thumb_status"] == "ready"
+            and not (self.cache_dir / f"{video_id if video_id is not None else row['id']}-scrolling.webp").is_file()
+        )
+
+    def _remove_scrolling_thumbnail(self, video_id: int) -> None:
+        try:
+            (self.cache_dir / f"{video_id}-scrolling.webp").unlink(missing_ok=True)
+        except OSError as exc:
+            LOGGER.warning("Failed to remove rolling cover for video %s: %s", video_id, exc)
+
+    def _generate_scrolling_thumbnail(self, path: Path, video_id: int, duration: float | None) -> bool:
+        # A sequence belongs to the current main cover. Revoke the previous one
+        # before regeneration so failures always fall back to that main cover.
+        self._remove_scrolling_thumbnail(video_id)
+        output = self.cache_dir / f"{video_id}-scrolling.webp"
+        try:
+            generate_scrolling_thumbnail(path, output, duration)
+            return output.is_file()
+        except (VideoToolError, OSError) as exc:
+            self._remove_scrolling_thumbnail(video_id)
+            LOGGER.warning("Rolling cover generation failed for video %s; keeping main cover: %s", video_id, exc)
             return False
 
     def _delete_target_records(self, target: Path) -> int:
@@ -977,6 +1050,7 @@ class Scanner:
             Path(row["thumb_path"]) if row["thumb_path"] else None,
             self.cache_dir / f"{row['id']}.webp",
             self.cache_dir / f"{row['id']}-preview.webp",
+            self.cache_dir / f"{row['id']}-scrolling.webp",
             self.cache_dir / f"{stable_id(row['path'])}.webp",
         ]
         stream_dir = self.cache_dir / "streams"

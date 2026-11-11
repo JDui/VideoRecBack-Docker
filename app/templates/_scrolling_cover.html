@@ -1,6 +1,6 @@
 {% macro scrolling_cover_attrs(video) -%}
   {%- if video and video.type == 'flat' and video.thumb_status == 'ready' -%}
     {%- set columns, rows = flat_thumbnail_layout(video.width, video.height) if video.width and video.height else (2, 2) -%}
-    data-scrolling-cover data-cover-columns="{{ columns }}" data-cover-rows="{{ rows }}" data-cover-layout-current="{{ '1' if video.thumb_version == thumbnail_version else '0' }}"{% if video.width and video.height and video.height > video.width %} data-cover-source-ratio="{{ video.width / video.height }}"{% endif %}
+    data-scrolling-cover data-cover-columns="{{ columns }}" data-cover-rows="{{ rows }}" data-cover-sequence-src="/scrolling-thumb/{{ video.id }}.webp?v=1&amp;r={{ video.thumb_revision }}" data-cover-layout-current="{{ '1' if video.thumb_version == thumbnail_version else '0' }}"{% if video.width and video.height and video.height > video.width %} data-cover-source-ratio="{{ video.width / video.height }}"{% endif %}
   {%- endif -%}
 {%- endmacro %}

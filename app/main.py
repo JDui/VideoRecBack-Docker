@@ -28,7 +28,7 @@ from app.config import (
     normalize_intranet_port,
     normalize_intranet_redirect_protocol,
     normalize_quality,
-    normalize_scrolling_cover_interval,
+    normalize_scrolling_cover_cycle,
     normalize_thumbnail_resolution,
     save_settings,
 )
@@ -105,6 +105,7 @@ def create_app() -> FastAPI:
     app.state.metadata_recheck_pending = False
     app.state.hdr_recheck_status = {"status": "idle"}
     app.state.portrait_refresh_status = {"status": "idle"}
+    app.state.scrolling_refresh_status = {"status": "idle"}
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.globals['flat_thumbnail_layout'] = flat_thumbnail_layout
@@ -374,6 +375,8 @@ def create_app() -> FastAPI:
                 "hdr_status": app.state.hdr_recheck_status,
                 "portrait_refresh": request.query_params.get("portrait_refresh"),
                 "portrait_status": app.state.portrait_refresh_status,
+                "scrolling_refresh": request.query_params.get("scrolling_refresh"),
+                "scrolling_status": app.state.scrolling_refresh_status,
             },
         )
 
@@ -387,7 +390,7 @@ def create_app() -> FastAPI:
         default_panorama_quality: str = Form("original"),
         thumbnail_resolution: int = Form(576),
         scrolling_cover_enabled: str | None = Form(None),
-        scrolling_cover_interval_ms: int = Form(1500),
+        scrolling_cover_cycle_ms: int = Form(6000),
         flat_hls_encoder: str = Form("libx264_ultrafast"),
         panorama_hls_encoder: str = Form("libx264_ultrafast"),
         hls_cache_max_mb: int = Form(4096),
@@ -413,7 +416,7 @@ def create_app() -> FastAPI:
             default_panorama_quality=normalize_quality(default_panorama_quality),
             thumbnail_resolution=normalize_thumbnail_resolution(thumbnail_resolution),
             scrolling_cover_enabled=scrolling_cover_enabled == "on",
-            scrolling_cover_interval_ms=normalize_scrolling_cover_interval(scrolling_cover_interval_ms),
+            scrolling_cover_cycle_ms=normalize_scrolling_cover_cycle(scrolling_cover_cycle_ms),
             flat_hls_encoder=normalize_hls_encoder(flat_hls_encoder),
             panorama_hls_encoder=normalize_hls_encoder(panorama_hls_encoder),
             hls_cache_max_mb=normalize_hls_cache_max_mb(hls_cache_max_mb),
@@ -457,6 +460,19 @@ def create_app() -> FastAPI:
     @app.get("/settings/portrait-thumbnail-status")
     async def portrait_thumbnail_status():
         return JSONResponse(app.state.portrait_refresh_status, headers={'Cache-Control': 'no-store'})
+
+    @app.post("/settings/generate-scrolling-thumbnails")
+    async def generate_scrolling_thumbnails():
+        if is_background_busy(app):
+            return RedirectResponse('/settings?scrolling_refresh=busy#maintenance', status_code=303)
+        app.state.thumbnail_refresh_pending = True
+        app.state.scrolling_refresh_status = {'status': 'running', 'checked': 0, 'rebuilt': 0, 'errors': 0}
+        asyncio.create_task(run_scrolling_thumbnail_refresh(app, load_settings(config_dir)))
+        return RedirectResponse('/settings?scrolling_refresh=started#maintenance', status_code=303)
+
+    @app.get("/settings/scrolling-thumbnail-status")
+    async def scrolling_thumbnail_status():
+        return JSONResponse(app.state.scrolling_refresh_status, headers={'Cache-Control': 'no-store'})
 
     @app.post("/settings/recheck-panorama-types")
     async def recheck_panorama_types():
@@ -778,6 +794,15 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(stop_hls_transcode, video, data_dir, quality, start_ms, hls_encoder_for_video(settings, video))
         return {"ok": True}
 
+    @app.get("/scrolling-thumb/{video_id}.webp")
+    async def scrolling_thumb(video_id: int):
+        video = get_video(db, video_id)
+        sequence_path = data_dir / "cache" / f"{video_id}-scrolling.webp"
+        if video["type"] != "flat" or video["thumb_status"] != "ready" or not sequence_path.is_file():
+            raise HTTPException(status_code=404, detail="Scrolling thumbnail is not ready", headers={"Cache-Control": "no-store"})
+        # A dedicated refresh leaves the main cover revision unchanged.
+        return FileResponse(sequence_path, media_type="image/webp", headers={"Cache-Control": "no-cache"})
+
     @app.get("/thumb/{video_id}.webp")
     async def thumb(request: Request, video_id: int, preview: int = 0):
         video = get_video(db, video_id)
@@ -902,6 +927,21 @@ async def run_portrait_thumbnail_refresh(app: FastAPI, settings: Settings) -> No
         app.state.thumbnail_refresh_pending = False
 
 
+async def run_scrolling_thumbnail_refresh(app: FastAPI, settings: Settings) -> None:
+    def progress(summary, total):
+        app.state.scrolling_refresh_status = {'status': 'running', 'checked': summary.seen,
+            'rebuilt': summary.indexed, 'errors': summary.errors, 'total': total}
+    try:
+        summary = await app.state.scanner.rebuild_scrolling_thumbnails(settings, progress)
+        app.state.scrolling_refresh_status = {'status': 'complete', 'checked': summary.seen,
+            'rebuilt': summary.indexed, 'errors': summary.errors, 'skipped': summary.skipped}
+    except Exception:
+        LOGGER.exception('Scrolling thumbnail refresh failed.')
+        app.state.scrolling_refresh_status = {**app.state.scrolling_refresh_status, 'status': 'failed'}
+    finally:
+        app.state.thumbnail_refresh_pending = False
+
+
 async def run_metadata_recheck(app: FastAPI) -> None:
     try:
         await app.state.scanner.recheck_all_video_metadata()
@@ -935,7 +975,7 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "default_panorama_quality": settings.default_panorama_quality,
             "thumbnail_resolution": settings.thumbnail_resolution,
             "scrolling_cover_enabled": int(settings.scrolling_cover_enabled),
-            "scrolling_cover_interval_ms": settings.scrolling_cover_interval_ms,
+            "scrolling_cover_cycle_ms": settings.scrolling_cover_cycle_ms,
             "flat_hls_encoder": settings.flat_hls_encoder,
             "panorama_hls_encoder": settings.panorama_hls_encoder,
             "hls_cache_max_mb": settings.hls_cache_max_mb,
@@ -954,7 +994,7 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
         }
     )
     with db.connect() as conn:
-        conn.execute("DELETE FROM app_settings WHERE key IN ('hls_encoder', 'intranet_probe_host')")
+        conn.execute("DELETE FROM app_settings WHERE key IN ('hls_encoder', 'intranet_probe_host', 'scrolling_cover_interval_ms')")
 
 
 def hls_encoder_for_video(settings: Settings, video) -> str:

@@ -46,6 +46,27 @@ const pollPortraitStatus = async () => {
 };
 if (portraitStatus?.dataset.state === 'running') setTimeout(pollPortraitStatus, 1000);
 
+const scrollingStatus = document.querySelector('[data-scrolling-status]');
+const scrollingButton = document.querySelector('[data-scrolling-generate]');
+const pollScrollingStatus = async () => {
+  if (!scrollingStatus?.isConnected || scrollingStatus.dataset.state !== 'running') return;
+  try {
+    const response = await fetch('/settings/scrolling-thumbnail-status', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Scrolling thumbnail status unavailable');
+    const result = await response.json();
+    if (!scrollingStatus.isConnected) return;
+    scrollingStatus.dataset.state = result.status;
+    scrollingButton.disabled = result.status === 'running';
+    scrollingStatus.textContent = result.status === 'running' || result.status === 'complete'
+      ? `${result.status === 'complete' ? '滚动封面生成完成' : '正在生成滚动封面'}：检查 ${result.checked} 个，生成 ${result.rebuilt} 个，失败 ${result.errors} 个。`
+      : '滚动封面生成中断，请稍后重试。';
+  } catch {
+    scrollingStatus.textContent = '暂时无法获取生成状态，正在重试。';
+  }
+  if (scrollingStatus.dataset.state === 'running') setTimeout(pollScrollingStatus, 2000);
+};
+if (scrollingStatus?.dataset.state === 'running') setTimeout(pollScrollingStatus, 1000);
+
 const preferencesForm = document.querySelector('#preferences-form');
 const saveStatus = document.querySelector('[data-settings-save-status]');
 const saveButton = document.querySelector('[data-settings-save]');
@@ -57,10 +78,10 @@ const coverPreviewImage = document.querySelector('[data-scrolling-cover-preview-
 const coverPreviewStatus = document.querySelector('[data-scrolling-cover-preview-status]');
 const syncCoverPreview = () => {
   if (!coverToggle || !coverSpeed || !coverPreview) return;
-  const intervalMs = Number(coverSpeed.value);
-  coverSpeedValue.textContent = `每帧 ${(intervalMs / 1000).toFixed(1)} 秒`;
+  const cycleMs = Number(coverSpeed.value);
+  coverSpeedValue.textContent = `每轮 ${(cycleMs / 1000).toFixed(1)} 秒`;
   coverPreviewStatus.textContent = coverToggle.checked ? '正在循环预览' : '完整封面预览';
-  window.VideoRecBackScrollingCovers?.setPreview(coverPreview, { enabled: coverToggle.checked, intervalMs });
+  window.VideoRecBackScrollingCovers?.setPreview(coverPreview, { enabled: coverToggle.checked, cycleMs });
 };
 coverToggle?.addEventListener('change', syncCoverPreview);
 coverSpeed?.addEventListener('input', syncCoverPreview);

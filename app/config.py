@@ -24,7 +24,7 @@ class Settings:
     default_panorama_quality: str = "original"
     thumbnail_resolution: int = 576
     scrolling_cover_enabled: bool = False
-    scrolling_cover_interval_ms: int = 1500
+    scrolling_cover_cycle_ms: int = 6000
     flat_hls_encoder: str = "libx264_ultrafast"
     panorama_hls_encoder: str = "libx264_ultrafast"
     hls_cache_max_mb: int = 4096
@@ -75,7 +75,9 @@ def load_settings(config_dir: Path) -> Settings:
         default_panorama_quality=normalize_quality(raw.get("default_panorama_quality", legacy_quality)),
         thumbnail_resolution=normalize_thumbnail_resolution(raw.get("thumbnail_resolution", 576)),
         scrolling_cover_enabled=bool(raw.get("scrolling_cover_enabled", False)),
-        scrolling_cover_interval_ms=normalize_scrolling_cover_interval(raw.get("scrolling_cover_interval_ms", 1500)),
+        scrolling_cover_cycle_ms=normalize_scrolling_cover_cycle(
+            raw.get("scrolling_cover_cycle_ms", normalize_scrolling_cover_interval(raw.get("scrolling_cover_interval_ms", 1500)) * 4)
+        ),
         flat_hls_encoder=normalize_hls_encoder(raw.get("flat_hls_encoder", legacy_hls_encoder)),
         panorama_hls_encoder=normalize_hls_encoder(raw.get("panorama_hls_encoder", legacy_hls_encoder)),
         hls_cache_max_mb=normalize_hls_cache_max_mb(raw.get("hls_cache_max_mb", 4096)),
@@ -106,7 +108,7 @@ def save_settings(config_dir: Path, settings: Settings) -> None:
     payload["default_panorama_quality"] = normalize_quality(payload.get("default_panorama_quality", legacy_quality))
     payload["thumbnail_resolution"] = normalize_thumbnail_resolution(payload.get("thumbnail_resolution", 576))
     payload["scrolling_cover_enabled"] = bool(payload.get("scrolling_cover_enabled", False))
-    payload["scrolling_cover_interval_ms"] = normalize_scrolling_cover_interval(payload.get("scrolling_cover_interval_ms", 1500))
+    payload["scrolling_cover_cycle_ms"] = normalize_scrolling_cover_cycle(payload.get("scrolling_cover_cycle_ms", 6000))
     legacy_hls_encoder = normalize_hls_encoder(payload.get("hls_encoder", "libx264_ultrafast"))
     payload.pop("hls_encoder", None)
     payload["flat_hls_encoder"] = normalize_hls_encoder(payload.get("flat_hls_encoder", legacy_hls_encoder))
@@ -160,11 +162,20 @@ def normalize_hls_encoder(value: Any) -> str:
 
 
 def normalize_scrolling_cover_interval(value: Any) -> int:
+    """Read the legacy per-frame setting when migrating to a full cycle."""
     try:
         number = int(value)
     except (TypeError, ValueError, OverflowError):
         number = 1500
     return max(300, min(5000, number))
+
+
+def normalize_scrolling_cover_cycle(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        number = 6000
+    return max(1200, min(20000, number))
 
 
 def normalize_hls_cache_max_mb(value: Any) -> int:

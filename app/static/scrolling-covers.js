@@ -1,11 +1,11 @@
 (() => {
   const selector = '[data-scrolling-cover]';
   const enabled = document.body.dataset.scrollingCoverEnabled === '1';
-  const normalizeInterval = value => {
+  const normalizeCycle = value => {
     const number = Number(value);
-    return Number.isFinite(number) ? Math.max(300, Math.min(5000, number)) : 1500;
+    return Number.isFinite(number) ? Math.max(1200, Math.min(20000, number)) : 6000;
   };
-  const intervalMs = normalizeInterval(document.body.dataset.scrollingCoverIntervalMs ?? 1500);
+  const cycleMs = normalizeCycle(document.body.dataset.scrollingCoverCycleMs ?? 6000);
   const covers = new Map();
   let suspended = false;
   let mutationObserver;
@@ -37,8 +37,8 @@
   const draw = cover => {
     const width = cover.wrapper.clientWidth;
     const height = cover.wrapper.clientHeight;
-    const tileWidth = cover.image.naturalWidth / cover.columns;
-    const tileHeight = cover.image.naturalHeight / cover.rows;
+    const tileWidth = cover.sprite.naturalWidth / cover.columns;
+    const tileHeight = cover.sprite.naturalHeight / cover.rows;
     if (!width || !height || !tileWidth || !tileHeight) return false;
     const scale = Math.min(width / tileWidth, height / tileHeight);
     const frameWidth = tileWidth * scale;
@@ -54,17 +54,53 @@
     cover.wrapper.isConnected && !document.hidden && !suspended;
   const schedule = cover => {
     stop(cover);
-    if (!canPlay(cover)) return;
+    if (!canPlay(cover)) {
+      cover.nextFrameAt = 0;
+      return;
+    }
+    const frameMs = cover.cycleMs / (cover.columns * cover.rows);
+    const now = performance.now();
+    if (!cover.nextFrameAt) cover.nextFrameAt = now + frameMs;
     cover.timer = setTimeout(() => {
       cover.timer = 0;
-      if (!canPlay(cover)) return;
-      cover.index = (cover.index + 1) % (cover.columns * cover.rows);
+      if (!canPlay(cover)) {
+        cover.nextFrameAt = 0;
+        return;
+      }
+      // Keep the whole loop on one clock rather than accumulating painting
+      // and timer delays once per frame.
+      const frames = Math.max(1, Math.floor((performance.now() - cover.nextFrameAt) / frameMs) + 1);
+      cover.index = (cover.index + frames) % (cover.columns * cover.rows);
+      cover.nextFrameAt += frames * frameMs;
       draw(cover);
       schedule(cover);
-    }, cover.intervalMs);
+    }, Math.max(0, cover.nextFrameAt - now));
+  };
+  const requestSequence = cover => {
+    const source = cover.wrapper.dataset.coverSequenceSrc;
+    if (!source || cover.sequence || !cover.enabled || !cover.visible ||
+        !cover.wrapper.isConnected || document.hidden || suspended) return;
+    const sequence = new Image();
+    cover.sequence = sequence;
+    sequence.onload = () => {
+      if (covers.get(cover.wrapper) !== cover || !cover.wrapper.isConnected) return;
+      if (!(sequence.naturalWidth > 0 && sequence.naturalHeight > 0)) return;
+      cover.sequenceLoaded = true;
+      cover.sprite = sequence;
+      cover.columns = 4;
+      cover.rows = 4;
+      cover.loaded = true;
+      cover.index = 0;
+      cover.nextFrameAt = 0;
+      sync(cover);
+    };
+    // A missing dedicated cache is normal. Keep the main cover playing.
+    sequence.onerror = () => {};
+    sequence.src = source;
   };
   const sync = cover => {
     stop(cover);
+    requestSequence(cover);
     if (!cover.enabled || !cover.loaded) {
       cover.wrapper.classList.remove('is-scrolling-cover');
       return;
@@ -78,7 +114,7 @@
       cover.layer.append(cover.frame);
       cover.wrapper.insertBefore(cover.layer, cover.image);
     }
-    cover.frame.style.backgroundImage = `url(${JSON.stringify(cover.image.currentSrc || cover.image.src)})`;
+    cover.frame.style.backgroundImage = `url(${JSON.stringify(cover.sprite.currentSrc || cover.sprite.src)})`;
     if (draw(cover)) cover.wrapper.classList.add('is-scrolling-cover');
     schedule(cover);
   };
@@ -87,6 +123,7 @@
       const cover = covers.get(entry.target);
       if (!cover) continue;
       cover.visible = entry.isIntersecting;
+      requestSequence(cover);
       schedule(cover);
     }
   }) : null;
@@ -103,6 +140,7 @@
     sizeObserver?.unobserve(cover.wrapper);
     cover.image.removeEventListener('load', cover.onLoad);
     cover.image.removeEventListener('error', cover.onError);
+    if (cover.sequence) cover.sequence.onload = cover.sequence.onerror = null;
     cover.layer?.remove();
     cover.wrapper.classList.remove('is-scrolling-cover');
     covers.delete(cover.wrapper);
@@ -112,17 +150,21 @@
     const image = wrapper.querySelector('img');
     if (!image) return;
     const cover = {
-      wrapper, image, enabled, intervalMs, columns: 2, rows: 2,
-      index: 0, timer: 0, loaded: false, visible: !visibilityObserver,
+      wrapper, image, sprite: image, enabled, cycleMs, columns: 2, rows: 2,
+      index: 0, timer: 0, nextFrameAt: 0, loaded: false, visible: !visibilityObserver,
+      sequence: null, sequenceLoaded: false,
     };
     cover.onLoad = () => {
-      cover.loaded = image.naturalWidth > 0 && image.naturalHeight > 0;
-      [cover.columns, cover.rows] = resolveLayout(wrapper, image);
-      cover.index = 0;
+      if (!cover.sequenceLoaded) {
+        cover.loaded = image.naturalWidth > 0 && image.naturalHeight > 0;
+        [cover.columns, cover.rows] = resolveLayout(wrapper, image);
+        cover.index = 0;
+        cover.nextFrameAt = 0;
+      }
       sync(cover);
     };
     cover.onError = () => {
-      cover.loaded = false;
+      if (!cover.sequenceLoaded) cover.loaded = false;
       sync(cover);
     };
     covers.set(wrapper, cover);
@@ -144,8 +186,9 @@
       const cover = covers.get(wrapper);
       if (!cover || !wrapper.hasAttribute('data-cover-preview')) return;
       cover.enabled = Boolean(options.enabled);
-      cover.intervalMs = normalizeInterval(options.intervalMs);
+      cover.cycleMs = normalizeCycle(options.cycleMs);
       cover.index = 0;
+      cover.nextFrameAt = 0;
       sync(cover);
     },
   };
@@ -160,16 +203,23 @@
     });
     mutationObserver.observe(document.body, { childList: true, subtree: true });
   }
-  document.addEventListener('visibilitychange', () => covers.forEach(schedule));
+  const resume = cover => {
+    requestSequence(cover);
+    schedule(cover);
+  };
+  document.addEventListener('visibilitychange', () => covers.forEach(resume));
   window.addEventListener('pagehide', () => {
     suspended = true;
-    covers.forEach(stop);
+    covers.forEach(cover => {
+      stop(cover);
+      cover.nextFrameAt = 0;
+    });
     mutationObserver?.disconnect();
   });
   window.addEventListener('pageshow', () => {
     suspended = false;
     refresh();
     mutationObserver?.observe(document.body, { childList: true, subtree: true });
-    covers.forEach(schedule);
+    covers.forEach(resume);
   });
 })();
