@@ -1,7 +1,8 @@
+{% from '_scrolling_cover.html' import scrolling_cover_attrs %}
 {% macro home_card(video, hero=False, memory=False) %}
   <article class="home-video{% if memory %} home-video--memory{% endif %}" data-home-card="{{ video.id }}" data-exclude-random="{{ 1 if video.exclude_random else 0 }}" data-exclude-memories="{{ 1 if video.exclude_memories else 0 }}" data-favorite-state="{{ 1 if video.favorite else 0 }}" data-home-timeline-url="/library#timeline-{{ video.mtime|date }}">
     <a class="home-cover" href="/video/{{ video.id }}/play" data-home-video="{{ video.id }}" aria-label="播放 {{ video.name }}">
-      <span class="home-thumbnail">
+      <span class="home-thumbnail" {{ scrolling_cover_attrs(video) }}>
       {% if video.thumb_status == 'ready' %}
         <img {% if video.type == 'flat' and video.height and video.width and video.height > video.width %}class="portrait-thumbnail" {% endif %}src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;r={{ video.thumb_revision }}&amp;preview=1" alt="{{ video.name }}" loading="{{ 'eager' if hero else 'lazy' }}" decoding="async">
       {% else %}

@@ -49,6 +49,36 @@ if (portraitStatus?.dataset.state === 'running') setTimeout(pollPortraitStatus, 
 const preferencesForm = document.querySelector('#preferences-form');
 const saveStatus = document.querySelector('[data-settings-save-status]');
 const saveButton = document.querySelector('[data-settings-save]');
+const coverToggle = document.querySelector('[data-scrolling-cover-toggle]');
+const coverSpeed = document.querySelector('[data-scrolling-cover-speed]');
+const coverSpeedValue = document.querySelector('[data-scrolling-cover-speed-value]');
+const coverPreview = document.querySelector('[data-cover-preview]');
+const coverPreviewImage = document.querySelector('[data-scrolling-cover-preview-image]');
+const coverPreviewStatus = document.querySelector('[data-scrolling-cover-preview-status]');
+const syncCoverPreview = () => {
+  if (!coverToggle || !coverSpeed || !coverPreview) return;
+  const intervalMs = Number(coverSpeed.value);
+  coverSpeedValue.textContent = `每帧 ${(intervalMs / 1000).toFixed(1)} 秒`;
+  coverPreviewStatus.textContent = coverToggle.checked ? '正在循环预览' : '完整封面预览';
+  window.VideoRecBackScrollingCovers?.setPreview(coverPreview, { enabled: coverToggle.checked, intervalMs });
+};
+coverToggle?.addEventListener('change', syncCoverPreview);
+coverSpeed?.addEventListener('input', syncCoverPreview);
+const useExampleCover = () => {
+  if (coverPreviewImage?.getAttribute('src') === '/static/cover-preview.svg') return;
+  coverPreview.dataset.coverColumns = '2';
+  coverPreview.dataset.coverRows = '2';
+  coverPreview.dataset.coverSourceRatio = String(16 / 9);
+  coverPreview.dataset.coverLayoutCurrent = '1';
+  coverPreviewImage.src = '/static/cover-preview.svg';
+  coverPreviewImage.alt = '四宫格封面示例';
+  document.querySelector('[data-scrolling-cover-preview-source]').textContent = '示例封面';
+  window.VideoRecBackScrollingCovers?.refresh(coverPreview);
+  syncCoverPreview();
+};
+coverPreviewImage?.addEventListener('error', useExampleCover);
+if (coverPreviewImage?.complete && !coverPreviewImage.naturalWidth) useExampleCover();
+syncCoverPreview();
 const sectionLinks = [...document.querySelectorAll('.preferences-nav a[href^="#"]')];
 const preferenceSections = [...document.querySelectorAll('.preference-section')];
 

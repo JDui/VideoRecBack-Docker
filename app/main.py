@@ -28,6 +28,7 @@ from app.config import (
     normalize_intranet_port,
     normalize_intranet_redirect_protocol,
     normalize_quality,
+    normalize_scrolling_cover_interval,
     normalize_thumbnail_resolution,
     save_settings,
 )
@@ -45,7 +46,7 @@ from app.media import (
     resolve_stream_path,
     stop_hls_transcode,
 )
-from app.scanner import Scanner, calculate_aspect_ratio, is_tenbit_depth
+from app.scanner import THUMBNAIL_VERSION, Scanner, calculate_aspect_ratio, is_tenbit_depth
 from app.thumbnails import VideoToolError, flat_thumbnail_layout, generate_preview_thumbnail, probe_video
 
 
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.globals['flat_thumbnail_layout'] = flat_thumbnail_layout
+    templates.env.globals['thumbnail_version'] = THUMBNAIL_VERSION
     templates.env.filters["duration"] = format_duration
     templates.env.filters["size"] = format_size
     templates.env.filters["date"] = format_date
@@ -351,11 +353,19 @@ def create_app() -> FastAPI:
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
         settings = load_settings(config_dir)
+        with db.connect() as conn:
+            cover_preview = conn.execute(
+                """SELECT id, name, width, height, thumb_version, thumb_revision
+                   FROM videos WHERE missing = 0 AND type = 'flat' AND thumb_status = 'ready'
+                   AND thumb_path IS NOT NULL AND width > 0 AND height > 0
+                   ORDER BY mtime DESC, id DESC LIMIT 1"""
+            ).fetchone()
         return templates.TemplateResponse(
             request,
             "settings.html",
             {
                 "settings": settings,
+                "cover_preview": cover_preview,
                 "scan_running": is_scan_running(app),
                 "thumbnail_refresh": request.query_params.get("thumbnail_refresh"),
                 "panorama_recheck": request.query_params.get("panorama_recheck"),
@@ -376,6 +386,8 @@ def create_app() -> FastAPI:
         default_flat_quality: str = Form("original"),
         default_panorama_quality: str = Form("original"),
         thumbnail_resolution: int = Form(576),
+        scrolling_cover_enabled: str | None = Form(None),
+        scrolling_cover_interval_ms: int = Form(1500),
         flat_hls_encoder: str = Form("libx264_ultrafast"),
         panorama_hls_encoder: str = Form("libx264_ultrafast"),
         hls_cache_max_mb: int = Form(4096),
@@ -400,6 +412,8 @@ def create_app() -> FastAPI:
             default_flat_quality=normalize_quality(default_flat_quality),
             default_panorama_quality=normalize_quality(default_panorama_quality),
             thumbnail_resolution=normalize_thumbnail_resolution(thumbnail_resolution),
+            scrolling_cover_enabled=scrolling_cover_enabled == "on",
+            scrolling_cover_interval_ms=normalize_scrolling_cover_interval(scrolling_cover_interval_ms),
             flat_hls_encoder=normalize_hls_encoder(flat_hls_encoder),
             panorama_hls_encoder=normalize_hls_encoder(panorama_hls_encoder),
             hls_cache_max_mb=normalize_hls_cache_max_mb(hls_cache_max_mb),
@@ -920,6 +934,8 @@ def sync_settings_to_db(db: Database, settings: Settings) -> None:
             "default_flat_quality": settings.default_flat_quality,
             "default_panorama_quality": settings.default_panorama_quality,
             "thumbnail_resolution": settings.thumbnail_resolution,
+            "scrolling_cover_enabled": int(settings.scrolling_cover_enabled),
+            "scrolling_cover_interval_ms": settings.scrolling_cover_interval_ms,
             "flat_hls_encoder": settings.flat_hls_encoder,
             "panorama_hls_encoder": settings.panorama_hls_encoder,
             "hls_cache_max_mb": settings.hls_cache_max_mb,

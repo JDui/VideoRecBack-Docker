@@ -385,7 +385,7 @@ body.player-page .player-play-button.glass-surface { background:rgba(55,123,213,
 .asset-card, .home-video { -webkit-touch-callout: none; }
 .asset-card, .home-cover { -webkit-user-select: none; user-select: none; }
 
-/* Thumbnail details share the same hover and keyboard-focus disclosure. */
+/* Video details use hover and keyboard focus; folder and date titles stay visible. */
 .home-page .home-video { position:relative; }
 .home-page .home-cover { overflow:hidden; }
 .home-page .home-video-caption,
@@ -405,15 +405,15 @@ body.player-page .player-play-button.glass-surface { background:rgba(55,123,213,
 .library-page .folder-cover img { object-fit:cover; }
 .library-page .folder-info {
   position:absolute; inset:auto 0 0; padding:30px 10px 10px; color:#fff;
-  background:linear-gradient(transparent,#121a29e8); opacity:0; transform:translateY(6px);
-  pointer-events:none; transition:opacity var(--motion-med) var(--ease-smooth),transform var(--motion-med) var(--ease-snap);
+  background:linear-gradient(transparent,#121a29e8);
+  pointer-events:none;
 }
 .library-page .folder-info strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .library-page .folder-info span { color:#ffffffe0; }
 .library-page .folder-kind { opacity:0; pointer-events:none; transition:opacity var(--motion-med) var(--ease-smooth); }
-.library-page .folder-tile:is(:hover,:focus-visible) :is(.folder-info,.folder-kind) { opacity:1; transform:none; }
+.library-page .folder-tile:is(:hover,:focus-visible) .folder-kind { opacity:1; }
 @media (prefers-reduced-motion:reduce) {
-  .home-page .home-video-caption,.library-page :is(.folder-info,.folder-kind) { transition:none; }
+  .home-page .home-video-caption,.library-page .folder-kind { transition:none; }
 }
 .library-page .immich-timeline:not(.timeline-gallery) .asset-overlay,
 .library-page :is(.finder-view,.calendar-view,.favorites-view) .asset-overlay { padding:12px 8px 28px; pointer-events:none; }

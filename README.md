@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前源码版本：**2.7.12**。镜像下载见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
+当前源码版本：**2.7.13**，本地构建尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
 
 ## 页面展示
 
@@ -56,10 +56,10 @@ VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线�
 
 ### 1. 下载并加载镜像
 
-从 [v2.7.12 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.12) 下载 `videorecback-2.7.12-amd64.tar`。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
+使用本地构建的 `videorecback-2.7.13-amd64.tar`；历史版本可从 [v2.7.12 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.12) 下载。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
 
 ```bash
-docker load -i videorecback-2.7.12-amd64.tar
+docker load -i videorecback-2.7.13-amd64.tar
 ```
 
 ### 2. 创建 Docker Compose 配置
@@ -69,7 +69,7 @@ docker load -i videorecback-2.7.12-amd64.tar
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.7.12
+    image: videorecback:2.7.13
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -94,11 +94,11 @@ docker compose up -d
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
 # 使用 main 分支的当前源码
-docker build -t videorecback:2.7.12 .
+docker build -t videorecback:2.7.13 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.12 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.13 .`。
 
 ## 升级与数据目录
 
@@ -115,6 +115,11 @@ docker compose up -d
 ## 日期与时区
 
 归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
+
+## 2.7.13 更新
+
+- 新增可调速度的滚动式封面，复用现有封面并支持设置页预览。
+- 调整首页播放器默认宽度和手动调整行为。
 
 ## 2.7.12 更新
 
@@ -197,6 +202,7 @@ docker compose up -d
 - 自动扫描间隔按小时设置，设为 `0` 可关闭。只有扫描、增量文件/文件夹处理和播放/下载媒体请求读取原视频，普通页面浏览读取数据库与封面缓存。
 - 全盘扫描批量比较路径、文件大小与纳秒时间，未变化文件不写数据库。媒体分析与封面生成使用单并发后台队列，限制 FFmpeg 线程数，并对失败任务限制重试。
 - 设置页按视频库、播放偏好、封面与转码、内网连接、维护工具分组，保存后留在当前页面。可调整标题、视频扩展名、忽略规则、元数据显示、HLS 编码器和缓存上限。
+- 设置 → 封面与转码可开启「滚动式封面」，将三宫格、四宫格（含竖屏横排）切分为单帧并循环播放。每帧停留时间可在 0.3–5 秒间调整并即时预览，默认 1.5 秒；开关默认关闭，保存后与速度一起持久化。复用已有封面缓存，屏幕外或后台页面暂停播放；视频详情页始终展示完整封面。
 - 维护工具提供封面刷新、全景重校验、全部视频数据重校验和 2 MB 服务器连通测试；数据重校验会重新记录 10bit、色度采样和平均码率。
 
 ### 界面与兼容

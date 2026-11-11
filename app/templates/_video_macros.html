@@ -1,3 +1,4 @@
+{% from '_scrolling_cover.html' import scrolling_cover_attrs %}
 {% macro asset_card(video, compact=False, favorite_context=False) %}
   <article class="asset-item {% if compact %}asset-item--compact{% endif %}">
     <a
@@ -16,7 +17,7 @@
       {% if video.type == "panorama" and video.thumb_status == "ready" %}
         <span class="asset-backdrop"><img src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;r={{ video.thumb_revision }}&amp;preview=1" alt="" loading="lazy" decoding="async"></span>
       {% endif %}
-      <span class="asset-thumb">
+      <span class="asset-thumb" {{ scrolling_cover_attrs(video) }}>
         {% if video.thumb_status == "ready" %}
           <img {% if video.type == 'flat' and video.height and video.width and video.height > video.width %}class="portrait-thumbnail" {% endif %}src="/thumb/{{ video.id }}.webp?v={{ video.thumb_version }}&amp;r={{ video.thumb_revision }}&amp;preview=1" alt="{{ video.name }}" loading="lazy" decoding="async">
         {% else %}

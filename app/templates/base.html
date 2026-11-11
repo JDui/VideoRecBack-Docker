@@ -11,11 +11,14 @@
     {{ stylesheet('/static/styles.css?v=2.7.11&revision=2') }}
     {% block head %}{% endblock %}
     {{ stylesheet('/static/liquid-glass.css?v=12') }}
-    {{ stylesheet('/static/archive-ui.css?v=28') }}
+    {{ stylesheet('/static/archive-ui.css?v=29') }}
     {{ stylesheet('/static/motion.css?v=2') }}
+    {{ stylesheet('/static/scrolling-covers.css?v=1') }}
   </head>
   <body
     class="{% block body_class %}{% endblock %}"
+    data-scrolling-cover-enabled="{{ '1' if settings and settings.scrolling_cover_enabled else '0' }}"
+    data-scrolling-cover-interval-ms="{{ settings.scrolling_cover_interval_ms if settings else 1500 }}"
     data-intranet-enabled="{{ '1' if settings and settings.intranet_keepalive_enabled else '0' }}"
     data-intranet-auto-redirect-enabled="{{ '1' if settings and settings.intranet_auto_redirect_enabled else '0' }}"
     data-intranet-skip-probe="{{ '1' if request.query_params.get('_vbr_skip_intranet') == '1' else '0' }}"
@@ -42,9 +45,10 @@
     </main>
     {% block overlays %}{% endblock %}
     <script type="application/x-vbr-script" data-page-script src="/static/intranet.js?v=2.6.9&amp;revision=3"></script>
-    <script type="application/x-vbr-script" data-page-script src="/static/inline-player.js?v=5"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/inline-player.js?v=6"></script>
     <script type="application/x-vbr-script" data-page-script src="/static/video-actions.js?v=1&amp;revision=2"></script>
     <script type="application/x-vbr-script" data-page-script src="/static/library-scan.js?v=2"></script>
+    <script type="application/x-vbr-script" data-page-script src="/static/scrolling-covers.js?v=1"></script>
     {% block scripts %}{% endblock %}
     <script type="application/x-vbr-script" data-page-script src="/static/archive-ui.js?v=4"></script>
     <script type="application/x-vbr-script" data-page-script src="/static/liquid-glass.js?v=8"></script>

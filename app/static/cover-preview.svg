@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <symbol id="hills" viewBox="0 0 320 180">
+      <path d="M0 120 80 58 162 122 232 76 320 128V180H0Z" fill="#6b968d"/>
+      <path d="M0 147 104 104 220 148 280 115 320 135V180H0Z" fill="#345f5d"/>
+      <path d="M0 166Q84 140 160 166T320 166V180H0Z" fill="#244e53"/>
+    </symbol>
+  </defs>
+  <path fill="#e8cda9" d="M0 0H320V180H0Z"/>
+  <circle cx="64" cy="78" r="20" fill="#fff4cb"/>
+  <use href="#hills" width="320" height="180"/>
+  <path fill="#bed9e1" d="M320 0H640V180H320Z"/>
+  <circle cx="440" cy="40" r="20" fill="#fff4cb"/>
+  <use href="#hills" x="320" width="320" height="180"/>
+  <path fill="#e7b8a3" d="M0 180H320V360H0Z"/>
+  <circle cx="238" cy="260" r="20" fill="#ffe3a3"/>
+  <use href="#hills" y="180" width="320" height="180"/>
+  <path fill="#5c6989" d="M320 180H640V360H320Z"/>
+  <circle cx="574" cy="222" r="15" fill="#e9e6d4"/>
+  <use href="#hills" x="320" y="180" width="320" height="180"/>
+  <g fill="white" font-family="sans-serif" font-size="14" text-anchor="middle">
+    <text x="22" y="27">1</text><text x="342" y="27">2</text>
+    <text x="22" y="207">3</text><text x="342" y="207">4</text>
+  </g>
+</svg>

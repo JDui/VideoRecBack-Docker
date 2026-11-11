@@ -72,18 +72,28 @@
     });
     const resizer = shell.querySelector('[data-resizer]');
     if (!resizer) continue;
+    const isHome = shell.classList.contains('home-player-shell');
     let resizing = false;
-    const update = fraction => {
+    let customWidth = false;
+    const limits = () => {
       const available = Math.max(1, shell.clientWidth - 8);
       const minimum = Math.max(.25, 420 / available);
-      const maximum = Math.max(minimum, Math.min(.75, 1 - 300 / available));
+      const previousMaximum = Math.max(minimum, Math.min(.75, 1 - 300 / available));
+      // Home starts beyond the previous left-pane limit by 8% of the full shell.
+      const maximum = previousMaximum + (isHome ? shell.clientWidth * .08 / available : 0);
+      return { available, minimum, maximum };
+    };
+    const defaultFraction = () => isHome ? limits().maximum : 2 / 3;
+    const update = fraction => {
+      const { minimum, maximum } = limits();
       const ratio = Math.max(minimum, Math.min(maximum, fraction));
       shell.style.setProperty('--player-width', `calc((100% - 8px) * ${ratio})`);
-      resizer.setAttribute('aria-valuemin', String(Math.ceil(minimum * 100)));
-      resizer.setAttribute('aria-valuemax', String(Math.floor(maximum * 100)));
+      resizer.setAttribute('aria-valuemin', String((isHome ? Math.floor : Math.ceil)(minimum * 100)));
+      resizer.setAttribute('aria-valuemax', String((isHome ? Math.ceil : Math.floor)(maximum * 100)));
       resizer.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
       window.dispatchEvent(new CustomEvent('videorecback:timeline-layout-now'));
     };
+    if (isHome) update(defaultFraction());
     resizer.addEventListener('pointerdown', event => {
       if (event.button !== 0) return;
       resizing = true;
@@ -93,6 +103,7 @@
     resizer.addEventListener('pointermove', event => {
       if (!resizing) return;
       const rect = shell.getBoundingClientRect();
+      customWidth = true;
       update((rect.right - event.clientX) / Math.max(1, rect.width - 8));
     });
     const finish = () => { resizing = false; shell.classList.remove('is-resizing'); };
@@ -101,14 +112,16 @@
       if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
       event.preventDefault();
       const fraction = shell.querySelector('.preview-pane').getBoundingClientRect().width / Math.max(1, shell.clientWidth - 8);
-      update(event.key === 'Home' ? 2 / 3 : fraction + (event.key === 'ArrowLeft' ? .025 : -.025));
+      customWidth = event.key !== 'Home';
+      update(event.key === 'Home' ? defaultFraction() : fraction + (event.key === 'ArrowLeft' ? .025 : -.025));
     });
-    resizer.addEventListener('dblclick', () => update(2 / 3));
+    resizer.addEventListener('dblclick', () => { customWidth = false; update(defaultFraction()); });
     new ResizeObserver(() => {
+      if (isHome && !customWidth) { update(defaultFraction()); return; }
       if (!shell.classList.contains('player-open')) return;
-      const available = Math.max(1, shell.clientWidth - 8);
+      const { available, minimum, maximum } = limits();
       const ratio = shell.querySelector('.preview-pane').getBoundingClientRect().width / available;
-      if (ratio * available < 420 || (1 - ratio) * available < 300) update(ratio);
+      if (isHome ? ratio < minimum || ratio > maximum : ratio * available < 420 || (1 - ratio) * available < 300) update(ratio);
     }).observe(shell);
   }
 })();

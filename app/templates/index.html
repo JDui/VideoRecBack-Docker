@@ -14,10 +14,11 @@
   {% from "_icons.html" import icon %}
   {% set preview = videos[0] if videos else none %}
   {% from "_video_macros.html" import asset_card with context %}
+  {% from '_scrolling_cover.html' import scrolling_cover_attrs %}
 
   {% macro cover_tile(item, kind) %}
     <a class="folder-tile" href="{{ item.url if item.url is defined else '#' }}" aria-label="{{ item.label if item.label is defined else item.name }}，{{ item.count }} 个视频，{{ kind }}">
-      <span class="folder-cover">
+      <span class="folder-cover" {{ scrolling_cover_attrs(item.cover) }}>
         {% if item.cover and item.cover.thumb_status == "ready" %}
           <img {% if item.cover.type == 'flat' and item.cover.height and item.cover.width and item.cover.height > item.cover.width %}class="portrait-thumbnail" {% endif %}src="/thumb/{{ item.cover.id }}.webp?v={{ item.cover.thumb_version }}&amp;r={{ item.cover.thumb_revision }}&amp;preview=1" alt="{{ item.label if item.label is defined else item.name }}" loading="lazy" decoding="async">
         {% endif %}

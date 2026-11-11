@@ -5,7 +5,7 @@
 {% block head %}
   {{ stylesheet('/static/home.css?v=7') }}
   {{ stylesheet('/static/site-shell.css?v=2') }}
-  {{ stylesheet('/static/settings-layout.css?v=2') }}
+  {{ stylesheet('/static/settings-layout.css?v=3') }}
 {% endblock %}
 {% block chrome %}
   {% from '_site_nav.html' import site_nav with context %}{{ site_nav('settings') }}
@@ -61,6 +61,22 @@
           <header><h2 id="processing-heading">封面与转码</h2></header>
           <div class="preference-fields">
             <label class="preference-field">封面分辨率<select name="thumbnail_resolution">{% for value in [480, 576, 720] %}<option value="{{ value }}" {% if settings.thumbnail_resolution == value %}selected{% endif %}>{{ value }}P</option>{% endfor %}</select><small>用于新生成的封面；已有封面可在维护工具中刷新。</small></label>
+            <div class="preference-field"><label class="preference-check"><input name="scrolling_cover_enabled" type="checkbox" data-scrolling-cover-toggle {% if settings.scrolling_cover_enabled %}checked{% endif %}><span>滚动式封面</span></label><small>将三宫格、四宫格自动切分为单帧并循环播放。视频详情页始终显示完整封面。</small></div>
+            <div class="cover-motion-settings preference-wide" data-cover-motion-settings>
+              <div class="cover-motion-controls">
+                <label class="preference-field" for="scrolling-cover-speed">播放速度</label>
+                <div class="cover-motion-speed"><span>快</span><input id="scrolling-cover-speed" name="scrolling_cover_interval_ms" type="range" min="300" max="5000" step="100" value="{{ settings.scrolling_cover_interval_ms }}" aria-describedby="cover-motion-speed-value" data-scrolling-cover-speed><span>慢</span></div>
+                <output id="cover-motion-speed-value" for="scrolling-cover-speed" data-scrolling-cover-speed-value>每帧 {{ '%.1f'|format(settings.scrolling_cover_interval_ms / 1000) }} 秒</output>
+                <p class="preference-hint">调整后可立即预览，保存设置后应用到首页和视频库。</p>
+              </div>
+              <figure class="cover-motion-preview">
+                {% set columns, rows = flat_thumbnail_layout(cover_preview.width, cover_preview.height) if cover_preview else (2, 2) %}
+                <span class="cover-motion-preview-image" data-scrolling-cover data-cover-preview data-cover-columns="{{ columns }}" data-cover-rows="{{ rows }}" data-cover-layout-current="{{ '1' if not cover_preview or cover_preview.thumb_version == thumbnail_version else '0' }}" data-cover-source-ratio="{{ cover_preview.width / cover_preview.height if cover_preview else 16 / 9 }}">
+                  <img src="{% if cover_preview %}/thumb/{{ cover_preview.id }}.webp?v={{ cover_preview.thumb_version }}&amp;r={{ cover_preview.thumb_revision }}&amp;preview=1{% else %}/static/cover-preview.svg{% endif %}" alt="{% if cover_preview %}{{ cover_preview.name }}的封面预览{% else %}四宫格封面示例{% endif %}" decoding="async" data-scrolling-cover-preview-image>
+                </span>
+                <figcaption><span data-scrolling-cover-preview-status>{{ '正在循环预览' if settings.scrolling_cover_enabled else '完整封面预览' }}</span><span data-scrolling-cover-preview-source>{{ '使用视频库封面' if cover_preview else '示例封面' }}</span></figcaption>
+              </figure>
+            </div>
             <label class="preference-field">串流缓存上限<span class="preference-input-unit"><input name="hls_cache_max_mb" type="number" min="256" max="102400" value="{{ settings.hls_cache_max_mb }}" required><span>MB</span></span><small>范围为 256–102400 MB。</small></label>
             {{ encoder('flat_hls_encoder', '平面视频转码编码器', settings.flat_hls_encoder) }}
             {{ encoder('panorama_hls_encoder', '全景视频转码编码器', settings.panorama_hls_encoder) }}
@@ -203,4 +219,4 @@
     <button type="submit" form="preferences-form" data-settings-save>保存设置</button>
   </div></footer>
 {% endblock %}
-{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/settings.js?v=5"></script>{% endblock %}
+{% block scripts %}<script type="application/x-vbr-script" data-page-script src="/static/settings.js?v=6"></script>{% endblock %}
