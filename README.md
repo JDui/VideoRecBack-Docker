@@ -2,7 +2,7 @@
 
 VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线、文件夹、日历、收藏、平面与全景播放。视频列表从 SQLite 读取，封面使用 WebP 缓存，浏览首页和视频库时不遍历原视频目录。
 
-当前源码版本：**2.7.15**，本地构建尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
+当前源码版本：**2.7.16**，本地构建尚未发布 GitHub Release；历史公开镜像见 [最新版 Release](https://github.com/JDui/VideoRecBack-Docker/releases/latest)。
 
 ## 页面展示
 
@@ -56,10 +56,10 @@ VideoRecBack 是面向 NAS 视频存档的容器化浏览器，支持时间线�
 
 ### 1. 下载并加载镜像
 
-使用本地构建的 `videorecback-2.7.15-amd64.tar`；历史版本可从 [v2.7.12 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.12) 下载。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
+使用本地构建的 `videorecback-2.7.16-amd64.tar`；历史版本可从 [v2.7.12 Release](https://github.com/JDui/VideoRecBack-Docker/releases/tag/v2.7.12) 下载。该镜像适用于 **linux/amd64**，ARM NAS 请按下方说明从源码构建对应架构的镜像。
 
 ```bash
-docker load -i videorecback-2.7.15-amd64.tar
+docker load -i videorecback-2.7.16-amd64.tar
 ```
 
 ### 2. 创建 Docker Compose 配置
@@ -69,7 +69,7 @@ docker load -i videorecback-2.7.15-amd64.tar
 ```yaml
 services:
   videorecback:
-    image: videorecback:2.7.15
+    image: videorecback:2.7.16
     container_name: videorecback
     ports:
       - "8080:8080"
@@ -94,11 +94,11 @@ docker compose up -d
 git clone https://github.com/JDui/VideoRecBack-Docker.git
 cd VideoRecBack-Docker
 # 使用 main 分支的当前源码
-docker build -t videorecback:2.7.15 .
+docker build -t videorecback:2.7.16 .
 docker compose up -d
 ```
 
-先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.15 .`。
+先按上述模板创建 `compose.yaml`。本机构建默认使用 Docker 主机架构；需要跨架构构建时，可用 `docker buildx build --platform linux/amd64 --load -t videorecback:2.7.16 .`。
 
 ## 升级与数据目录
 
@@ -115,6 +115,10 @@ docker compose up -d
 ## 日期与时区
 
 归档日期来自文件修改时间，不代表拍摄时间。首页回忆、时间线、日历和日期筛选使用统一时区，默认 `Asia/Shanghai`。容器可通过 `TZ` 配置；应用也支持 `APP_TIMEZONE`，其优先级高于 `TZ`。使用有效的 IANA 时区名，例如 `Asia/Shanghai` 或 `America/New_York`。切换时区后，零点附近素材可能显示在相邻日期，无需重新扫描。
+
+## 2.7.16 更新
+
+- 镜像内置 AMD Mesa VAAPI 驱动。使用 AMD 核显时，在 Compose 的服务下添加 `devices: ["/dev/dri:/dev/dri"]`，并在设置中为平面及全景 HLS 选择 VAAPI。SDR 转码播放使用 H.264 硬编，原画直放和 HDR Main10 沿用原有路径。
 
 ## 2.7.15 更新
 

@@ -305,6 +305,7 @@ def build_hls_command(
         if quality.width and quality.height
         else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
     )
+    pixel_format = "yuv420p10le" if color.hdr else "yuv420p"
     if color.hdr:
         # Drop dynamic metadata before resizing/re-encoding; validated static metadata
         # is explicitly restored through x265. Never attach old DV RPU to new pixels.
@@ -321,6 +322,7 @@ def build_hls_command(
     if profile.hardware_device and profile.codec.endswith("_vaapi"):
         command.extend(["-vaapi_device", profile.hardware_device])
         video_filter = f"{video_filter},format=nv12,hwupload"
+        pixel_format = "vaapi"
     command.extend([
         "-i",
         str(source),
@@ -345,7 +347,7 @@ def build_hls_command(
         "-bufsize",
         f"{int(quality.bitrate.rstrip('M')) * 2}M",
         "-pix_fmt",
-        "yuv420p10le" if color.hdr else "yuv420p",
+        pixel_format,
         "-g",
         str(quality.segment_seconds * 30),
         "-sc_threshold",
