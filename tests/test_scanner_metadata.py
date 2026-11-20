@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Barrier
 
 from app.config import Settings
 from app.db import Database
@@ -459,6 +460,40 @@ def test_media_worker_completes_deferred_metadata_and_thumbnail(monkeypatch, tmp
     assert video["is_10bit"] == 1
     assert video["thumb_status"] == "ready"
     assert jobs == 0
+
+
+def test_parallel_media_jobs_keep_a_failed_cover_eligible_for_retry(monkeypatch, tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    for name in ("success.mp4", "failure.mp4"):
+        (root / name).write_bytes(b"video fixture")
+    settings = Settings(video_root=str(root))
+    db = Database(tmp_path / "data")
+    db.init()
+    monkeypatch.setattr("app.scanner.thumbnail_worker_count", lambda: 2)
+    scanner = Scanner(db, tmp_path / "data")
+    scanner.cache_dir.mkdir()
+    scanner._scan_sync(settings)
+    simultaneous = Barrier(2, timeout=3)
+
+    def generate(path, output, *args):
+        simultaneous.wait()
+        if path.name == "failure.mp4":
+            raise VideoToolError("fixture decode error")
+        output.write_bytes(b"cover")
+
+    monkeypatch.setattr("app.scanner.probe_video", lambda path: ProbeResult(12, 1920, 1080))
+    monkeypatch.setattr("app.scanner.generate_thumbnail", generate)
+    monkeypatch.setattr("app.scanner.generate_preview_thumbnail", lambda source, output: output)
+
+    result = scanner._process_media_jobs_sync(settings)
+
+    assert (result.seen, result.indexed, result.thumbnails, result.errors) == (2, 1, 1, 1)
+    with db.connect() as conn:
+        states = conn.execute("SELECT name, thumb_status FROM videos ORDER BY name").fetchall()
+        jobs = conn.execute("SELECT status, attempts FROM media_jobs").fetchall()
+    assert [tuple(row) for row in states] == [("failure.mp4", "error"), ("success.mp4", "ready")]
+    assert [tuple(row) for row in jobs] == [("pending", 1)]
 
 
 def test_media_metadata_refresh_does_not_regenerate_current_thumbnail(monkeypatch, tmp_path):

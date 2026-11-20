@@ -46,7 +46,7 @@ from app.media import (
     resolve_stream_path,
     stop_hls_transcode,
 )
-from app.scanner import THUMBNAIL_VERSION, Scanner, calculate_aspect_ratio, is_tenbit_depth
+from app.scanner import THUMBNAIL_LAYOUT_VERSION, Scanner, calculate_aspect_ratio, is_tenbit_depth
 from app.thumbnails import VideoToolError, flat_thumbnail_layout, generate_preview_thumbnail, probe_video
 
 
@@ -109,7 +109,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.globals['flat_thumbnail_layout'] = flat_thumbnail_layout
-    templates.env.globals['thumbnail_version'] = THUMBNAIL_VERSION
+    templates.env.globals['thumbnail_layout_version'] = THUMBNAIL_LAYOUT_VERSION
     templates.env.filters["duration"] = format_duration
     templates.env.filters["size"] = format_size
     templates.env.filters["date"] = format_date
@@ -153,6 +153,9 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup() -> None:
         sync_settings_to_db(db, load_settings(config_dir))
+        queued = await asyncio.to_thread(scanner.queue_thumbnail_upgrades)
+        if queued:
+            LOGGER.info("Queued %s covers for the thumbnail cache upgrade.", queued)
         app.state.maintenance_task = asyncio.create_task(background_maintenance(app))
         app.state.media_task = asyncio.create_task(background_media_worker(app))
 
@@ -476,7 +479,7 @@ def create_app() -> FastAPI:
 
     @app.post("/settings/recheck-panorama-types")
     async def recheck_panorama_types():
-        changed = await asyncio.to_thread(scanner.recheck_panorama_types)
+        changed = await scanner.refresh_panorama_types()
         return RedirectResponse(f"/settings?panorama_recheck={changed}", status_code=303)
 
     @app.post("/settings/recheck-all-video-data")
@@ -633,20 +636,9 @@ def create_app() -> FastAPI:
     async def update_video_type(video_id: int, video_type: str = Form(...)):
         if video_type not in {"flat", "panorama"}:
             raise HTTPException(status_code=400, detail="Invalid video type")
-        with db.connect() as conn:
-            video = conn.execute("SELECT path, duration_seconds FROM videos WHERE id = ?", (video_id,)).fetchone()
-            if video is None:
-                raise HTTPException(status_code=404, detail="Video not found")
-            conn.execute(
-                """
-                UPDATE videos
-                SET type = ?, thumb_status = 'pending', thumb_version = 0, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (video_type, video_id),
-            )
+        if not await scanner.update_video_type(video_id, video_type, load_settings(config_dir)):
+            raise HTTPException(status_code=404, detail="Video not found")
         LOGGER.info("Video %s type changed to %s; rebuilding only this thumbnail, no full scan.", video_id, video_type)
-        await asyncio.to_thread(scanner.rebuild_video_thumbnail, video_id, video_type)
         return RedirectResponse(f"/video/{video_id}", status_code=303)
 
     @app.post("/video/{video_id}/favorite")
@@ -860,17 +852,18 @@ async def background_maintenance(app: FastAPI) -> None:
 
 async def background_media_worker(app: FastAPI) -> None:
     while True:
-        if getattr(app.state, "manual_scan_pending", False):
+        if getattr(app.state, "manual_scan_pending", False) or getattr(app.state, "thumbnail_refresh_pending", False):
             await asyncio.sleep(0.25)
             continue
         settings = load_settings(app.state.config_dir)
         try:
-            summary = await app.state.scanner.process_media_jobs(settings, limit=1)
+            summary = await app.state.scanner.process_media_jobs(settings)
         except Exception:
             LOGGER.exception("Background media job failed unexpectedly.")
             await asyncio.sleep(2.0)
             continue
-        await asyncio.sleep(1.0 if summary.seen else 2.0)
+        if not summary.seen:
+            await asyncio.sleep(2.0)
 
 
 def is_scan_running(app: FastAPI) -> bool:
@@ -905,7 +898,7 @@ async def run_manual_scan(app: FastAPI, settings: Settings) -> None:
 
 async def run_thumbnail_refresh(app: FastAPI, settings: Settings) -> None:
     try:
-        await asyncio.to_thread(app.state.scanner.rebuild_all_thumbnails, settings)
+        await app.state.scanner.refresh_all_thumbnails(settings)
     except Exception:
         LOGGER.exception("Thumbnail refresh failed.")
     finally:

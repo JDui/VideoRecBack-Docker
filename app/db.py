@@ -140,7 +140,7 @@ class Database:
                 """
             )
             conn.execute(
-                "UPDATE media_jobs SET status = 'pending' WHERE status = 'running'"
+                "UPDATE media_jobs SET status = 'pending', attempts = MAX(0, attempts - 1) WHERE status = 'running'"
             )
             conn.executescript(INDEXES)
 

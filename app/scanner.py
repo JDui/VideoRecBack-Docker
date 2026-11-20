@@ -6,8 +6,12 @@ import logging
 import os
 import tempfile
 import time
+from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
+from typing import TypeVar
 
 from app.config import Settings
 from app.db import Database
@@ -17,9 +21,53 @@ from app.thumbnails import (
 )
 from app.video_types import detect_video_type
 
-THUMBNAIL_VERSION = 8
+THUMBNAIL_VERSION = 9
+THUMBNAIL_LAYOUT_VERSION = 8
 MEDIA_VERSION = 1
 LOGGER = logging.getLogger(__name__)
+Task = TypeVar("Task")
+Result = TypeVar("Result")
+
+
+def thumbnail_worker_count() -> int:
+    cpu_count = os.cpu_count() or 1
+    try:
+        if hasattr(os, "sched_getaffinity"):
+            cpu_count = len(os.sched_getaffinity(0))
+    except OSError:
+        pass
+    cgroup = Path("/sys/fs/cgroup")
+    try:
+        quota, period = (cgroup / "cpu.max").read_text().split()
+    except (OSError, ValueError):
+        try:
+            quota = (cgroup / "cpu/cpu.cfs_quota_us").read_text().strip()
+            period = (cgroup / "cpu/cpu.cfs_period_us").read_text().strip()
+        except OSError:
+            quota, period = "max", "0"
+    if quota != "max":
+        try:
+            if int(quota) > 0 and int(period) > 0:
+                cpu_count = min(cpu_count, int(quota) // int(period))
+        except ValueError:
+            pass
+    return max(1, min(4, cpu_count // 2))
+
+
+def run_thumbnail_tasks(
+    rows: Iterable[Task], process: Callable[[Task], Result], workers: int,
+) -> Iterator[Result]:
+    if workers == 1:
+        yield from map(process, rows)
+        return
+    remaining = iter(rows)
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="thumbnail") as executor:
+        pending = {executor.submit(process, row) for row in islice(remaining, workers)}
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                yield future.result()
+            pending.update(executor.submit(process, row) for row in islice(remaining, len(done)))
 
 
 @dataclass(slots=True)
@@ -47,6 +95,7 @@ class Scanner:
         self._lock = asyncio.Lock()
         self._running_count = 0
         self._media_running_count = 0
+        self._thumbnail_workers = thumbnail_worker_count()
 
     @property
     def is_running(self) -> bool:
@@ -121,7 +170,7 @@ class Scanner:
         finally:
             self._running_count -= 1
 
-    async def process_media_jobs(self, settings: Settings, limit: int = 1) -> ScanSummary:
+    async def process_media_jobs(self, settings: Settings, limit: int | None = None) -> ScanSummary:
         self._media_running_count += 1
         try:
             async with self._lock:
@@ -136,6 +185,32 @@ class Scanner:
                     "SELECT COUNT(*) AS count FROM media_jobs WHERE status IN ('pending', 'running')"
                 ).fetchone()["count"]
             )
+
+    def queue_thumbnail_upgrades(self) -> int:
+        """Queue older cache entries once per generator version, independently of a library scan."""
+        key = "thumbnail_cache_upgrade_version"
+        with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            previous = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+            if previous is not None and int(previous["value"]) >= THUMBNAIL_VERSION:
+                return 0
+            queued = conn.execute(
+                """
+                INSERT INTO media_jobs(video_id)
+                SELECT id FROM videos WHERE missing = 0 AND thumb_version < ?
+                ON CONFLICT(video_id) DO UPDATE SET
+                    status = 'pending', attempts = 0, error = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE media_jobs.status = 'error'
+                   OR (media_jobs.status = 'pending' AND media_jobs.attempts >= 3)
+                """,
+                (THUMBNAIL_VERSION,),
+            ).rowcount
+            conn.execute(
+                """INSERT INTO app_settings(key, value) VALUES (?, ?)
+                   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP""",
+                (key, str(THUMBNAIL_VERSION)),
+            )
+            return queued
 
     def _scan_sync(self, settings: Settings) -> ScanSummary:
         summary = ScanSummary()
@@ -166,7 +241,7 @@ class Scanner:
             if row["relative_path"] != relative_path or row["folder"] != folder or not row["mtime_ns"]:
                 metadata_updates.append((snapshot.mtime_ns, relative_path, folder, int(row["id"])))
             if media_data_incomplete(row) or (
-                row["media_job_status"] not in {"pending", "running", "error"}
+                settings.scrolling_cover_enabled and row["media_job_status"] not in {"pending", "running", "error"}
                 and self._needs_scrolling_thumbnail(row)
             ):
                 incomplete_ids.append(int(row["id"]))
@@ -271,14 +346,16 @@ class Scanner:
             rows = conn.execute(
                 """SELECT videos.id FROM videos
                    LEFT JOIN media_jobs ON media_jobs.video_id = videos.id
-                   WHERE videos.missing = 0 AND videos.thumb_status = 'error'
+                   WHERE videos.missing = 0
+                     AND (videos.thumb_status = 'error' OR
+                         (videos.thumb_version < ? AND media_jobs.status = 'error'))
                      AND (media_jobs.status IS NULL OR media_jobs.status NOT IN ('pending', 'running'))
-                     AND (? IS NULL OR videos.id = ?)""", (video_id, video_id),
+                     AND (? IS NULL OR videos.id = ?)""", (THUMBNAIL_VERSION, video_id, video_id),
             ).fetchall()
             ids = [int(row["id"]) for row in rows]
             for item in ids:
                 self._enqueue_media_job(item, conn=conn)
-                conn.execute("UPDATE videos SET thumb_status = 'pending' WHERE id = ?", (item,))
+                conn.execute("UPDATE videos SET thumb_status = 'pending' WHERE id = ? AND thumb_status = 'error'", (item,))
         return ids
 
     def _enqueue_media_job(self, video_id: int, conn=None) -> None:
@@ -436,8 +513,10 @@ class Scanner:
                     )
         return total
 
-    def _process_media_jobs_sync(self, settings: Settings, limit: int) -> ScanSummary:
+    def _process_media_jobs_sync(self, settings: Settings, limit: int | None = None) -> ScanSummary:
         summary = ScanSummary()
+        workers = self._thumbnail_workers
+        batch_size = workers * 2 if limit is None else limit
         with self.db.connect() as conn:
             rows = conn.execute(
                 """
@@ -448,85 +527,92 @@ class Scanner:
                 ORDER BY media_jobs.created_at ASC, media_jobs.id ASC
                 LIMIT ?
                 """,
-                (limit,),
+                (batch_size,),
             ).fetchall()
 
-        for row in rows:
-            job_id = int(row["job_id"])
-            video_id = int(row["video_id"])
-            path = Path(row["path"])
-            summary.seen += 1
+        for result in run_thumbnail_tasks(rows, lambda row: self._process_media_job(settings, row), workers):
+            summary.seen += result.seen
+            summary.indexed += result.indexed
+            summary.thumbnails += result.thumbnails
+            summary.errors += result.errors
+        return summary
+
+    def _process_media_job(self, settings: Settings, row) -> ScanSummary:
+        job_id = int(row["job_id"])
+        video_id = int(row["video_id"])
+        path = Path(row["path"])
+        with self.db.connect() as conn:
+            claimed = conn.execute(
+                """
+                UPDATE media_jobs
+                SET status = 'running', attempts = attempts + 1, error = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'pending' AND attempts < 3
+                """,
+                (job_id,),
+            ).rowcount
+        if not claimed:
+            return ScanSummary()
+
+        previous_cover = None
+        try:
             with self.db.connect() as conn:
-                conn.execute(
-                    """
-                    UPDATE media_jobs
-                    SET status = 'running', attempts = attempts + 1, error = NULL, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (job_id,),
-                )
-            try:
-                if not path.is_file():
-                    raise VideoToolError(f"Video file is unavailable: {path}")
+                video = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+            if video is None:
+                return ScanSummary(seen=1)
+            if video["thumb_version"] < THUMBNAIL_VERSION and video["thumb_status"] == "ready" and video["thumb_path"]:
+                if Path(video["thumb_path"]).is_file():
+                    previous_cover = Path(video["thumb_path"])
+
+            if not path.is_file():
+                raise VideoToolError(f"Video file is unavailable: {path}")
+            if previous_cover is None or int(video["media_version"] or 0) < MEDIA_VERSION or not video["hdr_checked"]:
                 if not self._refresh_metadata(path, video_id):
                     raise VideoToolError(f"Unable to read video metadata: {path}")
                 with self.db.connect() as conn:
-                    video = conn.execute(
-                        "SELECT type, duration_seconds, thumb_status, thumb_version, thumb_path FROM videos WHERE id = ?",
-                        (video_id,),
-                    ).fetchone()
+                    video = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
                 if video is None:
-                    continue
-                thumbnail_is_current = (
-                    video["thumb_status"] == "ready"
-                    and int(video["thumb_version"] or 0) == THUMBNAIL_VERSION
-                    and bool(video["thumb_path"])
-                    and Path(video["thumb_path"]).is_file()
-                )
-                thumbnail_generated = False
-                if not thumbnail_is_current:
-                    if not self._generate_and_record_thumbnail(
-                        path,
-                        video_id,
-                        video["type"],
-                        video["duration_seconds"],
-                        settings.thumbnail_resolution,
-                    ):
-                        raise VideoToolError(f"Unable to generate thumbnail: {path}")
-                    thumbnail_generated = True
-                elif video["type"] == "flat":
-                    if self._needs_scrolling_thumbnail(video, video_id):
-                        self._generate_scrolling_thumbnail(path, video_id, video["duration_seconds"])
-                else:
-                    self._remove_scrolling_thumbnail(video_id)
-                with self.db.connect() as conn:
-                    conn.execute(
-                        "UPDATE videos SET media_version = ? WHERE id = ?",
-                        (MEDIA_VERSION, video_id),
-                    )
-                    conn.execute("DELETE FROM media_jobs WHERE id = ?", (job_id,))
-                summary.indexed += 1
-                if thumbnail_generated:
-                    summary.thumbnails += 1
-            except (VideoToolError, OSError) as exc:
-                summary.errors += 1
-                with self.db.connect() as conn:
+                    return ScanSummary(seen=1)
+            thumbnail_is_current = (
+                video["thumb_status"] == "ready"
+                and int(video["thumb_version"] or 0) == THUMBNAIL_VERSION
+                and bool(video["thumb_path"])
+                and Path(video["thumb_path"]).is_file()
+            )
+            if not thumbnail_is_current:
+                if not self._generate_and_record_thumbnail(
+                    path, video_id, video["type"], video["duration_seconds"], settings.thumbnail_resolution,
+                    preserve_existing=previous_cover is not None,
+                ):
+                    raise VideoToolError(f"Unable to generate thumbnail: {path}")
+                if previous_cover is not None:
+                    self._remove_replaced_cover(previous_cover, video_id)
+            elif settings.scrolling_cover_enabled and self._needs_scrolling_thumbnail(video, video_id):
+                self._generate_scrolling_thumbnail(path, video_id, video["duration_seconds"])
+            elif video["type"] == "panorama":
+                self._remove_scrolling_thumbnail(video_id)
+            with self.db.connect() as conn:
+                conn.execute("UPDATE videos SET media_version = ? WHERE id = ?", (MEDIA_VERSION, video_id))
+                conn.execute("DELETE FROM media_jobs WHERE id = ?", (job_id,))
+            return ScanSummary(seen=1, indexed=1, thumbnails=int(not thumbnail_is_current))
+        except (VideoToolError, OSError) as exc:
+            with self.db.connect() as conn:
+                if previous_cover is None:
                     conn.execute(
                         """UPDATE videos SET thumb_error = CASE WHEN thumb_status = 'error'
-                                THEN COALESCE(thumb_error, ?) ELSE ? END,
+                            THEN COALESCE(thumb_error, ?) ELSE ? END,
                             thumb_status = 'error', thumb_failed_at = CURRENT_TIMESTAMP
                             WHERE id = ?""", (str(exc), str(exc), video_id),
                     )
-                    conn.execute(
-                        """
-                        UPDATE media_jobs
-                        SET status = CASE WHEN attempts >= 3 THEN 'error' ELSE 'pending' END,
-                            error = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                        """,
-                        (str(exc), job_id),
-                    )
-        return summary
+                conn.execute(
+                    """
+                    UPDATE media_jobs
+                    SET status = CASE WHEN attempts >= 3 THEN 'error' ELSE 'pending' END,
+                        error = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (str(exc), job_id),
+                )
+            return ScanSummary(seen=1, errors=1)
 
     def _upsert_video(self, path: Path, root: Path, settings: Settings, defer_media: bool = False) -> int:
         stat = path.stat()
@@ -564,7 +650,7 @@ class Scanner:
                 version_stale = row["thumb_version"] != THUMBNAIL_VERSION
                 if row["thumb_status"] in {"pending", "error"} or thumb_missing or version_stale:
                     unchanged_thumbnail_args = (row_id, row["type"], row["duration_seconds"])
-                elif self._needs_scrolling_thumbnail(row):
+                elif settings.scrolling_cover_enabled and self._needs_scrolling_thumbnail(row):
                     unchanged_scrolling_args = (row_id, row["duration_seconds"])
         if row and unchanged:
             if defer_media:
@@ -688,6 +774,7 @@ class Scanner:
             row = conn.execute("SELECT id FROM videos WHERE path = ?", (path_text,)).fetchone()
             video_id = int(row["id"])
 
+        self._remove_scrolling_thumbnail(video_id)
         if thumb_status == "pending" and self._generate_and_record_thumbnail(
             path,
             video_id,
@@ -702,18 +789,32 @@ class Scanner:
                 )
         return 1
 
-    def rebuild_video_thumbnail(self, video_id: int, video_type: str, thumbnail_resolution: int = 576) -> None:
+    async def update_video_type(self, video_id: int, video_type: str, settings: Settings) -> bool:
+        async with self._lock:
+            return await asyncio.to_thread(self._update_video_type_sync, video_id, video_type, settings)
+
+    def _update_video_type_sync(self, video_id: int, video_type: str, settings: Settings) -> bool:
         with self.db.connect() as conn:
             row = conn.execute("SELECT path, duration_seconds FROM videos WHERE id = ?", (video_id,)).fetchone()
             if row is None:
-                return
+                return False
+            conn.execute(
+                """UPDATE videos
+                   SET type = ?, thumb_status = 'pending', thumb_version = 0, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""", (video_type, video_id),
+            )
         self._generate_and_record_thumbnail(
             Path(row["path"]),
             video_id,
             video_type,
             row["duration_seconds"],
-            thumbnail_resolution,
+            settings.thumbnail_resolution,
         )
+        return True
+
+    async def refresh_all_thumbnails(self, settings: Settings) -> int:
+        async with self._lock:
+            return await asyncio.to_thread(self.rebuild_all_thumbnails, settings)
 
     def rebuild_all_thumbnails(self, settings: Settings) -> int:
         with self.db.connect() as conn:
@@ -736,9 +837,8 @@ class Scanner:
                 """
             )
 
-        for row in rows:
+        def rebuild(row) -> None:
             self._delete_thumbnail_files(row)
-        for row in rows:
             self._generate_and_record_thumbnail(
                 Path(row["path"]),
                 int(row["id"]),
@@ -746,7 +846,14 @@ class Scanner:
                 row["duration_seconds"],
                 settings.thumbnail_resolution,
             )
+
+        for _ in run_thumbnail_tasks(rows, rebuild, self._thumbnail_workers):
+            pass
         return len(rows)
+
+    async def refresh_panorama_types(self) -> int:
+        async with self._lock:
+            return await asyncio.to_thread(self.recheck_panorama_types)
 
     def recheck_panorama_types(self) -> int:
         with self.db.connect() as conn:
@@ -791,28 +898,33 @@ class Scanner:
     def _rebuild_portrait_thumbnails_sync(self, settings: Settings, progress=None) -> ScanSummary:
         with self.db.connect() as conn:
             rows = conn.execute("SELECT id,path,duration_seconds FROM videos WHERE missing=0 AND type='flat' ORDER BY id").fetchall()
-        summary = ScanSummary()
-        for row in rows:
-            summary.seen += 1
+
+        def rebuild(row) -> ScanSummary:
             try:
                 path = Path(row['path'])
                 width, height = probe_video_geometry(path)
                 if height <= width:
-                    summary.skipped += 1
-                    continue
-                if self._generate_and_record_thumbnail(path, row['id'], 'flat', row['duration_seconds'],
-                                                       settings.thumbnail_resolution, preserve_existing=True):
-                    with self.db.connect() as conn:
-                        conn.execute('UPDATE videos SET width=?,height=?,aspect_ratio=? WHERE id=?',
-                                     (width, height, width / height, row['id']))
-                    summary.indexed += 1
-                else:
-                    summary.errors += 1
+                    return ScanSummary(seen=1, skipped=1)
+                if not self._generate_and_record_thumbnail(
+                    path, row['id'], 'flat', row['duration_seconds'], settings.thumbnail_resolution,
+                    preserve_existing=True,
+                ):
+                    return ScanSummary(seen=1, errors=1)
+                with self.db.connect() as conn:
+                    conn.execute('UPDATE videos SET width=?,height=?,aspect_ratio=? WHERE id=?',
+                                 (width, height, width / height, row['id']))
+                return ScanSummary(seen=1, indexed=1)
             except (VideoToolError, OSError):
-                summary.errors += 1
-            finally:
-                if progress:
-                    progress(summary, len(rows))
+                return ScanSummary(seen=1, errors=1)
+
+        summary = ScanSummary()
+        for result in run_thumbnail_tasks(rows, rebuild, self._thumbnail_workers):
+            summary.seen += result.seen
+            summary.indexed += result.indexed
+            summary.skipped += result.skipped
+            summary.errors += result.errors
+            if progress:
+                progress(summary, len(rows))
         return summary
 
     async def rebuild_scrolling_thumbnails(self, settings: Settings, progress=None) -> ScanSummary:
@@ -829,10 +941,14 @@ class Scanner:
                 """SELECT id, path, duration_seconds FROM videos
                    WHERE missing = 0 AND type = 'flat' AND thumb_status = 'ready' ORDER BY id"""
             ).fetchall()
+
+        def rebuild(row) -> bool:
+            return self._generate_scrolling_thumbnail(Path(row["path"]), int(row["id"]), row["duration_seconds"])
+
         summary = ScanSummary()
-        for row in rows:
+        for generated in run_thumbnail_tasks(rows, rebuild, self._thumbnail_workers):
             summary.seen += 1
-            if self._generate_scrolling_thumbnail(Path(row["path"]), int(row["id"]), row["duration_seconds"]):
+            if generated:
                 summary.indexed += 1
                 summary.thumbnails += 1
             else:
@@ -929,23 +1045,27 @@ class Scanner:
         video_type: str,
         duration: float | None,
         thumbnail_resolution: int = 576,
-        *, preserve_existing: bool = False,
+        *,
+        preserve_existing: bool = False,
     ) -> bool:
         try:
             final_thumb_path = self.cache_dir / f"{video_id}.webp"
-            if preserve_existing:
-                self.cache_dir.mkdir(parents=True, exist_ok=True)
-                with tempfile.TemporaryDirectory(prefix='portrait-', dir=self.cache_dir) as temporary:
-                    staged = Path(temporary) / 'thumb.webp'
-                    staged_preview = Path(temporary) / 'preview.webp'
-                    generate_thumbnail(path, staged, video_type, duration, thumbnail_resolution)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="thumbnail-", dir=self.cache_dir) as temporary:
+                staged = Path(temporary) / "thumb.webp"
+                staged_preview = Path(temporary) / "preview.webp"
+                staged_scrolling = Path(temporary) / "scrolling.webp"
+                generate_thumbnail(path, staged, video_type, duration, thumbnail_resolution,
+                                   staged_scrolling if video_type == "flat" else None)
+                if staged.is_file():
                     generate_preview_thumbnail(staged, staged_preview)
                     staged.replace(final_thumb_path)
+                if staged_preview.is_file():
                     staged_preview.replace(self.cache_dir / f"{video_id}-preview.webp")
-            else:
-                generate_thumbnail(path, final_thumb_path, video_type, duration, thumbnail_resolution)
-                if final_thumb_path.exists():
-                    generate_preview_thumbnail(final_thumb_path, self.cache_dir / f"{video_id}-preview.webp")
+                if staged_scrolling.is_file():
+                    staged_scrolling.replace(self.cache_dir / f"{video_id}-scrolling.webp")
+                else:
+                    self._remove_scrolling_thumbnail(video_id)
             with self.db.connect() as conn:
                 conn.execute(
                     """
@@ -955,14 +1075,10 @@ class Scanner:
                     """,
                     (str(final_thumb_path), THUMBNAIL_VERSION, time.time_ns(), video_id),
                 )
-            if video_type == "flat":
-                self._generate_scrolling_thumbnail(path, video_id, duration)
-            else:
-                self._remove_scrolling_thumbnail(video_id)
             return True
         except (VideoToolError, OSError) as exc:
             if preserve_existing:
-                LOGGER.warning('Portrait thumbnail rebuild failed for video %s: %s', video_id, exc)
+                LOGGER.warning("Thumbnail rebuild failed for video %s; keeping previous cover: %s", video_id, exc)
                 return False
             with self.db.connect() as conn:
                 conn.execute(
@@ -980,6 +1096,15 @@ class Scanner:
             row["type"] == "flat" and row["thumb_status"] == "ready"
             and not (self.cache_dir / f"{video_id if video_id is not None else row['id']}-scrolling.webp").is_file()
         )
+
+    def _remove_replaced_cover(self, previous: Path, video_id: int) -> None:
+        try:
+            previous = previous.resolve()
+            current = (self.cache_dir / f"{video_id}.webp").resolve()
+            if previous != current and previous.is_relative_to(self.cache_dir.resolve()) and previous.suffix.lower() == ".webp":
+                previous.unlink(missing_ok=True)
+        except OSError as exc:
+            LOGGER.warning("Failed to remove replaced thumbnail for video %s: %s", video_id, exc)
 
     def _remove_scrolling_thumbnail(self, video_id: int) -> None:
         try:

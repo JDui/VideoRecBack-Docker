@@ -99,7 +99,7 @@ def test_portrait_rebuild_targets_display_orientation_and_preserves_failures(mon
         probed.append(path.stem)
         return (160, 90) if path.stem == 'landscape' else (90, 160)
 
-    def generate(path, output, kind, duration, height):
+    def generate(path, output, kind, duration, height, scrolling_output=None):
         rebuilt.append(path.stem)
         assert kind == 'flat' and height == 480
         if path.stem == 'failed':
@@ -111,8 +111,8 @@ def test_portrait_rebuild_targets_display_orientation_and_preserves_failures(mon
     summary = asyncio.run(scanner.rebuild_portrait_thumbnails(Settings(thumbnail_resolution=480),
         lambda result, total: progress.append((result.seen, total))))
     assert (summary.seen, summary.indexed, summary.errors, summary.skipped) == (4, 2, 1, 1)
-    assert probed == ['portrait', 'rotated', 'landscape', 'failed']
-    assert rebuilt == ['portrait', 'rotated', 'failed']
+    assert sorted(probed) == ['failed', 'landscape', 'portrait', 'rotated']
+    assert sorted(rebuilt) == ['failed', 'portrait', 'rotated']
     assert progress[-1] == (4, 4) and not scanner.is_running
     with db.connect() as conn:
         after = [dict(row) for row in conn.execute('SELECT * FROM videos ORDER BY id')]

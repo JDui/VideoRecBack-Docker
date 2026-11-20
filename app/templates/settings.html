@@ -71,7 +71,7 @@
               </div>
               <figure class="cover-motion-preview">
                 {% set columns, rows = flat_thumbnail_layout(cover_preview.width, cover_preview.height) if cover_preview else (2, 2) %}
-                <span class="cover-motion-preview-image" data-scrolling-cover data-cover-preview data-cover-columns="{{ columns }}" data-cover-rows="{{ rows }}" data-cover-layout-current="{{ '1' if not cover_preview or cover_preview.thumb_version == thumbnail_version else '0' }}" data-cover-source-ratio="{{ cover_preview.width / cover_preview.height if cover_preview else 16 / 9 }}"{% if cover_preview %} data-cover-sequence-src="/scrolling-thumb/{{ cover_preview.id }}.webp?v=1&amp;r={{ cover_preview.thumb_revision }}"{% endif %}>
+                <span class="cover-motion-preview-image" data-scrolling-cover data-cover-preview data-cover-columns="{{ columns }}" data-cover-rows="{{ rows }}" data-cover-layout-current="{{ '1' if not cover_preview or cover_preview.thumb_version >= thumbnail_layout_version else '0' }}" data-cover-source-ratio="{{ cover_preview.width / cover_preview.height if cover_preview else 16 / 9 }}"{% if cover_preview %} data-cover-sequence-src="/scrolling-thumb/{{ cover_preview.id }}.webp?v=1&amp;r={{ cover_preview.thumb_revision }}"{% endif %}>
                   <img src="{% if cover_preview %}/thumb/{{ cover_preview.id }}.webp?v={{ cover_preview.thumb_version }}&amp;r={{ cover_preview.thumb_revision }}&amp;preview=1{% else %}/static/cover-preview.svg{% endif %}" alt="{% if cover_preview %}{{ cover_preview.name }}的封面预览{% else %}四宫格封面示例{% endif %}" decoding="async" data-scrolling-cover-preview-image>
                 </span>
                 <figcaption><span data-scrolling-cover-preview-status>{{ '正在循环预览' if settings.scrolling_cover_enabled else '完整封面预览' }}</span><span data-scrolling-cover-preview-source>{{ '视频库预览' if cover_preview else '示例封面' }}</span></figcaption>
@@ -162,7 +162,7 @@
           onsubmit="return window.confirm('确认要生成专用滚动封面吗？将在后台读取普通视频，为每个视频生成 4×4 的 16 帧序列图，保留现有主封面。');">
           <div>
             <strong>生成滚动式封面</strong>
-            <p class="muted">为已有普通视频生成专用 4×4 序列图，共 16 帧，每格高度 276P、WebP 质量 50。生成前或失败时继续使用主封面。</p>
+            <p class="muted">为已有普通视频生成专用 4×4 序列图，共 16 帧，每格高度 276P、WebP 质量 40。生成前或失败时继续使用主封面。</p>
             <p class="settings-notice" role="status" data-scrolling-status data-state="{{ scrolling_status.status }}">
               {% if scrolling_status.status == 'running' %}正在生成滚动封面：已检查 {{ scrolling_status.checked }} 个，生成 {{ scrolling_status.rebuilt }} 个，失败 {{ scrolling_status.errors }} 个。
               {% elif scrolling_refresh == 'busy' %}已有扫描或维护任务正在运行，本次生成未启动，请完成后重试。

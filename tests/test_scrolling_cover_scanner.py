@@ -41,12 +41,11 @@ def test_failed_sequence_keeps_successful_main_cover_and_removes_stale_sequence(
     def generate_main(path, output, *args):
         Image.new("RGB", (160, 90), "blue").save(output)
 
-    def fail_sequence(path, output, duration):
-        output.write_bytes(b"partial")
+    def fail_pair(*args):
         raise VideoToolError("cannot sample sequence")
 
-    monkeypatch.setattr("app.scanner.generate_thumbnail", generate_main)
-    monkeypatch.setattr("app.scanner.generate_scrolling_thumbnail", fail_sequence)
+    monkeypatch.setattr("app.thumbnails.generate_flat_cover_pair", fail_pair)
+    monkeypatch.setattr("app.thumbnails.generate_flat_thumbnail", generate_main)
     assert scanner._generate_and_record_thumbnail(source, 1, "flat", 10)
     assert not sequence.exists()
     with scanner.db.connect() as conn:
@@ -72,7 +71,12 @@ def test_unchanged_scan_and_media_queue_fill_missing_sequence_without_rebuilding
     monkeypatch.setattr("app.scanner.generate_scrolling_thumbnail", generate_sequence)
     monkeypatch.setattr("app.scanner.generate_thumbnail", unexpected_main)
     monkeypatch.setattr(scanner, "_refresh_metadata", lambda *args: True)
-    settings = Settings(video_root=str(source.parent))
+    disabled = Settings(video_root=str(source.parent))
+    scanner._scan_sync(disabled)
+    scanner._scan_file_sync(disabled, source)
+    assert scanner.pending_media_jobs() == 0 and not calls
+
+    settings = Settings(video_root=str(source.parent), scrolling_cover_enabled=True)
     assert scanner._scan_sync(settings).indexed == 0
     assert scanner.pending_media_jobs() == 1
     assert scanner._process_media_jobs_sync(settings, 1).indexed == 1

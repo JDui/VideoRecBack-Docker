@@ -72,16 +72,24 @@ def test_panorama_thumbnail_uses_front_fisheye(monkeypatch, tmp_path):
 def test_flat_thumbnail_uses_configured_resolution_and_quality(monkeypatch, tmp_path):
     commands = []
 
+    def run(command):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"cover")
+
     monkeypatch.setattr(thumbnails, "require_tool", lambda name: name)
-    monkeypatch.setattr(thumbnails, "run_ffmpeg", commands.append)
+    monkeypatch.setattr(thumbnails, "run_ffmpeg", run)
     monkeypatch.setattr(thumbnails, "probe_video_geometry", lambda path: (1920, 1080))
 
     thumbnails.generate_flat_thumbnail(Path("/videos/demo.mp4"), tmp_path / "thumb.webp", 10, 720)
 
-    vf_index = commands[0].index("-vf") + 1
-    quality_index = commands[0].index("-quality") + 1
-    assert commands[0][vf_index] == "scale=640:360:force_original_aspect_ratio=increase,crop=640:360"
-    assert commands[0][quality_index] == "60"
+    assert len(commands) == 1
+    command = commands[0]
+    assert command.count("-i") == 4
+    graph = command[command.index("-filter_complex") + 1]
+    assert graph.count("scale=640:360:force_original_aspect_ratio=increase,crop=640:360") == 4
+    assert "xstack=inputs=4:layout=0_0|640_0|0_360|640_360" in graph
+    assert command[command.index("-quality") + 1] == "60"
+    assert (tmp_path / "thumb.webp").read_bytes() == b"cover"
 
 
 def test_preview_thumbnail_is_resized_and_cached(tmp_path):
@@ -103,7 +111,8 @@ def test_run_ffmpeg_limits_decoder_and_encoder_threads(monkeypatch):
 
     class Result:
         returncode = 0
-        stderr = ""
+        stderr = b""
+        stdout = b""
 
     monkeypatch.setattr(thumbnails.subprocess, "run", lambda command, **kwargs: captured.append(command) or Result())
 

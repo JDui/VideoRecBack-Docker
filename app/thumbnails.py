@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
+import logging
 import math
 import re
 import shutil
@@ -10,6 +12,7 @@ import tempfile
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
+from threading import BoundedSemaphore
 
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
@@ -25,7 +28,9 @@ SCROLLING_THUMBNAIL_TILE_HEIGHT = 276
 SCROLLING_THUMBNAIL_COLUMNS = 4
 SCROLLING_THUMBNAIL_ROWS = 4
 SCROLLING_THUMBNAIL_FRAMES = SCROLLING_THUMBNAIL_COLUMNS * SCROLLING_THUMBNAIL_ROWS
-SCROLLING_THUMBNAIL_QUALITY = "50"
+SCROLLING_THUMBNAIL_QUALITY = "40"
+LONG_SEQUENCE_SLOTS = BoundedSemaphore(2)
+LOGGER = logging.getLogger(__name__)
 
 
 class VideoToolError(RuntimeError):
@@ -290,12 +295,22 @@ def generate_thumbnail(
     video_type: str,
     duration: float | None,
     height: int = DEFAULT_THUMBNAIL_HEIGHT,
+    scrolling_output: Path | None = None,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if video_type == "panorama":
-        generate_panorama_thumbnail(video_path, output_path, duration, height)
-    else:
-        generate_flat_thumbnail(video_path, output_path, duration, height)
+    try:
+        if video_type == "panorama":
+            generate_panorama_thumbnail(video_path, output_path, duration, height)
+        else:
+            if scrolling_output is not None:
+                try:
+                    generate_flat_cover_pair(video_path, output_path, scrolling_output, duration, height)
+                    return
+                except (VideoToolError, OSError) as exc:
+                    LOGGER.warning("Shared thumbnail samples failed for %s; trying a static cover: %s", video_path, exc)
+            generate_flat_thumbnail(video_path, output_path, duration, height)
+    except subprocess.TimeoutExpired as exc:
+        raise VideoToolError("ffmpeg timed out generating thumbnail") from exc
 
 
 def generate_preview_thumbnail(source_path: Path, output_path: Path) -> Path:
@@ -323,80 +338,160 @@ def generate_scrolling_thumbnail(
     video_path: Path, output_path: Path, duration: float | None,
 ) -> None:
     """Cache sixteen chronological frames independently of the main poster."""
-    ffmpeg = require_tool("ffmpeg")
     width, height = probe_video_geometry(video_path)
-    if not duration or not math.isfinite(duration) or duration <= 0:
-        duration = probe_video(video_path).duration_seconds
-    if not duration or not math.isfinite(duration) or duration <= 0:
-        duration = None
+    duration = scrolling_duration(video_path, duration)
     tile_height = SCROLLING_THUMBNAIL_TILE_HEIGHT
-    tile_width = max(2, round(tile_height * width / height / 2) * 2)
-    frame_count = SCROLLING_THUMBNAIL_FRAMES
+    tile_width = scaled_tile_width(width, height, tile_height)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="scrolling-", dir=output_path.parent) as temporary:
         staged = Path(temporary) / "sequence.webp"
-        output_options = ["-frames:v", "1", "-compression_level", WEBP_COMPRESSION_LEVEL,
-                          "-quality", SCROLLING_THUMBNAIL_QUALITY, "-y", str(staged)]
-        base = [ffmpeg, "-hide_banner", "-loglevel", "error"]
-
-        def decode_sequence() -> None:
-            # Sample in one pass for short/low-frame-rate clips. Padding repeats
-            # the last available frame, including a video containing one frame.
-            rate = frame_count / duration if duration else 1.0
-            video_filter = (
-                f"setpts=PTS-STARTPTS,fps={rate:.12g}:round=down:eof_action=pass,"
-                f"scale={tile_width}:{tile_height},setsar=1,"
-                f"tpad=stop_mode=clone:stop={frame_count},"
-                f"tile={SCROLLING_THUMBNAIL_COLUMNS}x{SCROLLING_THUMBNAIL_ROWS}:nb_frames={frame_count}"
-            )
-            run_ffmpeg([*base, "-i", str(video_path), "-map", "0:v:0", "-vf", video_filter,
-                        *output_options])
-
-        try:
-            if duration is not None and duration > 60:
-                # Seeking each sample in one process avoids decoding hours of
-                # footage just to keep sixteen frames. Each input is trimmed
-                # immediately and has one decoder thread.
-                command = [*base, "-filter_complex_threads", "1"]
-                filters = []
-                for index in range(frame_count):
-                    timestamp = duration * index / frame_count
-                    command.extend(["-threads", FFMPEG_THUMBNAIL_THREADS, "-ss", f"{timestamp:.6f}",
-                                    "-i", str(video_path)])
-                    filters.append(
-                        f"[{index}:v:0]trim=end_frame=1,setpts=PTS-STARTPTS,"
-                        f"scale={tile_width}:{tile_height},setsar=1[frame{index}]"
-                    )
-                layout = "|".join(
-                    f"{index % SCROLLING_THUMBNAIL_COLUMNS * tile_width}_"
-                    f"{index // SCROLLING_THUMBNAIL_COLUMNS * tile_height}"
-                    for index in range(frame_count)
-                )
-                filters.append("".join(f"[frame{index}]" for index in range(frame_count)) +
-                               f"xstack=inputs={frame_count}:layout={layout}:shortest=1[sheet]")
-                command.extend(["-filter_complex", ";".join(filters), "-map", "[sheet]", *output_options])
-                try:
-                    run_ffmpeg(command)
-                    if not staged.is_file() or not staged.stat().st_size:
-                        decode_sequence()
-                except VideoToolError:
-                    # Sparse clips can have no decodable frame at a seek point.
-                    decode_sequence()
-            else:
-                decode_sequence()
-        except subprocess.TimeoutExpired as exc:
-            raise VideoToolError("Timed out generating scrolling thumbnail") from exc
-
+        sample_scrolling_sheet(
+            video_path, duration, tile_width, tile_height,
+            ["-compression_level", WEBP_COMPRESSION_LEVEL, "-quality", SCROLLING_THUMBNAIL_QUALITY,
+             "-y", str(staged)],
+        )
         try:
             with Image.open(staged) as sheet:
-                if sheet.size != (tile_width * SCROLLING_THUMBNAIL_COLUMNS,
-                                  tile_height * SCROLLING_THUMBNAIL_ROWS):
-                    raise VideoToolError("Invalid scrolling thumbnail dimensions")
                 sheet.load()
+                validate_sheet_size(sheet, tile_width, tile_height)
         except (OSError, ValueError) as exc:
             raise VideoToolError(f"Unable to read generated scrolling thumbnail: {exc}") from exc
         staged.replace(output_path)
+
+
+def scrolling_duration(video_path: Path, duration: float | None) -> float | None:
+    if not duration or not math.isfinite(duration) or duration <= 0:
+        duration = probe_video(video_path).duration_seconds
+    return duration if duration and math.isfinite(duration) and duration > 0 else None
+
+
+def scaled_tile_width(width: int, height: int, tile_height: int) -> int:
+    return max(2, round(tile_height * width / height / 2) * 2)
+
+
+def validate_sheet_size(sheet: Image.Image, tile_width: int, tile_height: int) -> None:
+    if sheet.size != (tile_width * SCROLLING_THUMBNAIL_COLUMNS, tile_height * SCROLLING_THUMBNAIL_ROWS):
+        raise VideoToolError("Invalid scrolling thumbnail dimensions")
+
+
+def sample_scrolling_sheet(
+    video_path: Path, duration: float | None, tile_width: int, tile_height: int, output_options: list[str],
+) -> bytes:
+    base = [require_tool("ffmpeg"), "-hide_banner", "-loglevel", "error"]
+    frame_count = SCROLLING_THUMBNAIL_FRAMES
+    scale = f"scale={tile_width}:{tile_height},setsar=1"
+    options = ["-frames:v", "1", *output_options]
+    try:
+        if duration is not None and duration > 60:
+            # Each seek opens its own decoder, so limit simultaneous long sheets.
+            try:
+                with LONG_SEQUENCE_SLOTS:
+                    return generate_seek_sheet(
+                        base, video_path, [duration * index / frame_count for index in range(frame_count)],
+                        SCROLLING_THUMBNAIL_COLUMNS, tile_width, tile_height, scale, options,
+                    )
+            except VideoToolError:
+                # Sparse clips may have no decodable frame at a seek point.
+                pass
+
+        # Decode short clips in one pass. Padding handles clips with very few frames.
+        rate = frame_count / duration if duration else 1.0
+        video_filter = (
+            f"setpts=PTS-STARTPTS,fps={rate:.12g}:round=down:eof_action=pass,{scale},"
+            f"tpad=stop_mode=clone:stop={frame_count},"
+            f"tile={SCROLLING_THUMBNAIL_COLUMNS}x{SCROLLING_THUMBNAIL_ROWS}:nb_frames={frame_count}"
+        )
+        return run_ffmpeg([*base, "-i", str(video_path), "-map", "0:v:0", "-vf", video_filter, *options])
+    except subprocess.TimeoutExpired as exc:
+        raise VideoToolError("Timed out generating scrolling thumbnail") from exc
+
+
+def generate_seek_sheet(
+    base: list[str], video_path: Path, times: list[float], columns: int,
+    tile_width: int, tile_height: int, video_filter: str, output_options: list[str],
+) -> bytes:
+    command = [*base, "-filter_complex_threads", FFMPEG_THUMBNAIL_THREADS]
+    filters = []
+    for index, timestamp in enumerate(times):
+        command.extend(["-threads", FFMPEG_THUMBNAIL_THREADS, "-ss", f"{timestamp:.6f}", "-i", str(video_path)])
+        filters.append(f"[{index}:v:0]trim=end_frame=1,setpts=PTS-STARTPTS,{video_filter}[frame{index}]")
+    layout = "|".join(
+        f"{index % columns * tile_width}_{index // columns * tile_height}" for index in range(len(times))
+    )
+    inputs = "".join(f"[frame{index}]" for index in range(len(times)))
+    filters.append(f"{inputs}xstack=inputs={len(times)}:layout={layout}:shortest=1[sheet]")
+    data = run_ffmpeg([*command, "-filter_complex", ";".join(filters), "-map", "[sheet]", *output_options])
+    destination = output_options[-1]
+    if destination == "pipe:1":
+        has_output = bool(data)
+    else:
+        output = Path(destination)
+        has_output = output.is_file() and output.stat().st_size > 0
+    if not has_output:
+        raise VideoToolError("No frame available at a thumbnail sample point")
+    return data
+
+
+def generate_flat_cover_pair(
+    video_path: Path, output: Path, scrolling_output: Path, duration: float | None, height: int,
+) -> None:
+    width, display_height = probe_video_geometry(video_path)
+    duration = scrolling_duration(video_path, duration)
+    columns, rows, cover_width, cover_height = flat_cover_grid(width, display_height, height)
+    # Keep enough uncompressed detail for the configured static cover. The
+    # scrolling sheet is encoded separately at 276 pixels per tile.
+    sample_height = max(SCROLLING_THUMBNAIL_TILE_HEIGHT, cover_height)
+    sample_width = scaled_tile_width(width, display_height, sample_height)
+    data = sample_scrolling_sheet(
+        video_path, duration, sample_width, sample_height, ["-c:v", "ppm", "-f", "image2pipe", "pipe:1"],
+    )
+    with Image.open(io.BytesIO(data)) as sheet:
+        validate_sheet_size(sheet, sample_width, sample_height)
+
+        def tile_at(index: int) -> Image.Image:
+            x = index % SCROLLING_THUMBNAIL_COLUMNS * sample_width
+            y = index // SCROLLING_THUMBNAIL_COLUMNS * sample_height
+            return sheet.crop((x, y, x + sample_width, y + sample_height))
+
+        cover = Image.new("RGB", (columns * cover_width, rows * cover_height))
+        frames = (4, 8, 12) if columns == 3 else (1, 4, 8, 12)
+        size = (cover_width, cover_height)
+        for index, frame in enumerate(frames):
+            tile = tile_at(frame)
+            if display_height > width:
+                tile = tile.resize(size, Image.Resampling.LANCZOS)
+            else:
+                tile = ImageOps.fit(tile, size, Image.Resampling.LANCZOS)
+            cover.paste(tile, (index % columns * cover_width, index // columns * cover_height))
+        cover.save(output, "WEBP", quality=int(WEBP_QUALITY), method=int(WEBP_COMPRESSION_LEVEL))
+
+        rolling_height = SCROLLING_THUMBNAIL_TILE_HEIGHT
+        rolling_width = scaled_tile_width(width, display_height, rolling_height)
+        rolling = sheet
+        if (sample_width, sample_height) != (rolling_width, rolling_height):
+            rolling = Image.new("RGB", (rolling_width * SCROLLING_THUMBNAIL_COLUMNS,
+                                        rolling_height * SCROLLING_THUMBNAIL_ROWS))
+            for index in range(SCROLLING_THUMBNAIL_FRAMES):
+                rolling.paste(
+                    tile_at(index).resize((rolling_width, rolling_height), Image.Resampling.LANCZOS),
+                    (index % SCROLLING_THUMBNAIL_COLUMNS * rolling_width,
+                     index // SCROLLING_THUMBNAIL_COLUMNS * rolling_height),
+                )
+        try:
+            rolling.save(scrolling_output, "WEBP", quality=int(SCROLLING_THUMBNAIL_QUALITY),
+                         method=int(WEBP_COMPRESSION_LEVEL))
+        except OSError as exc:
+            scrolling_output.unlink(missing_ok=True)
+            LOGGER.warning("Could not encode scrolling cover for %s: %s", video_path, exc)
+
+
+def flat_cover_grid(width: int, display_height: int, height: int) -> tuple[int, int, int, int]:
+    columns, rows = flat_thumbnail_layout(width, display_height)
+    tile_width, tile_height = flat_tile_size(height)
+    if display_height > width:
+        tile_width = scaled_tile_width(width, display_height, tile_height)
+    return columns, rows, tile_width, tile_height
 
 
 def generate_flat_thumbnail(
@@ -407,70 +502,25 @@ def generate_flat_thumbnail(
 ) -> None:
     ffmpeg = require_tool("ffmpeg")
     times = sample_times(duration)
-    tile_width, tile_height = flat_tile_size(height)
     width, display_height = probe_video_geometry(video_path)
     portrait = display_height > width
-    columns, rows = flat_thumbnail_layout(width, display_height)
+    columns, _, tile_width, tile_height = flat_cover_grid(width, display_height, height)
     if columns == 3:
         times = times[1:]  # Keep the 25%, 50% and 75% samples for three columns.
-    if portrait:
-        tile_height = normalize_thumbnail_height(height) // 2
-        tile_width = max(2, round(tile_height * width / display_height / 2) * 2)
     video_filter = (
         f"scale={tile_width}:{tile_height},setsar=1"
         if portrait else
         f"scale={tile_width}:{tile_height}:force_original_aspect_ratio=increase,crop={tile_width}:{tile_height}"
     )
-    with tempfile.TemporaryDirectory() as tmp:
-        frame_paths: list[Path] = []
-        for index, timestamp in enumerate(times):
-            frame_path = Path(tmp) / f"frame-{index}.webp"
-            run_ffmpeg(
-                [
-                    ffmpeg,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-ss",
-                    f"{timestamp:.3f}",
-                    "-i",
-                    str(video_path),
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    video_filter,
-                    "-compression_level",
-                    WEBP_COMPRESSION_LEVEL,
-                    "-quality",
-                    WEBP_QUALITY,
-                    "-y",
-                    str(frame_path),
-                ]
-            )
-            frame_paths.append(frame_path)
-
-        command = [ffmpeg, "-hide_banner", "-loglevel", "error"]
-        for frame_path in frame_paths:
-            command.extend(["-i", str(frame_path)])
-        command.extend(
-            [
-                "-filter_complex",
-                (
-                    f"xstack=inputs={columns}:layout=" + "|".join(f"{tile_width * column}_0" for column in range(columns))
-                    if rows == 1 else
-                    f"xstack=inputs=4:layout=0_0|{tile_width}_0|0_{tile_height}|{tile_width}_{tile_height}"
-                ),
-                "-frames:v",
-                "1",
-                "-compression_level",
-                WEBP_COMPRESSION_LEVEL,
-                "-quality",
-                WEBP_QUALITY,
-                "-y",
-                str(output_path),
-            ]
+    with tempfile.TemporaryDirectory(prefix="cover-", dir=output_path.parent) as temporary:
+        staged = Path(temporary) / "cover.webp"
+        generate_seek_sheet(
+            [ffmpeg, "-hide_banner", "-loglevel", "error"], video_path,
+            [round(timestamp, 3) for timestamp in times], columns, tile_width, tile_height, video_filter,
+            ["-frames:v", "1", "-compression_level", WEBP_COMPRESSION_LEVEL, "-quality", WEBP_QUALITY,
+             "-y", str(staged)],
         )
-        run_ffmpeg(command)
+        staged.replace(output_path)
 
 
 def generate_panorama_thumbnail(
@@ -731,7 +781,7 @@ def midpoint(duration: float | None) -> float:
     return max(0.1, min(duration * 0.5, max(duration - 0.25, 0.1)))
 
 
-def run_ffmpeg(command: list[str]) -> None:
+def run_ffmpeg(command: list[str]) -> bytes:
     limited_command = [
         command[0],
         "-threads",
@@ -743,9 +793,10 @@ def run_ffmpeg(command: list[str]) -> None:
         FFMPEG_THUMBNAIL_THREADS,
         command[-1],
     ]
-    result = subprocess.run(limited_command, check=False, capture_output=True, text=True, timeout=180)
+    result = subprocess.run(limited_command, check=False, capture_output=True, timeout=180)
     if result.returncode != 0:
-        raise VideoToolError(result.stderr.strip() or "ffmpeg failed")
+        raise VideoToolError(result.stderr.decode(errors="replace").strip() or "ffmpeg failed")
+    return result.stdout
 
 
 def main() -> None:
